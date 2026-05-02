@@ -6,7 +6,7 @@ export interface Message {
 }
 
 export class Agent {
-  private client: Anthropic;
+  private client: Anthropic ;
   private history: Message[] = [];
   private systemPrompt: string;
 
