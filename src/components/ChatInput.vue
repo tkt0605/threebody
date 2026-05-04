@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useVoiceInput } from '../composables/useVoiceInput'
+import VoiceOverlay from './VoiceOverlay.vue'
 
 const emit = defineEmits<{ send: [text: string] }>()
 
 const input = ref('')
+
+const { recording, finalText, interimText, bars, errorMsg, BAR_COUNT, start, stop } =
+  useVoiceInput((text) => { input.value = text })
 
 function submit() {
   const text = input.value.trim()
@@ -31,6 +36,22 @@ function onKeydown(e: KeyboardEvent) {
         style="field-sizing: content"
         @keydown="onKeydown"
       />
+
+      <!-- Mic button -->
+      <button
+        class="shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-all cursor-pointer"
+        :class="recording
+          ? 'bg-rose-600/20 text-rose-400'
+          : 'text-white/30 hover:text-white/70 hover:bg-white/8'"
+        @click="recording ? stop() : start()"
+      >
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <rect x="9" y="2" width="6" height="13" rx="3"/>
+          <path d="M5 10a7 7 0 0014 0M12 19v3M8 22h8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+
+      <!-- Send button -->
       <button
         :disabled="!input.trim()"
         class="shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-all"
@@ -43,4 +64,14 @@ function onKeydown(e: KeyboardEvent) {
       </button>
     </div>
   </div>
+
+  <VoiceOverlay
+    :recording="recording"
+    :bars="bars"
+    :bar-count="BAR_COUNT"
+    :final-text="finalText"
+    :interim-text="interimText"
+    :error-msg="errorMsg"
+    @stop="stop"
+  />
 </template>
