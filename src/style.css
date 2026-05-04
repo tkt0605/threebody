@@ -1,2 +1,6 @@
 /* src/style.css */
-@import "tailwindcss"
+@import "tailwindcss";
+
+dialog:not([open]) {
+  display: none;
+}
