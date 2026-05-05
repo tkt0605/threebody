@@ -95,7 +95,7 @@ function onDragStart(e: DragEvent, id: string) {
           : 'cursor-grab text-white/65 hover:text-white/90 hover:bg-white/6 active:cursor-grabbing'"
       >
         <span class="w-2 h-2 rounded-full shrink-0" :style="{ background: feat.color }" />
-        <span>{{ feat.label }}</span>
+        <span>{{ feat.name }}</span>
         <!-- drag handle (unplaced) -->
         <svg v-if="!isPlaced(feat.id)" class="ml-auto w-3 h-3 text-white/25" viewBox="0 0 24 24" fill="currentColor">
           <circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/>

@@ -4,6 +4,7 @@ export type FeatureId = 'chat' | 'mcp' | 'ctx'
 
 export interface FeatureDef {
   id: FeatureId
+  name: string
   label: string
   color: string
   iconPath: string
@@ -17,19 +18,22 @@ export interface PlacedNode extends FeatureDef {
 export const FEATURES: FeatureDef[] = [
   {
     id: 'chat',
-    label: 'Chat',
+    name: 'テキストチャット',
+    label: '一体',
     color: '#f87171',
     iconPath: 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z',
   },
   {
     id: 'mcp',
-    label: 'MCP',
+    name: 'MCPサーバ',
+    label: '二体',
     color: '#4ade80',
     iconPath: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
   },
   {
     id: 'ctx',
-    label: 'Context',
+    name: 'コンテキスト',
+    label: '三体',
     color: '#60a5fa',
     iconPath: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8',
   },
