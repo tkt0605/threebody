@@ -2,34 +2,29 @@
 import { ref, reactive, computed } from 'vue'
 import { useVoiceInput } from '../composables/useVoiceInput'
 import { useChat } from '../composables/useChat'
+import { useTriangleNodes, type FeatureId } from '../composables/useTriangleNodes'
 import VoiceOverlay from './VoiceOverlay.vue'
 import ChatDialog from './ChatDialog.vue'
 import McpDialog from './McpDialog.vue'
 import ContextDialog from './ContextDialog.vue'
 
-// ── Positions ───────────────────────────────────────────────
-interface Pos { x: number; y: number }
-interface NodePositions { center: Pos; chat: Pos; mcp: Pos; ctx: Pos }
+// ── Triangle nodes (shared state) ────────────────────────────
+const { placedNodes, addNode, removeNode, updatePos } = useTriangleNodes()
 
-const pos = reactive<NodePositions>({
-  center: { x: 300, y: 270 },
-  chat:   { x: 300, y: 110 },
-  mcp:    { x: 130, y: 400 },
-  ctx:    { x: 470, y: 400 },
-})
+// ── Center position ───────────────────────────────────────────
+const centerPos = reactive({ x: 300, y: 270 })
 
-// ── Dragging ─────────────────────────────────────────────────
-type NodeId = keyof NodePositions
-
-const svgRef   = ref<SVGSVGElement | null>(null)
-const dragging = ref<NodeId | null>(null)
-let dragMoved  = false
+// ── Internal drag (within SVG) ────────────────────────────────
+const svgRef = ref<SVGSVGElement | null>(null)
+type DragId = 'center' | FeatureId
+const dragging = ref<DragId | null>(null)
+let dragMoved = false
 let dragOrigin = { x: 0, y: 0 }
 
-function toSvg(cx: number, cy: number): Pos {
+function toSvg(cx: number, cy: number) {
   const svg = svgRef.value
   if (!svg) return { x: cx, y: cy }
-  const pt  = svg.createSVGPoint()
+  const pt = svg.createSVGPoint()
   pt.x = cx; pt.y = cy
   const ctm = svg.getScreenCTM()
   if (!ctm) return { x: cx, y: cy }
@@ -37,10 +32,14 @@ function toSvg(cx: number, cy: number): Pos {
   return { x: r.x, y: r.y }
 }
 
-function onPointerDown(id: NodeId, e: PointerEvent) {
+function clamp(v: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, v))
+}
+
+function onPointerDown(id: DragId, e: PointerEvent) {
   dragging.value = id
-  dragMoved      = false
-  dragOrigin     = { x: e.clientX, y: e.clientY }
+  dragMoved = false
+  dragOrigin = { x: e.clientX, y: e.clientY }
   ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
   e.stopPropagation()
 }
@@ -51,26 +50,62 @@ function onPointerMove(e: PointerEvent) {
   const dy = e.clientY - dragOrigin.y
   if (dx * dx + dy * dy > 9) dragMoved = true
   const { x, y } = toSvg(e.clientX, e.clientY)
-  pos[dragging.value].x = Math.max(90, Math.min(510, x))
-  pos[dragging.value].y = Math.max(70, Math.min(445, y))
+  const cx = clamp(x, 90, 510)
+  const cy = clamp(y, 70, 445)
+  if (dragging.value === 'center') {
+    centerPos.x = cx; centerPos.y = cy
+  } else {
+    updatePos(dragging.value, cx, cy)
+  }
 }
 
-function onPointerUp(id: NodeId) {
+function onPointerUp(id: DragId) {
   const moved = dragMoved
   dragging.value = null
   if (!moved) triggerNode(id)
 }
 
-// ── Actions ──────────────────────────────────────────────────
-const chatDialogRef = ref<InstanceType<typeof ChatDialog>     | null>(null)
-const mcpDialogRef  = ref<InstanceType<typeof McpDialog>      | null>(null)
-const ctxDialogRef  = ref<InstanceType<typeof ContextDialog>  | null>(null)
+// ── External drag-and-drop (from Aside palette) ───────────────
+let dragEnterCount = 0
+const isDragTarget = ref(false)
+
+function onDragEnter() {
+  dragEnterCount++
+  isDragTarget.value = true
+}
+
+function onDragLeave() {
+  dragEnterCount--
+  if (dragEnterCount <= 0) {
+    dragEnterCount = 0
+    isDragTarget.value = false
+  }
+}
+
+function onDragOver(e: DragEvent) {
+  e.preventDefault()
+}
+
+function onDrop(e: DragEvent) {
+  e.preventDefault()
+  dragEnterCount = 0
+  isDragTarget.value = false
+  const id = e.dataTransfer?.getData('featureId') as FeatureId
+  if (!id) return
+  const { x, y } = toSvg(e.clientX, e.clientY)
+  addNode(id, clamp(x, 100, 500), clamp(y, 80, 430))
+}
+
+// ── Node actions ──────────────────────────────────────────────
+const chatDialogRef = ref<InstanceType<typeof ChatDialog> | null>(null)
+const mcpDialogRef  = ref<InstanceType<typeof McpDialog>  | null>(null)
+const ctxDialogRef  = ref<InstanceType<typeof ContextDialog> | null>(null)
 
 const { sendMessage } = useChat()
 const { recording, finalText, interimText, bars, errorMsg, BAR_COUNT, start, stop } =
   useVoiceInput((text) => sendMessage(text))
 
-function triggerNode(id: NodeId) {
+function triggerNode(id: DragId) {
   if      (id === 'center') recording.value ? stop() : start()
   else if (id === 'chat')   chatDialogRef.value?.open()
   else if (id === 'mcp')    mcpDialogRef.value?.open()
@@ -78,48 +113,50 @@ function triggerNode(id: NodeId) {
 }
 
 // ── Lines (reactive) ─────────────────────────────────────────
-const outerLines = computed(() => [
-  { x1: pos.chat.x, y1: pos.chat.y, x2: pos.mcp.x,    y2: pos.mcp.y    },
-  { x1: pos.mcp.x,  y1: pos.mcp.y,  x2: pos.ctx.x,    y2: pos.ctx.y    },
-  { x1: pos.ctx.x,  y1: pos.ctx.y,  x2: pos.chat.x,   y2: pos.chat.y   },
-])
-const innerLines = computed(() => [
-  { x1: pos.center.x, y1: pos.center.y, x2: pos.chat.x, y2: pos.chat.y },
-  { x1: pos.center.x, y1: pos.center.y, x2: pos.mcp.x,  y2: pos.mcp.y  },
-  { x1: pos.center.x, y1: pos.center.y, x2: pos.ctx.x,  y2: pos.ctx.y  },
-])
+const innerLines = computed(() =>
+  placedNodes.value.map(n => ({
+    x1: centerPos.x, y1: centerPos.y, x2: n.x, y2: n.y,
+  }))
+)
 
-// ── Outer nodes definition ────────────────────────────────────
-// iconPath: Feather/Heroicons 24x24 paths
-// iconDy: SVG座標でのノード中心からアイコン左上までのY offset
-const NODE_R = 13  // 全ノード共通半径
+const outerLines = computed(() => {
+  const n = placedNodes.value
+  if (n.length < 2) return []
+  const [a, b, c] = n
+  if (n.length === 2) return [{ x1: a!.x, y1: a!.y, x2: b!.x, y2: b!.y }]
+  return [
+    { x1: a!.x, y1: a!.y, x2: b!.x, y2: b!.y },
+    { x1: b!.x, y1: b!.y, x2: c!.x, y2: c!.y },
+    { x1: c!.x, y1: c!.y, x2: a!.x, y2: a!.y },
+  ]
+})
 
-const OUTER = [
-  {
-    id: 'chat' as NodeId, color: '#f87171',
-    iconPath: 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z',
-  },
-  {
-    id: 'mcp' as NodeId, color: '#4ade80',
-    iconPath: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
-  },
-  {
-    id: 'ctx' as NodeId, color: '#60a5fa',
-    iconPath: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8',
-  },
+// ── Ghost slot positions (shown while dragging from aside) ────
+const SLOT_POS = [
+  { x: 300, y: 110 },
+  { x: 130, y: 400 },
+  { x: 470, y: 400 },
 ]
 
+// ── Visuals ───────────────────────────────────────────────────
+const NODE_R  = 13
 const MIC_PATH  = 'M12 2a3 3 0 013 3v6a3 3 0 01-6 0V5a3 3 0 013-3zM19 10v2a7 7 0 01-14 0v-2M12 18v4M9 22h6'
 const STOP_PATH = 'M6 6h12v12H6z'
-// ノード直径の約80%をアイコンが占める
-const ICON_S = (NODE_R * 2 * 0.8) / 24
-const ICON_H = (24 * ICON_S) / 2
+const ICON_S  = (NODE_R * 2 * 0.8) / 24
+const ICON_H  = (24 * ICON_S) / 2
 
-const hovered = ref<NodeId | null>(null)
+const hovered = ref<DragId | null>(null)
 </script>
 
 <template>
-  <div class="flex items-center justify-center w-full h-full">
+  <div
+    class="flex items-center justify-center w-full h-full transition-shadow duration-200"
+    :class="isDragTarget ? 'ring-1 ring-inset ring-white/15' : ''"
+    @dragenter="onDragEnter"
+    @dragleave="onDragLeave"
+    @dragover="onDragOver"
+    @drop="onDrop"
+  >
     <svg
       ref="svgRef"
       viewBox="80 60 440 420"
@@ -127,38 +164,64 @@ const hovered = ref<NodeId | null>(null)
       @pointermove="onPointerMove"
       @pointerup="dragging = null"
     >
-      <!-- 三角形の辺（点線・流れる） -->
+      <!-- Ghost drop slots (shown while dragging from aside) -->
+      <g v-if="isDragTarget">
+        <circle
+          v-for="(slot, i) in SLOT_POS"
+          :key="`slot${i}`"
+          :cx="slot.x" :cy="slot.y"
+          :r="NODE_R + 10"
+          fill="none"
+          stroke="white"
+          stroke-width="1"
+          stroke-dasharray="4 4"
+          opacity="0.22"
+        />
+      </g>
+
+      <!-- 三角形の辺（outer lines） -->
       <line
         v-for="(l, i) in outerLines" :key="`o${i}`"
         :x1="l.x1" :y1="l.y1" :x2="l.x2" :y2="l.y2"
         stroke="white" stroke-width="0.9" opacity="0.35"
-        stroke-dasharray="5 10" :class="`dash-outer-${i}`"
+        stroke-dasharray="5 10" :class="`dash-outer-${i % 3}`"
       />
-      <!-- 重心への線（点線・速く流れる） -->
+
+      <!-- 重心への線（inner lines） -->
       <line
         v-for="(l, i) in innerLines" :key="`n${i}`"
         :x1="l.x1" :y1="l.y1" :x2="l.x2" :y2="l.y2"
         stroke="white" stroke-width="0.9" opacity="0.45"
-        stroke-dasharray="4 9" :class="`dash-inner-${i}`"
+        stroke-dasharray="4 9" :class="`dash-inner-${i % 3}`"
       />
+
+      <!-- 空状態ヒント -->
+      <text
+        v-if="placedNodes.length === 0 && !isDragTarget"
+        :x="centerPos.x" :y="centerPos.y + 38"
+        text-anchor="middle"
+        fill="rgba(255,255,255,0.18)"
+        font-size="10"
+        font-family="system-ui, -apple-system, sans-serif"
+        letter-spacing="0.06em"
+      >サイドバーから機能を追加</text>
 
       <!-- 内点：重心 = Voice ──────────────────── -->
       <g
-        :style="{ cursor: recording ? 'pointer' : 'pointer' }"
+        style="cursor: pointer"
         @pointerdown="(e) => onPointerDown('center', e)"
         @pointerup="() => onPointerUp('center')"
         @mouseenter="hovered = 'center'"
         @mouseleave="hovered = null"
       >
-        <!-- 録音中パルス -->
         <circle
-          :cx="pos.center.x" :cy="pos.center.y" :r="NODE_R + 16"
+          :cx="centerPos.x" :cy="centerPos.y" :r="NODE_R + 16"
           fill="white"
           :opacity="recording ? 0.08 : (hovered === 'center' ? 0.06 : 0.02)"
           style="transition: opacity 0.2s"
         />
-        <circle :cx="pos.center.x" :cy="pos.center.y" :r="NODE_R" fill="white" opacity="1" />
-        <g :transform="`translate(${pos.center.x - ICON_H}, ${pos.center.y - ICON_H}) scale(${ICON_S})`">
+        <circle :cx="centerPos.x" :cy="centerPos.y" :r="NODE_R" fill="white" />
+        <g :transform="`translate(${centerPos.x - ICON_H}, ${centerPos.y - ICON_H}) scale(${ICON_S})`">
           <path
             :d="recording ? STOP_PATH : MIC_PATH"
             fill="none"
@@ -170,35 +233,33 @@ const hovered = ref<NodeId | null>(null)
         </g>
       </g>
 
-      <!-- 外点：Chat / MCP / Context ─────────── -->
+      <!-- 外点：placed nodes ──────────────────── -->
       <g
-        v-for="node in OUTER" :key="node.id"
+        v-for="node in placedNodes" :key="node.id"
         style="cursor: pointer"
         @pointerdown="(e) => onPointerDown(node.id, e)"
         @pointerup="() => onPointerUp(node.id)"
         @mouseenter="hovered = node.id"
         @mouseleave="hovered = null"
       >
+        <!-- Glow -->
         <circle
-          :cx="pos[node.id].x" :cy="pos[node.id].y"
-          :r="NODE_R + 16"
+          :cx="node.x" :cy="node.y" :r="NODE_R + 16"
           :fill="node.color"
           :opacity="hovered === node.id ? 0.14 : 0.04"
           style="transition: opacity 0.2s"
         />
+        <!-- Outer ring -->
         <circle
-          :cx="pos[node.id].x" :cy="pos[node.id].y"
-          :r="NODE_R + 6"
+          :cx="node.x" :cy="node.y" :r="NODE_R + 6"
           fill="none" :stroke="node.color" stroke-width="0.8"
           :opacity="hovered === node.id ? 0.5 : 0.2"
           style="transition: opacity 0.2s"
         />
-        <circle
-          :cx="pos[node.id].x" :cy="pos[node.id].y"
-          :r="NODE_R" :fill="node.color"
-        />
-        <!-- 点の内側にアイコン -->
-        <g :transform="`translate(${pos[node.id].x - ICON_H}, ${pos[node.id].y - ICON_H}) scale(${ICON_S})`">
+        <!-- Core dot -->
+        <circle :cx="node.x" :cy="node.y" :r="NODE_R" :fill="node.color" />
+        <!-- Icon -->
+        <g :transform="`translate(${node.x - ICON_H}, ${node.y - ICON_H}) scale(${ICON_S})`">
           <path
             :d="node.iconPath"
             fill="none" stroke="white" stroke-width="1.8"
@@ -207,6 +268,25 @@ const hovered = ref<NodeId | null>(null)
             :opacity="hovered === node.id ? 1 : 0.8"
             style="transition: opacity 0.2s"
           />
+        </g>
+        <!-- Remove button (visible on hover) -->
+        <g
+          v-if="hovered === node.id"
+          @click.stop="removeNode(node.id)"
+          @pointerdown.stop
+          style="cursor: pointer"
+        >
+          <circle
+            :cx="node.x + NODE_R + 2" :cy="node.y - NODE_R - 2"
+            r="7" fill="#111827"
+            stroke="rgba(255,255,255,0.22)" stroke-width="0.8"
+          />
+          <text
+            :x="node.x + NODE_R + 2" :y="node.y - NODE_R - 2 + 3.5"
+            text-anchor="middle"
+            fill="rgba(255,255,255,0.55)"
+            font-size="9" font-family="system-ui"
+          >×</text>
         </g>
       </g>
     </svg>
