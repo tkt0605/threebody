@@ -87,7 +87,7 @@ defineExpose({ open })
           </div>
 
           <!-- MCP -->
-          <div class="space-y-2">
+          <!-- <div class="space-y-2">
             <label class="text-xs font-medium text-white/50 uppercase tracking-widest">MCP サーバー</label>
             <div class="space-y-1.5">
               <label
@@ -104,7 +104,7 @@ defineExpose({ open })
                 <span class="text-sm text-white/75">{{ mcp.label }}</span>
               </label>
             </div>
-          </div>
+          </div> -->
         </div>
 
         <!-- Footer -->
