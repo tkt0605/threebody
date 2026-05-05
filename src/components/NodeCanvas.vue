@@ -2,7 +2,7 @@
 import { ref, reactive, computed } from 'vue'
 import { useVoiceInput } from '../composables/useVoiceInput'
 import { useChat } from '../composables/useChat'
-import { useTriangleNodes, type FeatureId } from '../composables/useTriangleNodes'
+import { useTriangleNodes, FEATURES, type FeatureId } from '../composables/useTriangleNodes'
 import VoiceOverlay from './VoiceOverlay.vue'
 import ChatDialog from './ChatDialog.vue'
 import McpDialog from './McpDialog.vue'
@@ -60,9 +60,10 @@ function onPointerMove(e: PointerEvent) {
 }
 
 function onPointerUp(id: DragId) {
+  const wasTracked = dragging.value === id
   const moved = dragMoved
   dragging.value = null
-  if (!moved) triggerNode(id)
+  if (wasTracked && !moved) triggerNode(id)
 }
 
 // ── External drag-and-drop (from Aside palette) ───────────────
@@ -131,19 +132,31 @@ const outerLines = computed(() => {
   ]
 })
 
-// ── Ghost slot positions (shown while dragging from aside) ────
+// ── Ghost slot positions ──────────────────────────────────────
 const SLOT_POS = [
   { x: 300, y: 110 },
   { x: 130, y: 400 },
   { x: 470, y: 400 },
 ]
+// 上スロットはラベルを上、下スロットはラベルを下に配置
+const SLOT_LABEL_Y = [74, 437, 437]
+
+// 未配置フィーチャーのスロットを常時表示（DnD中はより明るく）
+const ghostSlots = computed(() =>
+  SLOT_POS.map((pos, i) => ({
+    ...pos,
+    labelY: SLOT_LABEL_Y[i]!,
+    feature: FEATURES[i]!,
+    placed: placedNodes.value.some(n => n.id === FEATURES[i]!.id),
+  })).filter(s => !s.placed)
+)
 
 // ── Visuals ───────────────────────────────────────────────────
-const NODE_R  = 13
+const NODE_R    = 13
 const MIC_PATH  = 'M12 2a3 3 0 013 3v6a3 3 0 01-6 0V5a3 3 0 013-3zM19 10v2a7 7 0 01-14 0v-2M12 18v4M9 22h6'
 const STOP_PATH = 'M6 6h12v12H6z'
-const ICON_S  = (NODE_R * 2 * 0.8) / 24
-const ICON_H  = (24 * ICON_S) / 2
+const ICON_S    = (NODE_R * 2 * 0.8) / 24
+const ICON_H    = (24 * ICON_S) / 2
 
 const hovered = ref<DragId | null>(null)
 </script>
@@ -164,19 +177,28 @@ const hovered = ref<DragId | null>(null)
       @pointermove="onPointerMove"
       @pointerup="dragging = null"
     >
-      <!-- Ghost drop slots (shown while dragging from aside) -->
-      <g v-if="isDragTarget">
+      <!-- 未配置スロット（常時表示） -->
+      <g v-for="slot in ghostSlots" :key="slot.feature.id">
         <circle
-          v-for="(slot, i) in SLOT_POS"
-          :key="`slot${i}`"
           :cx="slot.x" :cy="slot.y"
           :r="NODE_R + 10"
           fill="none"
-          stroke="white"
+          :stroke="slot.feature.color"
           stroke-width="1"
           stroke-dasharray="4 4"
-          opacity="0.22"
+          :opacity="isDragTarget ? 0.5 : 0.28"
+          style="transition: opacity 0.25s"
         />
+        <text
+          :x="slot.x" :y="slot.labelY"
+          text-anchor="middle"
+          :fill="slot.feature.color"
+          font-size="10"
+          font-family="system-ui, -apple-system, sans-serif"
+          letter-spacing="0.08em"
+          :opacity="isDragTarget ? 0.8 : 0.45"
+          style="transition: opacity 0.25s"
+        >{{ slot.feature.label }}</text>
       </g>
 
       <!-- 三角形の辺（outer lines） -->
@@ -195,17 +217,6 @@ const hovered = ref<DragId | null>(null)
         stroke-dasharray="4 9" :class="`dash-inner-${i % 3}`"
       />
 
-      <!-- 空状態ヒント -->
-      <text
-        v-if="placedNodes.length === 0 && !isDragTarget"
-        :x="centerPos.x" :y="centerPos.y + 38"
-        text-anchor="middle"
-        fill="rgba(255,255,255,0.18)"
-        font-size="10"
-        font-family="system-ui, -apple-system, sans-serif"
-        letter-spacing="0.06em"
-      >サイドバーから機能を追加</text>
-
       <!-- 内点：重心 = Voice ──────────────────── -->
       <g
         style="cursor: pointer"
@@ -214,12 +225,26 @@ const hovered = ref<DragId | null>(null)
         @mouseenter="hovered = 'center'"
         @mouseleave="hovered = null"
       >
+        <!-- 常時パルスリング（3本・時差あり） -->
+        <circle :cx="centerPos.x" :cy="centerPos.y" :r="NODE_R"
+          fill="none" stroke="white" stroke-width="0.7"
+          class="pulse-ring pulse-ring-0" />
+        <circle :cx="centerPos.x" :cy="centerPos.y" :r="NODE_R"
+          fill="none" stroke="white" stroke-width="0.7"
+          class="pulse-ring pulse-ring-1" />
+        <circle :cx="centerPos.x" :cy="centerPos.y" :r="NODE_R"
+          fill="none" stroke="white" stroke-width="0.5"
+          class="pulse-ring pulse-ring-2" />
+
+        <!-- ホバー・録音時の光彩 -->
         <circle
           :cx="centerPos.x" :cy="centerPos.y" :r="NODE_R + 16"
           fill="white"
           :opacity="recording ? 0.08 : (hovered === 'center' ? 0.06 : 0.02)"
           style="transition: opacity 0.2s"
         />
+
+        <!-- 本体 -->
         <circle :cx="centerPos.x" :cy="centerPos.y" :r="NODE_R" fill="white" />
         <g :transform="`translate(${centerPos.x - ICON_H}, ${centerPos.y - ICON_H}) scale(${ICON_S})`">
           <path
@@ -231,6 +256,17 @@ const hovered = ref<DragId | null>(null)
             style="transition: stroke 0.2s"
           />
         </g>
+
+        <!-- ヒントテキスト（ノードが空の時） -->
+        <text
+          v-if="placedNodes.length === 0"
+          :x="centerPos.x" :y="centerPos.y + NODE_R + 24"
+          text-anchor="middle"
+          fill="rgba(255,255,255,0.45)"
+          font-size="10"
+          font-family="system-ui, -apple-system, sans-serif"
+          letter-spacing="0.1em"
+        >話しかける</text>
       </g>
 
       <!-- 外点：placed nodes ──────────────────── -->
@@ -242,23 +278,19 @@ const hovered = ref<DragId | null>(null)
         @mouseenter="hovered = node.id"
         @mouseleave="hovered = null"
       >
-        <!-- Glow -->
         <circle
           :cx="node.x" :cy="node.y" :r="NODE_R + 16"
           :fill="node.color"
           :opacity="hovered === node.id ? 0.14 : 0.04"
           style="transition: opacity 0.2s"
         />
-        <!-- Outer ring -->
         <circle
           :cx="node.x" :cy="node.y" :r="NODE_R + 6"
           fill="none" :stroke="node.color" stroke-width="0.8"
           :opacity="hovered === node.id ? 0.5 : 0.2"
           style="transition: opacity 0.2s"
         />
-        <!-- Core dot -->
         <circle :cx="node.x" :cy="node.y" :r="NODE_R" :fill="node.color" />
-        <!-- Icon -->
         <g :transform="`translate(${node.x - ICON_H}, ${node.y - ICON_H}) scale(${ICON_S})`">
           <path
             :d="node.iconPath"
@@ -269,11 +301,11 @@ const hovered = ref<DragId | null>(null)
             style="transition: opacity 0.2s"
           />
         </g>
-        <!-- Remove button (visible on hover) -->
         <g
           v-if="hovered === node.id"
           @click.stop="removeNode(node.id)"
           @pointerdown.stop
+          @pointerup.stop
           style="cursor: pointer"
         >
           <circle
@@ -306,6 +338,7 @@ const hovered = ref<DragId | null>(null)
 </template>
 
 <style scoped>
+/* ── Triangle line animations ── */
 @keyframes flow {
   from { stroke-dashoffset: 15; }
   to   { stroke-dashoffset: 0;  }
@@ -316,4 +349,18 @@ const hovered = ref<DragId | null>(null)
 .dash-inner-0 { animation: flow 1.8s linear infinite; }
 .dash-inner-1 { animation: flow 2.1s linear infinite; }
 .dash-inner-2 { animation: flow 1.5s linear infinite; }
+
+/* ── 常時パルスリング（Voice = 重心） ── */
+@keyframes pulse-ring {
+  0%   { transform: scale(1);   opacity: 0.45; }
+  100% { transform: scale(5);   opacity: 0;    }
+}
+.pulse-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pulse-ring 3s ease-out infinite;
+}
+.pulse-ring-0 { animation-delay: 0s;   }
+.pulse-ring-1 { animation-delay: 1s;   }
+.pulse-ring-2 { animation-delay: 2s;   }
 </style>
