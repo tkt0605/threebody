@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import ThreeBodyLogo from './ThreeBodyLogo.vue'
 import SettingsDialog from './SettingsDialog.vue'
 import { FEATURES, useTriangleNodes } from '../composables/useTriangleNodes'
+import { useAuth } from '../composables/useAuth'
+
+const router = useRouter()
+const { user, logout } = useAuth()
 
 const settingsDialog = ref<InstanceType<typeof SettingsDialog> | null>(null)
 
@@ -11,6 +16,11 @@ const built = ref(false)
 const hoveredId = ref<string | null>(null)
 
 const { isPlaced } = useTriangleNodes()
+
+async function handleLogout() {
+  await logout()
+  router.push('/login')
+}
 
 function build() {
   building.value = true
@@ -146,6 +156,30 @@ function onDragStart(e: DragEvent, id: string) {
 
     <!-- 会話リスト (placeholder) -->
     <nav class="flex-1 overflow-y-auto px-3 py-2" />
+
+    <!-- ユーザー情報 + ログアウト -->
+    <div class="px-3 py-3 border-t border-white/8">
+      <div class="flex items-center gap-2.5 px-2 py-2 rounded-xl group">
+        <!-- アバター -->
+        <div class="w-7 h-7 rounded-lg bg-indigo-600/30 border border-indigo-500/30 flex items-center justify-center shrink-0">
+          <span class="text-indigo-300 text-xs font-semibold uppercase">{{ user?.email?.charAt(0) ?? '?' }}</span>
+        </div>
+        <!-- メール -->
+        <span class="flex-1 text-xs text-white/45 truncate">{{ user?.email }}</span>
+        <!-- ログアウト -->
+        <button
+          class="opacity-0 group-hover:opacity-100 text-white/30 hover:text-rose-400 transition-all cursor-pointer"
+          title="ログアウト"
+          @click="handleLogout"
+        >
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" stroke-linecap="round" stroke-linejoin="round"/>
+            <polyline points="16 17 21 12 16 7" stroke-linecap="round" stroke-linejoin="round"/>
+            <line x1="21" y1="12" x2="9" y2="12" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
   </aside>
 
   <SettingsDialog ref="settingsDialog" />
