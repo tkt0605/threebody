@@ -171,6 +171,24 @@ const ICON_S    = (NODE_R * 2 * 0.8) / 24
 const ICON_H    = (24 * ICON_S) / 2
 
 const hovered = ref<DragId | null>(null)
+
+function shapePath(id: string, cx: number, cy: number, r: number): string {
+  if (id === 'chat') {
+    const x = cx - r, y = cy - r, s = r * 2, rx = r * 0.38
+    return `M${x+rx},${y} H${x+s-rx} Q${x+s},${y} ${x+s},${y+rx} V${y+s-rx} Q${x+s},${y+s} ${x+s-rx},${y+s} H${x+rx} Q${x},${y+s} ${x},${y+s-rx} V${y+rx} Q${x},${y} ${x+rx},${y} Z`
+  }
+  if (id === 'mcp') {
+    const pts = Array.from({ length: 6 }, (_, i) => {
+      const a = (Math.PI / 3) * i - Math.PI / 6
+      return `${cx + r * Math.cos(a)},${cy + r * Math.sin(a)}`
+    })
+    return `M${pts.join(' L')} Z`
+  }
+  if (id === 'ctx') {
+    return `M${cx},${cy - r} L${cx + r},${cy} L${cx},${cy + r} L${cx - r},${cy} Z`
+  }
+  return ''
+}
 </script>
 
 <template>
@@ -196,9 +214,8 @@ const hovered = ref<DragId | null>(null)
             v-if="!placedNodes.some(n => n.id === FEATURES[i]!.id)"
             :class="slotsSummoned && !isDragTarget ? `slot-summon slot-summon-${i}` : ''"
           >
-            <circle
-              :cx="slot.x" :cy="slot.y"
-              :r="NODE_R + 10"
+            <path
+              :d="shapePath(FEATURES[i]!.id, slot.x, slot.y, NODE_R + 10)"
               fill="none"
               :stroke="!onboarded || slotsSummoned ? FEATURES[i]!.color : 'white'"
               stroke-width="1"
@@ -306,13 +323,16 @@ const hovered = ref<DragId | null>(null)
           :opacity="hovered === node.id ? 0.14 : 0.04"
           style="transition: opacity 0.2s"
         />
-        <circle
-          :cx="node.x" :cy="node.y" :r="NODE_R + 6"
+        <path
+          :d="shapePath(node.id, node.x, node.y, NODE_R + 6)"
           fill="none" :stroke="node.color" stroke-width="0.8"
           :opacity="hovered === node.id ? 0.5 : 0.2"
           style="transition: opacity 0.2s"
         />
-        <circle :cx="node.x" :cy="node.y" :r="NODE_R" :fill="node.color" />
+        <path
+          :d="shapePath(node.id, node.x, node.y, NODE_R)"
+          :fill="node.color"
+        />
         <g :transform="`translate(${node.x - ICON_H}, ${node.y - ICON_H}) scale(${ICON_S})`">
           <path
             :d="node.iconPath"
