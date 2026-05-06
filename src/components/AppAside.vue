@@ -8,6 +8,7 @@ const settingsDialog = ref<InstanceType<typeof SettingsDialog> | null>(null)
 
 const building = ref(false)
 const built = ref(false)
+const hoveredId = ref<string | null>(null)
 
 const { isPlaced } = useTriangleNodes()
 
@@ -74,13 +75,26 @@ function onDragStart(e: DragEvent, id: string) {
 
     <!-- Feature palette: drag to add to triangle -->
     <div class="px-3 py-3 border-b border-white/8">
-      <p class="text-[10px] text-white/25 uppercase tracking-widest mb-1.5 px-1">三体に追加</p>
+      <p class="text-[10px] text-white/25 uppercase tracking-widest mb-2 px-1">三体に追加</p>
 
       <!-- Voice: always at center, not draggable -->
-      <div class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm select-none opacity-35 cursor-default">
-        <span class="w-2 h-2 rounded-full bg-white shrink-0" />
-        <span class="text-white/60">Voice</span>
-        <span class="ml-auto text-[10px] text-white/40">重心</span>
+      <div
+        class="flex items-center gap-3 px-2 py-2 rounded-xl text-sm select-none cursor-default border-l-2 opacity-40"
+        style="border-left-color: rgba(255,255,255,0.4);"
+      >
+        <div
+          class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+          style="background: rgba(255,255,255,0.08);"
+        >
+          <svg class="w-3.5 h-3.5 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M19 10v2a7 7 0 01-14 0v-2" stroke-linecap="round" stroke-linejoin="round"/>
+            <line x1="12" y1="19" x2="12" y2="23" stroke-linecap="round"/>
+            <line x1="8" y1="23" x2="16" y2="23" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <span class="text-white/55">Voice</span>
+        <span class="ml-auto text-[10px] text-white/35">重心</span>
       </div>
 
       <!-- Draggable features -->
@@ -89,13 +103,34 @@ function onDragStart(e: DragEvent, id: string) {
         :key="feat.id"
         :draggable="!isPlaced(feat.id)"
         @dragstart="onDragStart($event, feat.id)"
-        class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm select-none transition-all"
-        :class="isPlaced(feat.id)
-          ? 'opacity-35 cursor-default'
-          : 'cursor-grab text-white/65 hover:text-white/90 hover:bg-white/6 active:cursor-grabbing'"
+        @mouseenter="!isPlaced(feat.id) && (hoveredId = feat.id)"
+        @mouseleave="hoveredId = null"
+        class="flex items-center gap-3 px-2 py-2 rounded-xl text-sm select-none transition-all duration-150 border-l-2"
+        :class="isPlaced(feat.id) ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'"
+        :style="{
+          borderLeftColor: feat.color,
+          background: (!isPlaced(feat.id) && hoveredId === feat.id) ? feat.color + '18' : 'transparent',
+          opacity: isPlaced(feat.id) ? 0.45 : 1,
+        }"
       >
-        <span class="w-2 h-2 rounded-full shrink-0" :style="{ background: feat.color }" />
-        <span>{{ feat.name }}</span>
+        <!-- Icon badge -->
+        <div
+          class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-all duration-150"
+          :style="{
+            background: feat.color + '22',
+            boxShadow: hoveredId === feat.id && !isPlaced(feat.id) ? `0 0 10px ${feat.color}50` : 'none',
+          }"
+        >
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" :style="{ color: feat.color }">
+            <path :d="feat.iconPath" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+
+        <span
+          class="transition-colors duration-150"
+          :style="{ color: isPlaced(feat.id) ? 'rgba(255,255,255,0.35)' : (hoveredId === feat.id ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.70)') }"
+        >{{ feat.name }}</span>
+
         <!-- drag handle (unplaced) -->
         <svg v-if="!isPlaced(feat.id)" class="ml-auto w-3 h-3 text-white/25" viewBox="0 0 24 24" fill="currentColor">
           <circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/>
@@ -103,7 +138,7 @@ function onDragStart(e: DragEvent, id: string) {
           <circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/>
         </svg>
         <!-- checkmark (placed) -->
-        <svg v-else class="ml-auto w-3 h-3 text-white/35" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg v-else class="ml-auto w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" :style="{ color: feat.color }">
           <path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </div>
