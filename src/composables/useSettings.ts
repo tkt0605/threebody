@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 
 export type Language = 'ja' | 'en'
+export type ThinkingLevel = 1 | 2 | 3 | 4 | 5
 
 export interface McpServer {
   id: string
@@ -10,12 +11,14 @@ export interface McpServer {
 
 export interface Settings {
   language: Language
+  thinkingLevel: ThinkingLevel
   systemPrompt: string
   mcpServers: McpServer[]
 }
 
 const settings = reactive<Settings>({
   language: 'ja',
+  thinkingLevel: 3,
   systemPrompt: '',
   mcpServers: [
     { id: 'filesystem', label: 'Filesystem',      enabled: false },
