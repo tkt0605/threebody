@@ -16,24 +16,29 @@ const deepseek  = new OpenAI({
   apiKey:  process.env.DEEPSEEK_API_KEY,
   baseURL: 'https://api.deepseek.com',
 })
+const ollama    = new OpenAI({
+  apiKey:  'ollama',
+  baseURL: 'http://localhost:11434/v1',
+})
 
 type LevelConfig = {
   anthropicModel: string
   openaiModel:    string
   deepseekModel:  string
+  ollamaModel:    string
   maxTokens:      number
   thinkingBudget?: number
 }
 
 const LEVEL_CONFIG: Record<number, LevelConfig> = {
-  1: { anthropicModel: 'claude-haiku-4-5-20251001', openaiModel: 'gpt-4o-mini', deepseekModel: 'deepseek-chat', maxTokens: 2048 },
-  2: { anthropicModel: 'claude-haiku-4-5-20251001', openaiModel: 'gpt-4o-mini', deepseekModel: 'deepseek-chat', maxTokens: 4096 },
-  3: { anthropicModel: 'claude-sonnet-4-6',         openaiModel: 'gpt-4o',      deepseekModel: 'deepseek-chat', maxTokens: 8192 },
-  4: { anthropicModel: 'claude-sonnet-4-6',         openaiModel: 'gpt-4o',      deepseekModel: 'deepseek-reasoner', maxTokens: 16000, thinkingBudget: 8000 },
-  5: { anthropicModel: 'claude-opus-4-7',           openaiModel: 'o3',          deepseekModel: 'deepseek-reasoner', maxTokens: 32000, thinkingBudget: 16000 },
+  1: { anthropicModel: 'claude-haiku-4-5-20251001', openaiModel: 'gpt-4o-mini',  deepseekModel: 'deepseek-chat',     ollamaModel: 'qwen2.5:0.5b', maxTokens: 2048 },
+  2: { anthropicModel: 'claude-haiku-4-5-20251001', openaiModel: 'gpt-4o-mini',  deepseekModel: 'deepseek-chat',     ollamaModel: 'qwen2.5:0.5b', maxTokens: 4096 },
+  3: { anthropicModel: 'claude-sonnet-4-6',         openaiModel: 'gpt-4o',       deepseekModel: 'deepseek-chat',     ollamaModel: 'qwen2.5:0.5b', maxTokens: 8192 },
+  4: { anthropicModel: 'claude-sonnet-4-6',         openaiModel: 'gpt-4o',       deepseekModel: 'deepseek-reasoner', ollamaModel: 'qwen2.5:0.5b', maxTokens: 16000, thinkingBudget: 8000 },
+  5: { anthropicModel: 'claude-opus-4-7',           openaiModel: 'o3',           deepseekModel: 'deepseek-reasoner', ollamaModel: 'qwen2.5:0.5b', maxTokens: 32000, thinkingBudget: 16000 },
 }
 
-type Provider = 'anthropic' | 'openai' | 'deepseek'
+type Provider = 'anthropic' | 'openai' | 'deepseek' | 'ollama'
 
 async function streamAnthropic(
   res: express.Response,
@@ -69,6 +74,7 @@ async function streamOpenAICompat(
   maxTokens: number,
   systemPrompt: string,
 ) {
+
   const systemMessages: OpenAI.Chat.ChatCompletionMessageParam[] = systemPrompt
     ? [{ role: 'system', content: systemPrompt }]
     : []
@@ -93,7 +99,7 @@ app.post('/api/chat', async (req, res) => {
     messages,
     thinkingLevel = 3,
     systemPrompt  = '',
-    provider      = 'deepseek',
+    provider      = 'ollama',
   } = req.body as {
     messages:      Anthropic.MessageParam[]
     thinkingLevel: number
@@ -105,7 +111,7 @@ app.post('/api/chat', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
 
-  const config = LEVEL_CONFIG[thinkingLevel] ?? LEVEL_CONFIG[3]
+  const config      = LEVEL_CONFIG[thinkingLevel] ?? LEVEL_CONFIG[3]
   const oaiMessages = messages as unknown as OpenAI.Chat.ChatCompletionMessageParam[]
 
   try {
@@ -113,8 +119,10 @@ app.post('/api/chat', async (req, res) => {
       await streamAnthropic(res, messages, config, systemPrompt)
     } else if (provider === 'openai') {
       await streamOpenAICompat(openai, config.openaiModel, res, oaiMessages, config.maxTokens, systemPrompt)
-    } else {
+    } else if (provider === 'deepseek') {
       await streamOpenAICompat(deepseek, config.deepseekModel, res, oaiMessages, config.maxTokens, systemPrompt)
+    } else {
+      await streamOpenAICompat(ollama, config.ollamaModel, res, oaiMessages, config.maxTokens, systemPrompt)
     }
     res.write('data: [DONE]\n\n')
   } catch (err) {
@@ -126,7 +134,7 @@ app.post('/api/chat', async (req, res) => {
 })
 
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', providers: ['anthropic', 'openai', 'deepseek'] })
+  res.json({ status: 'ok', providers: ['anthropic', 'openai', 'deepseek', 'ollama'] })
 })
 
 const PORT = Number(process.env.PORT ?? 3000)
