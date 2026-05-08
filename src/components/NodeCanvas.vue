@@ -3,6 +3,7 @@ import { ref, reactive, computed } from 'vue'
 import { useVoiceInput } from '../composables/useVoiceInput'
 import { useChat } from '../composables/useChat'
 import { useTriangleNodes, FEATURES, type FeatureId } from '../composables/useTriangleNodes'
+import { useTheme } from '../composables/useTheme'
 import VoiceOverlay from './VoiceOverlay.vue'
 import ChatDialog from './ChatDialog.vue'
 import McpDialog from './McpDialog.vue'
@@ -10,6 +11,19 @@ import ContextDialog from './ContextDialog.vue'
 
 // ── Triangle nodes (shared state) ────────────────────────────
 const { placedNodes, addNode, removeNode, updatePos } = useTriangleNodes()
+
+// ── Theme ─────────────────────────────────────────────────────
+const { isDark } = useTheme()
+
+const svgStroke    = computed(() => isDark.value ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.55)')
+const nodeColor    = computed(() => isDark.value ? '#ffffff' : '#1e293b')
+const iconColor    = computed(() => isDark.value ? '#1f2937' : '#ffffff')
+const glowColor    = computed(() => isDark.value ? 'white' : '#1e293b')
+const removeBg     = computed(() => isDark.value ? '#111827' : '#f1f5f9')
+const removeStroke = computed(() => isDark.value ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.18)')
+const removeText   = computed(() => isDark.value ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)')
+const hintText     = computed(() => isDark.value ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.4)')
+const labelFill    = computed(() => isDark.value ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.5)')
 
 // ── Center position ───────────────────────────────────────────
 const centerPos = reactive({ x: 300, y: 270 })
@@ -154,7 +168,6 @@ const SLOT_POS = [
   { x: 470, y: 400 },
 ]
 
-// ラベルのy座標：上スロットは上、下スロットは下に配置
 const SLOT_LABEL_Y = [74, 437, 437]
 
 const showGhostSlots = computed(() =>
@@ -194,7 +207,7 @@ function shapePath(id: string, cx: number, cy: number, r: number): string {
 <template>
   <div
     class="relative flex items-center justify-center w-full h-full transition-shadow duration-200"
-    :class="isDragTarget ? 'ring-1 ring-inset ring-white/15' : ''"
+    :class="isDragTarget ? 'ring-1 ring-inset ring-black/15 dark:ring-white/15' : ''"
     @dragenter="onDragEnter"
     @dragleave="onDragLeave"
     @dragover="onDragOver"
@@ -217,12 +230,11 @@ function shapePath(id: string, cx: number, cy: number, r: number): string {
             <path
               :d="shapePath(FEATURES[i]!.id, slot.x, slot.y, NODE_R + 10)"
               fill="none"
-              :stroke="!onboarded || slotsSummoned ? FEATURES[i]!.color : 'white'"
+              :stroke="!onboarded || slotsSummoned ? FEATURES[i]!.color : svgStroke"
               stroke-width="1"
               stroke-dasharray="4 4"
               :opacity="!onboarded ? 0.35 : 0.22"
             />
-            <!-- 機能ラベル（オンボーディング中 or 召喚後） -->
             <text
               v-if="!onboarded || slotsSummoned"
               :x="slot.x"
@@ -242,7 +254,7 @@ function shapePath(id: string, cx: number, cy: number, r: number): string {
       <line
         v-for="(l, i) in outerLines" :key="`o${i}`"
         :x1="l.x1" :y1="l.y1" :x2="l.x2" :y2="l.y2"
-        stroke="white" stroke-width="0.9" opacity="0.35"
+        :stroke="svgStroke" stroke-width="0.9" opacity="0.35"
         stroke-dasharray="5 10" :class="`dash-outer-${i % 3}`"
       />
 
@@ -250,7 +262,7 @@ function shapePath(id: string, cx: number, cy: number, r: number): string {
       <line
         v-for="(l, i) in innerLines" :key="`n${i}`"
         :x1="l.x1" :y1="l.y1" :x2="l.x2" :y2="l.y2"
-        stroke="white" stroke-width="0.9" opacity="0.45"
+        :stroke="svgStroke" stroke-width="0.9" opacity="0.45"
         stroke-dasharray="4 9" :class="`dash-inner-${i % 3}`"
       />
 
@@ -265,31 +277,31 @@ function shapePath(id: string, cx: number, cy: number, r: number): string {
         <!-- オンボーディング中のパルスリング -->
         <g v-if="!onboarded">
           <circle :cx="centerPos.x" :cy="centerPos.y" :r="NODE_R"
-            fill="none" stroke="white" stroke-width="0.8"
+            fill="none" :stroke="svgStroke" stroke-width="0.8"
             class="pulse-ring pulse-ring-0" />
           <circle :cx="centerPos.x" :cy="centerPos.y" :r="NODE_R"
-            fill="none" stroke="white" stroke-width="0.8"
+            fill="none" :stroke="svgStroke" stroke-width="0.8"
             class="pulse-ring pulse-ring-1" />
           <circle :cx="centerPos.x" :cy="centerPos.y" :r="NODE_R"
-            fill="none" stroke="white" stroke-width="0.6"
+            fill="none" :stroke="svgStroke" stroke-width="0.6"
             class="pulse-ring pulse-ring-2" />
         </g>
 
         <!-- ホバー/録音時の光彩 -->
         <circle
           :cx="centerPos.x" :cy="centerPos.y" :r="NODE_R + 16"
-          fill="white"
+          :fill="glowColor"
           :opacity="recording ? 0.08 : (hovered === 'center' ? 0.06 : (!onboarded ? 0.04 : 0.02))"
           style="transition: opacity 0.2s"
         />
 
         <!-- 本体 -->
-        <circle :cx="centerPos.x" :cy="centerPos.y" :r="NODE_R" fill="white" />
+        <circle :cx="centerPos.x" :cy="centerPos.y" :r="NODE_R" :fill="nodeColor" />
         <g :transform="`translate(${centerPos.x - ICON_H}, ${centerPos.y - ICON_H}) scale(${ICON_S})`">
           <path
             :d="recording ? STOP_PATH : MIC_PATH"
             fill="none"
-            :stroke="recording ? '#ef4444' : '#1f2937'"
+            :stroke="recording ? '#ef4444' : iconColor"
             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
             vector-effect="non-scaling-stroke"
             style="transition: stroke 0.2s"
@@ -301,7 +313,7 @@ function shapePath(id: string, cx: number, cy: number, r: number): string {
           v-if="!onboarded"
           :x="centerPos.x" :y="centerPos.y + NODE_R + 24"
           text-anchor="middle"
-          fill="rgba(255,255,255,0.55)"
+          :fill="hintText"
           font-size="11"
           font-family="system-ui, -apple-system, sans-serif"
           letter-spacing="0.1em"
@@ -351,17 +363,29 @@ function shapePath(id: string, cx: number, cy: number, r: number): string {
         >
           <circle
             :cx="node.x + NODE_R + 2" :cy="node.y - NODE_R - 2"
-            r="7" fill="#111827"
-            stroke="rgba(255,255,255,0.22)" stroke-width="0.8"
+            r="7" :fill="removeBg"
+            :stroke="removeStroke" stroke-width="0.8"
           />
           <text
             :x="node.x + NODE_R + 2" :y="node.y - NODE_R - 2 + 3.5"
             text-anchor="middle"
-            fill="rgba(255,255,255,0.55)"
+            :fill="removeText"
             font-size="9" font-family="system-ui"
           >×</text>
         </g>
       </g>
+
+      <!-- 機能ラベル（配置済みノード名） -->
+      <text
+        v-for="node in placedNodes" :key="`lbl-${node.id}`"
+        :x="node.x"
+        :y="node.y + NODE_R + 16"
+        text-anchor="middle"
+        :fill="labelFill"
+        font-size="9"
+        font-family="system-ui, -apple-system, sans-serif"
+        letter-spacing="0.08em"
+      >{{ node.label }}</text>
     </svg>
 
     <!-- スキップボタン（オンボーディング中のみ） -->
@@ -371,7 +395,8 @@ function shapePath(id: string, cx: number, cy: number, r: number): string {
         class="absolute bottom-6 inset-x-0 flex justify-center pointer-events-none"
       >
         <button
-          class="pointer-events-auto text-white/20 hover:text-white/45 text-xs tracking-widest transition-colors cursor-pointer"
+          class="pointer-events-auto text-xs tracking-widest transition-colors cursor-pointer
+                 text-gray-300 hover:text-gray-500 dark:text-white/20 dark:hover:text-white/45"
           @click="skipOnboard"
         >スキップ</button>
       </div>

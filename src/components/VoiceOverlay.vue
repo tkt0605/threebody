@@ -37,23 +37,25 @@ const barRects = computed(() =>
         <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="emit('stop')" />
 
         <!-- Sheet -->
-        <div class="vo-sheet relative w-full max-w-md rounded-3xl bg-gray-900 border border-white/10 shadow-2xl px-8 pt-7 pb-8 flex flex-col items-center gap-5">
+        <div class="vo-sheet relative w-full max-w-md rounded-3xl shadow-2xl px-8 pt-7 pb-8 flex flex-col items-center gap-5
+                    bg-white border border-black/10
+                    dark:bg-gray-900 dark:border-white/10">
 
           <!-- Error -->
-          <p v-if="errorMsg" class="text-rose-400 text-sm text-center">{{ errorMsg }}</p>
+          <p v-if="errorMsg" class="text-rose-500 dark:text-rose-400 text-sm text-center">{{ errorMsg }}</p>
 
           <template v-else>
             <!-- Status row -->
             <div class="flex items-center gap-2">
               <span class="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-              <span class="text-xs text-white/50 tracking-widest uppercase">録音中</span>
+              <span class="text-xs tracking-widest uppercase text-gray-500 dark:text-white/50">録音中</span>
             </div>
 
             <!-- Transcript -->
             <div class="min-h-[2.5rem] text-center text-sm leading-relaxed px-2">
-              <span class="text-white/90">{{ finalText }}</span>
-              <span class="text-white/35">{{ interimText }}</span>
-              <span v-if="!finalText && !interimText" class="text-white/20">話しかけてください...</span>
+              <span class="text-gray-900 dark:text-white/90">{{ finalText }}</span>
+              <span class="text-gray-400 dark:text-white/35">{{ interimText }}</span>
+              <span v-if="!finalText && !interimText" class="text-gray-300 dark:text-white/20">話しかけてください...</span>
             </div>
 
             <!-- Waveform -->

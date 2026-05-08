@@ -14,7 +14,7 @@ defineProps<{ message: Message }>()
       :class="
         message.role === 'user'
           ? 'bg-indigo-600 text-white rounded-br-sm'
-          : 'bg-white/8 text-white/90 rounded-bl-sm backdrop-blur-sm'
+          : 'rounded-bl-sm backdrop-blur-sm bg-gray-100 text-gray-900 dark:bg-white/8 dark:text-white/90'
       "
     >
       <template v-for="block in message.blocks" :key="block.type">

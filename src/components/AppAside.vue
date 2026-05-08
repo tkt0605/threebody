@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import ThreeBodyLogo from './ThreeBodyLogo.vue'
 import SettingsDialog from './SettingsDialog.vue'
 import { FEATURES, useTriangleNodes } from '../composables/useTriangleNodes'
 import { useAuth } from '../composables/useAuth'
+import { useTheme } from '../composables/useTheme'
 
 const router = useRouter()
 const { user, logout } = useAuth()
+const { isDark } = useTheme()
 
 const settingsDialog = ref<InstanceType<typeof SettingsDialog> | null>(null)
 
@@ -37,21 +39,33 @@ function onDragStart(e: DragEvent, id: string) {
   e.dataTransfer.setData('featureId', id)
   e.dataTransfer.effectAllowed = 'copy'
 }
+
+const voiceBorderColor = computed(() =>
+  isDark.value ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.2)'
+)
+
+function labelColor(placed: boolean, hovered: boolean): string {
+  if (placed) return isDark.value ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.3)'
+  if (hovered) return isDark.value ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.9)'
+  return isDark.value ? 'rgba(255,255,255,0.70)' : 'rgba(0,0,0,0.65)'
+}
 </script>
 
 <template>
-  <aside class="flex flex-col w-60 h-screen border-r border-white/8 shrink-0">
+  <aside class="flex flex-col w-60 h-screen border-r border-black/8 dark:border-white/8 shrink-0 bg-gray-50 dark:bg-gray-950">
     <!-- Logo -->
     <div class="flex items-center gap-2.5 px-5 py-2">
       <ThreeBodyLogo />
-      <span class="text-white/90 font-semibold tracking-wide text-sm">ThreeBody</span>
+      <span class="text-gray-900 dark:text-white/90 font-semibold tracking-wide text-sm">ThreeBody</span>
     </div>
 
     <!-- Actions -->
-    <div class="px-3 py-3 border-b border-white/8 space-y-1.5">
+    <div class="px-3 py-3 border-b border-black/8 dark:border-white/8 space-y-1.5">
       <!-- 設定変更 -->
       <button
-        class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-white/55 hover:text-white/90 hover:bg-white/6 text-sm transition-colors cursor-pointer"
+        class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer
+               text-gray-600 hover:text-gray-900 hover:bg-gray-200/70
+               dark:text-white/55 dark:hover:text-white/90 dark:hover:bg-white/6"
         @click="settingsDialog?.open()"
       >
         <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -65,8 +79,8 @@ function onDragStart(e: DragEvent, id: string) {
       <button
         class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer"
         :class="built
-          ? 'bg-emerald-600/20 text-emerald-400'
-          : 'bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/30 hover:text-indigo-300'"
+          ? 'bg-emerald-600/20 text-emerald-600 dark:text-emerald-400'
+          : 'bg-indigo-600/20 text-indigo-600 hover:bg-indigo-600/30 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300'"
         :disabled="building"
         @click="build"
       >
@@ -84,27 +98,26 @@ function onDragStart(e: DragEvent, id: string) {
     </div>
 
     <!-- Feature palette: drag to add to triangle -->
-    <div class="px-3 py-3 border-b border-white/8">
-      <p class="text-[10px] text-white/25 uppercase tracking-widest mb-2 px-1">三体に追加</p>
+    <div class="px-3 py-3 border-b border-black/8 dark:border-white/8">
+      <p class="text-[10px] text-gray-400 dark:text-white/25 uppercase tracking-widest mb-2 px-1">三体に追加</p>
 
       <!-- Voice: always at center, not draggable -->
       <div
         class="flex items-center gap-3 px-2 py-2 rounded-xl text-sm select-none cursor-default border-l-2 opacity-40"
-        style="border-left-color: rgba(255,255,255,0.4);"
+        :style="{ borderLeftColor: voiceBorderColor }"
       >
         <div
-          class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
-          style="background: rgba(255,255,255,0.08);"
+          class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-black/8 dark:bg-white/8"
         >
-          <svg class="w-3.5 h-3.5 text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <svg class="w-3.5 h-3.5 text-gray-500 dark:text-white/60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
             <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" stroke-linecap="round" stroke-linejoin="round"/>
             <path d="M19 10v2a7 7 0 01-14 0v-2" stroke-linecap="round" stroke-linejoin="round"/>
             <line x1="12" y1="19" x2="12" y2="23" stroke-linecap="round"/>
             <line x1="8" y1="23" x2="16" y2="23" stroke-linecap="round"/>
           </svg>
         </div>
-        <span class="text-white/55">Voice</span>
-        <span class="ml-auto text-[10px] text-white/35">重心</span>
+        <span class="text-gray-600 dark:text-white/55">Voice</span>
+        <span class="ml-auto text-[10px] text-gray-400 dark:text-white/35">重心</span>
       </div>
 
       <!-- Draggable features -->
@@ -138,11 +151,11 @@ function onDragStart(e: DragEvent, id: string) {
 
         <span
           class="transition-colors duration-150"
-          :style="{ color: isPlaced(feat.id) ? 'rgba(255,255,255,0.35)' : (hoveredId === feat.id ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.70)') }"
+          :style="{ color: labelColor(isPlaced(feat.id), hoveredId === feat.id) }"
         >{{ feat.name }}</span>
 
         <!-- drag handle (unplaced) -->
-        <svg v-if="!isPlaced(feat.id)" class="ml-auto w-3 h-3 text-white/25" viewBox="0 0 24 24" fill="currentColor">
+        <svg v-if="!isPlaced(feat.id)" class="ml-auto w-3 h-3 text-gray-300 dark:text-white/25" viewBox="0 0 24 24" fill="currentColor">
           <circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/>
           <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
           <circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/>
@@ -158,17 +171,17 @@ function onDragStart(e: DragEvent, id: string) {
     <nav class="flex-1 overflow-y-auto px-3 py-2" />
 
     <!-- ユーザー情報 + ログアウト -->
-    <div class="px-3 py-3 border-t border-white/8">
+    <div class="px-3 py-3 border-t border-black/8 dark:border-white/8">
       <div class="flex items-center gap-2.5 px-2 py-2 rounded-xl group">
         <!-- アバター -->
-        <div class="w-7 h-7 rounded-lg bg-indigo-600/30 border border-indigo-500/30 flex items-center justify-center shrink-0">
-          <span class="text-indigo-300 text-xs font-semibold uppercase">{{ user?.email?.charAt(0) ?? '?' }}</span>
+        <div class="w-7 h-7 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center shrink-0">
+          <span class="text-indigo-600 dark:text-indigo-300 text-xs font-semibold uppercase">{{ user?.email?.charAt(0) ?? '?' }}</span>
         </div>
         <!-- メール -->
-        <span class="flex-1 text-xs text-white/45 truncate">{{ user?.email }}</span>
+        <span class="flex-1 text-xs text-gray-500 dark:text-white/45 truncate">{{ user?.email }}</span>
         <!-- ログアウト -->
         <button
-          class="opacity-0 group-hover:opacity-100 text-white/30 hover:text-rose-400 transition-all cursor-pointer"
+          class="opacity-0 group-hover:opacity-100 transition-all cursor-pointer text-gray-400 hover:text-rose-500 dark:text-white/30 dark:hover:text-rose-400"
           title="ログアウト"
           @click="handleLogout"
         >
