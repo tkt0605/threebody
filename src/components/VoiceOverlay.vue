@@ -11,6 +11,7 @@ const props = defineProps<{
   voiceActive: boolean
   responseText: string
   responseStreaming: boolean
+  ttsSpeaking: boolean
 }>()
 
 const emit = defineEmits<{ stop: []; dismiss: [] }>()
@@ -90,15 +91,18 @@ const visible = computed(() => props.recording || !!props.errorMsg || props.voic
             </button>
           </template>
 
-          <!-- ── AI応答中 ── -->
+          <!-- ── AI応答中 / 読み上げ中 ── -->
           <template v-else-if="voiceActive">
             <div class="flex items-center gap-2">
               <span v-if="responseStreaming" class="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
-              <svg v-else class="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <span v-else-if="ttsSpeaking" class="tts-bars">
+                <span /><span /><span /><span />
+              </span>
+              <svg v-else class="w-3.5 h-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
               <span class="text-xs tracking-widest uppercase text-gray-500 dark:text-white/50">
-                {{ responseStreaming ? 'AI応答中' : '応答完了' }}
+                {{ responseStreaming ? 'AI応答中' : ttsSpeaking ? '読み上げ中' : '応答完了' }}
               </span>
             </div>
 
@@ -109,10 +113,13 @@ const visible = computed(() => props.recording || !!props.errorMsg || props.voic
             </div>
 
             <button
-              class="px-6 py-2 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-sm text-white/70 transition-colors cursor-pointer"
+              class="px-6 py-2 rounded-full border text-sm transition-colors cursor-pointer"
+              :class="ttsSpeaking
+                ? 'bg-rose-500/15 border-rose-500/40 text-rose-300 hover:bg-rose-500/25'
+                : 'bg-white/10 border-white/15 text-white/70 hover:bg-white/20'"
               @click="emit('dismiss')"
             >
-              閉じる
+              {{ ttsSpeaking ? '停止' : '閉じる' }}
             </button>
           </template>
         </div>
@@ -132,5 +139,28 @@ const visible = computed(() => props.recording || !!props.errorMsg || props.voic
 @keyframes sheet-up {
   from { transform: translateY(24px); opacity: 0; }
   to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* TTS 読み上げ中バー */
+.tts-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+}
+.tts-bars span {
+  display: block;
+  width: 3px;
+  border-radius: 2px;
+  background: #818cf8;
+  animation: tts-bar 0.9s ease-in-out infinite;
+}
+.tts-bars span:nth-child(1) { animation-delay: 0s;    height: 6px; }
+.tts-bars span:nth-child(2) { animation-delay: 0.15s; height: 10px; }
+.tts-bars span:nth-child(3) { animation-delay: 0.3s;  height: 14px; }
+.tts-bars span:nth-child(4) { animation-delay: 0.45s; height: 8px; }
+@keyframes tts-bar {
+  0%, 100% { transform: scaleY(0.4); opacity: 0.5; }
+  50%       { transform: scaleY(1);   opacity: 1;   }
 }
 </style>

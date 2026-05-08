@@ -2,6 +2,8 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { useVoiceInput } from '../composables/useVoiceInput'
 import { useChat } from '../composables/useChat'
+import { useTTS } from '../composables/useTTS'
+import { useSettings } from '../composables/useSettings'
 import { useTriangleNodes, FEATURES, type FeatureId } from '../composables/useTriangleNodes'
 import { useTheme } from '../composables/useTheme'
 import VoiceOverlay from './VoiceOverlay.vue'
@@ -126,6 +128,8 @@ const mcpDialogRef  = ref<InstanceType<typeof McpDialog>  | null>(null)
 const ctxDialogRef  = ref<InstanceType<typeof ContextDialog> | null>(null)
 
 const { sendMessage, messages } = useChat()
+const { speak, cancel: cancelTTS, speaking: ttsSpeaking } = useTTS()
+const { settings } = useSettings()
 
 const voiceActive    = ref(false)
 const responseText   = computed(() => {
@@ -146,10 +150,18 @@ watch(
   () => messages.value.at(-1)?.streaming,
   (streaming) => {
     if (voiceActive.value && streaming === false) {
-      setTimeout(() => { voiceActive.value = false }, 2000)
+      const lang = settings.language === 'ja' ? 'ja-JP' : 'en-US'
+      speak(responseText.value, lang, () => {
+        setTimeout(() => { voiceActive.value = false }, 800)
+      })
     }
   },
 )
+
+function onDismiss() {
+  cancelTTS()
+  voiceActive.value = false
+}
 
 function triggerNode(id: DragId) {
   if (id === 'center') {
@@ -429,9 +441,10 @@ function shapePath(id: string, cx: number, cy: number, r: number): string {
   <VoiceOverlay
     :recording="recording" :bars="bars" :bar-count="BAR_COUNT"
     :final-text="finalText" :interim-text="interimText" :error-msg="errorMsg"
-    :voice-active="voiceActive" :response-text="responseText" :response-streaming="responseStreaming"
+    :voice-active="voiceActive" :response-text="responseText"
+    :response-streaming="responseStreaming" :tts-speaking="ttsSpeaking"
     @stop="stop"
-    @dismiss="voiceActive = false"
+    @dismiss="onDismiss"
   />
 
   <!-- Dialogs -->
