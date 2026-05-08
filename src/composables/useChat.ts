@@ -2,6 +2,19 @@ import { ref } from 'vue'
 import type { Message, TextBlock } from '../types/message'
 import { useSettings } from './useSettings'
 
+function classifyError(err: unknown): string {
+  if (err instanceof TypeError && err.message.toLowerCase().includes('fetch')) {
+    return 'ネットワークに接続できません。バックエンドが起動しているか確認してください。'
+  }
+  if (err instanceof Error) {
+    if (err.message.startsWith('HTTP 429')) return 'APIの利用制限に達しました。しばらく経ってから再試行してください。'
+    if (err.message.startsWith('HTTP 5'))   return `サーバーエラーが発生しました (${err.message})。`
+    if (err.message.startsWith('HTTP '))    return `リクエストが失敗しました (${err.message})。`
+    return err.message
+  }
+  return String(err)
+}
+
 const messages = ref<Message[]>([])
 
 function createId() {
@@ -82,7 +95,8 @@ export function useChat() {
         }
       }
     } catch (err) {
-      block.content = `エラー: ${err instanceof Error ? err.message : String(err)}`
+      if (!block.content) assistantMsg.blocks.shift()
+      assistantMsg.blocks.push({ type: 'error', message: classifyError(err) })
     } finally {
       assistantMsg.streaming = false
     }
