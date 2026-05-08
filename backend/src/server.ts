@@ -74,7 +74,6 @@ async function streamOpenAICompat(
   maxTokens: number,
   systemPrompt: string,
 ) {
-
   const systemMessages: OpenAI.Chat.ChatCompletionMessageParam[] = systemPrompt
     ? [{ role: 'system', content: systemPrompt }]
     : []
@@ -98,7 +97,7 @@ app.post('/api/chat', async (req, res) => {
   const {
     messages,
     thinkingLevel = 3,
-    systemPrompt  = '',
+    systemPrompt  = 'You are a helpful assistant. Please respond in Japanese.',
     provider      = 'ollama',
   } = req.body as {
     messages:      Anthropic.MessageParam[]
