@@ -1,5 +1,6 @@
 import { ref } from 'vue'
-import type { Message } from '../types/message'
+import type { Message, TextBlock } from '../types/message'
+import { useSettings } from './useSettings'
 
 const messages = ref<Message[]>([])
 
@@ -7,8 +8,20 @@ function createId() {
   return crypto.randomUUID()
 }
 
+function toApiMessages(msgs: Message[]) {
+  return msgs.map(m => ({
+    role: m.role,
+    content: m.blocks
+      .filter((b): b is TextBlock => b.type === 'text')
+      .map(b => b.content)
+      .join(''),
+  }))
+}
+
 export function useChat() {
-  function sendMessage(text: string) {
+  const { settings } = useSettings()
+
+  async function sendMessage(text: string) {
     const userMsg: Message = {
       id: createId(),
       role: 'user',
@@ -17,36 +30,62 @@ export function useChat() {
     }
     messages.value.push(userMsg)
 
-    // Mock assistant response
     const assistantMsg: Message = {
       id: createId(),
       role: 'assistant',
-      blocks: [{ type: 'text', content: '...' }],
+      blocks: [{ type: 'text', content: '' }],
       timestamp: new Date(),
       streaming: true,
     }
     messages.value.push(assistantMsg)
 
-    simulateStream(assistantMsg.id, `「${text}」を受け取りました。`)
-  }
+    const block = assistantMsg.blocks[0] as TextBlock
 
-  function simulateStream(id: string, text: string) {
-    const msg = messages.value.find(m => m.id === id)
-    if (!msg) return
-    const block = msg.blocks[0]
-    if (block?.type !== 'text') return
+    try {
+      const response = await fetch('http://localhost:3000/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: toApiMessages(messages.value.slice(0, -1)),
+          thinkingLevel: settings.thinkingLevel,
+          systemPrompt: settings.systemPrompt || 'You are a helpful assistant. Please respond in Japanese.',
+          provider: settings.provider,
+        }),
+      })
 
-    block.content = ''
-    let i = 0
-    const interval = setInterval(() => {
-      if (i >= text.length) {
-        clearInterval(interval)
-        msg.streaming = false
-        return
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP ${response.status}`)
       }
-      block.content += text[i]
-      i++
-    }, 30)
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      outer: while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const data = line.slice(6)
+          if (data === '[DONE]') break outer
+          try {
+            const parsed = JSON.parse(data) as { type: string; content?: string; message?: string }
+            if (parsed.type === 'text' && parsed.content) block.content += parsed.content
+            if (parsed.type === 'error') throw new Error(parsed.message)
+          } catch (e) {
+            if (e instanceof SyntaxError) continue
+            throw e
+          }
+        }
+      }
+    } catch (err) {
+      block.content = `エラー: ${err instanceof Error ? err.message : String(err)}`
+    } finally {
+      assistantMsg.streaming = false
+    }
   }
 
   return { messages, sendMessage }
