@@ -1,10 +1,17 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
-import { useSettings, type Language, type ThinkingLevel } from '../composables/useSettings'
+import { useSettings, type Language, type ThinkingLevel, type Provider } from '../composables/useSettings'
 
 const { settings } = useSettings()
 
 const dialogRef = ref<HTMLDialogElement | null>(null)
+
+const PROVIDERS: { value: Provider; label: string; desc: string }[] = [
+  { value: 'ollama',    label: 'Ollama',    desc: 'ローカル（無料）' },
+  { value: 'anthropic', label: 'Claude',    desc: 'Anthropic API' },
+  { value: 'openai',    label: 'GPT',       desc: 'OpenAI API' },
+  { value: 'deepseek',  label: 'DeepSeek',  desc: 'DeepSeek API' },
+]
 
 const THINKING_LEVELS: { value: ThinkingLevel; label: string; desc: string; color: string }[] = [
   { value: 1, label: '速答', desc: '考えずに即答',     color: '#64748b' },
@@ -19,6 +26,7 @@ const draft = reactive({
   language: settings.language,
   thinkingLevel: settings.thinkingLevel,
   systemPrompt: settings.systemPrompt,
+  provider: settings.provider,
   mcpServers: settings.mcpServers.map(s => ({ ...s })),
 })
 
@@ -26,6 +34,7 @@ function open() {
   draft.language = settings.language
   draft.thinkingLevel = settings.thinkingLevel
   draft.systemPrompt = settings.systemPrompt
+  draft.provider = settings.provider
   draft.mcpServers = settings.mcpServers.map(s => ({ ...s }))
   dialogRef.value?.showModal()
 }
@@ -38,6 +47,7 @@ function save() {
   settings.language = draft.language
   settings.thinkingLevel = draft.thinkingLevel
   settings.systemPrompt = draft.systemPrompt
+  settings.provider = draft.provider
   settings.mcpServers.forEach((s, i) => {
     s.enabled = draft.mcpServers[i]?.enabled ?? s.enabled
   })
@@ -67,6 +77,25 @@ defineExpose({ open })
 
           <!-- Body -->
           <div class="px-6 py-5 space-y-6">
+
+            <!-- プロバイダー -->
+            <div class="space-y-2">
+              <label class="text-xs font-medium text-white/50 uppercase tracking-widest">プロバイダー</label>
+              <div class="grid grid-cols-2 gap-1.5">
+                <button
+                  v-for="opt in PROVIDERS"
+                  :key="opt.value"
+                  class="flex flex-col items-start px-3 py-2 rounded-xl text-xs transition-colors cursor-pointer border"
+                  :class="draft.provider === opt.value
+                    ? 'bg-indigo-600/20 border-indigo-500/60 text-indigo-300'
+                    : 'bg-white/4 border-white/7 text-white/45 hover:text-white/70 hover:bg-white/8'"
+                  @click="draft.provider = opt.value"
+                >
+                  <span class="font-semibold">{{ opt.label }}</span>
+                  <span class="text-white/35 mt-0.5">{{ opt.desc }}</span>
+                </button>
+              </div>
+            </div>
 
             <!-- 言語 -->
             <div class="space-y-2">
