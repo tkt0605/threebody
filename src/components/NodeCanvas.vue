@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { useVoiceInput } from '../composables/useVoiceInput'
 import { useChat } from '../composables/useChat'
 import { useTriangleNodes, FEATURES, type FeatureId } from '../composables/useTriangleNodes'
@@ -125,9 +125,31 @@ const chatDialogRef = ref<InstanceType<typeof ChatDialog> | null>(null)
 const mcpDialogRef  = ref<InstanceType<typeof McpDialog>  | null>(null)
 const ctxDialogRef  = ref<InstanceType<typeof ContextDialog> | null>(null)
 
-const { sendMessage } = useChat()
+const { sendMessage, messages } = useChat()
+
+const voiceActive    = ref(false)
+const responseText   = computed(() => {
+  const last = messages.value.at(-1)
+  if (last?.role !== 'assistant') return ''
+  const block = last.blocks.find(b => b.type === 'text')
+  return block?.type === 'text' ? block.content : ''
+})
+const responseStreaming = computed(() => messages.value.at(-1)?.streaming === true)
+
 const { recording, finalText, interimText, bars, errorMsg, BAR_COUNT, start, stop } =
-  useVoiceInput((text) => sendMessage(text))
+  useVoiceInput((text) => {
+    voiceActive.value = true
+    sendMessage(text)
+  })
+
+watch(
+  () => messages.value.at(-1)?.streaming,
+  (streaming) => {
+    if (voiceActive.value && streaming === false) {
+      setTimeout(() => { voiceActive.value = false }, 2000)
+    }
+  },
+)
 
 function triggerNode(id: DragId) {
   if (id === 'center') {
@@ -407,7 +429,9 @@ function shapePath(id: string, cx: number, cy: number, r: number): string {
   <VoiceOverlay
     :recording="recording" :bars="bars" :bar-count="BAR_COUNT"
     :final-text="finalText" :interim-text="interimText" :error-msg="errorMsg"
+    :voice-active="voiceActive" :response-text="responseText" :response-streaming="responseStreaming"
     @stop="stop"
+    @dismiss="voiceActive = false"
   />
 
   <!-- Dialogs -->
