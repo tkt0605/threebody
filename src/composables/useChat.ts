@@ -43,16 +43,17 @@ export function useChat() {
     }
     messages.value.push(userMsg)
 
-    const assistantMsg: Message = {
+    messages.value.push({
       id: createId(),
       role: 'assistant',
       blocks: [{ type: 'text', content: '' }],
       timestamp: new Date(),
       streaming: true,
-    }
-    messages.value.push(assistantMsg)
+    })
 
-    const block = assistantMsg.blocks[0] as TextBlock
+    // push後にリアクティブ配列経由で参照することで Vue の Proxy を通す
+    const reactiveMsg = messages.value[messages.value.length - 1]!
+    const block = reactiveMsg.blocks[0] as TextBlock
 
     try {
       const response = await fetch('http://localhost:3000/api/chat', {
@@ -95,10 +96,10 @@ export function useChat() {
         }
       }
     } catch (err) {
-      if (!block.content) assistantMsg.blocks.shift()
-      assistantMsg.blocks.push({ type: 'error', message: classifyError(err) })
+      if (!block.content) reactiveMsg.blocks.shift()
+      reactiveMsg.blocks.push({ type: 'error', message: classifyError(err) })
     } finally {
-      assistantMsg.streaming = false
+      reactiveMsg.streaming = false  // Proxy 経由で書くことで watch を発火させる
     }
   }
 
