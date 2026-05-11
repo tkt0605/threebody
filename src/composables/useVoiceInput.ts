@@ -41,11 +41,25 @@ export function useVoiceInput(onFinish: (text: string) => void) {
   let raf:         number             | null = null
 
   function drawBars() {
-    if (!analyser) return
+    if (!analyser || !audioCtx) return
     const data = new Uint8Array(analyser.frequencyBinCount)
     analyser.getByteFrequencyData(data)
-    const step = Math.floor(data.length / BAR_COUNT)
-    bars.value = Array.from({ length: BAR_COUNT }, (_, i) => (data[i * step] ?? 0) / 255)
+
+    // 声域 80Hz〜4000Hz の範囲だけを32バーにマッピング
+    const nyquist = audioCtx.sampleRate / 2
+    const minBin = Math.floor(80 / nyquist * analyser.frequencyBinCount)
+    const maxBin = Math.ceil(4000 / nyquist * analyser.frequencyBinCount)
+    const range = maxBin - minBin
+
+    bars.value = Array.from({ length: BAR_COUNT }, (_, i) => {
+      const lo = minBin + Math.floor(i * range / BAR_COUNT)
+      const hi = minBin + Math.floor((i + 1) * range / BAR_COUNT)
+      const count = Math.max(hi - lo, 1)
+      let sum = 0
+      for (let j = lo; j < hi; j++) sum += data[j] ?? 0
+      // 知覚的なカーブ（小さな音量でも視覚的に反応させる）
+      return Math.pow(sum / count / 255, 0.65)
+    })
     raf = requestAnimationFrame(drawBars)
   }
 
@@ -67,7 +81,10 @@ export function useVoiceInput(onFinish: (text: string) => void) {
 
     audioCtx = new AudioContext()
     analyser = audioCtx.createAnalyser()
-    analyser.fftSize = 128
+    analyser.fftSize = 1024
+    analyser.smoothingTimeConstant = 0.8
+    analyser.minDecibels = -85
+    analyser.maxDecibels = -10
     audioCtx.createMediaStreamSource(stream).connect(analyser)
     raf = requestAnimationFrame(drawBars)
 

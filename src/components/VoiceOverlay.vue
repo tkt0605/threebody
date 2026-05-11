@@ -16,19 +16,25 @@ const props = defineProps<{
 
 const emit = defineEmits<{ stop: []; dismiss: [] }>()
 
-const BAR_W  = 6
-const BAR_GAP = 5
-const SVG_H  = 72
-const CENTER = SVG_H / 2
-const MAX_HALF = 30
+const BAR_W   = 5
+const BAR_GAP = 4
+const SVG_H   = 72
+const CENTER  = SVG_H / 2
+const MAX_HALF = 32
 
 const svgWidth = computed(() => props.barCount * (BAR_W + BAR_GAP))
 
 const barRects = computed(() =>
   Array.from({ length: props.barCount }, (_, i) => {
     const v = props.bars[i] ?? 0
-    const h = Math.max(3, v * MAX_HALF) * 2
-    return { x: i * (BAR_W + BAR_GAP), y: CENTER - h / 2, h }
+    // 最低高さ2px、音量に応じて伸びる
+    const half = Math.max(2, v * MAX_HALF)
+    const h = half * 2
+    // 音量が高いほど明るい青紫〜白に近づく
+    const opacity = 0.25 + 0.75 * v
+    const lightness = Math.round(60 + v * 35) // 60%〜95%
+    const color = `hsl(237, 80%, ${lightness}%)`
+    return { x: i * (BAR_W + BAR_GAP), y: CENTER - half, h, opacity, color }
   })
 )
 
@@ -70,6 +76,7 @@ const visible = computed(() => props.recording || !!props.errorMsg || props.voic
               :viewBox="`0 0 ${svgWidth} ${SVG_H}`"
               :style="{ width: '100%', height: '56px' }"
               preserveAspectRatio="xMidYMid meet"
+              class="voice-bars-svg"
             >
               <rect
                 v-for="(bar, i) in barRects"
@@ -78,8 +85,9 @@ const visible = computed(() => props.recording || !!props.errorMsg || props.voic
                 :y="bar.y"
                 :width="BAR_W"
                 :height="bar.h"
-                rx="3"
-                :fill="`rgba(129,140,248,${0.3 + 0.7 * (bars[i] ?? 0)})`"
+                rx="2.5"
+                :fill="bar.color"
+                :opacity="bar.opacity"
               />
             </svg>
 
@@ -129,6 +137,11 @@ const visible = computed(() => props.recording || !!props.errorMsg || props.voic
 </template>
 
 <style scoped>
+/* バーの高さ変化を補間してジャンプを防ぐ */
+.voice-bars-svg rect {
+  transition: height 0.05s ease-out, y 0.05s ease-out, fill 0.1s ease;
+}
+
 .vo-enter-active { transition: opacity 0.2s ease; }
 .vo-leave-active { transition: opacity 0.18s ease; }
 .vo-enter-from, .vo-leave-to { opacity: 0; }
