@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
-import { useSettings, type Language, type ThinkingLevel, type Provider } from '../composables/useSettings'
+import { useSettings, type Language, type ThinkingLevel, type Provider, type Sex } from '../composables/useSettings'
 import { useTheme } from '../composables/useTheme'
 
 const { settings } = useSettings()
@@ -13,6 +13,11 @@ const inactiveBtnStyle = computed(() => ({
 }))
 
 const dialogRef = ref<HTMLDialogElement | null>(null)
+
+const SEX_OPTIONS: {value: Sex; label: string}[]=[
+  { value: "man", label: "男性"},
+  { value: "woman", label: "女性"}
+]
 
 const PROVIDERS: { value: Provider; label: string; desc: string }[] = [
   { value: 'ollama',    label: 'Ollama',    desc: 'ローカル（無料）' },
@@ -31,6 +36,7 @@ const THINKING_LEVELS: { value: ThinkingLevel; label: string; desc: string; colo
 
 const draft = reactive({
   language: settings.language,
+  sex: settings.sex,
   thinkingLevel: settings.thinkingLevel,
   systemPrompt: settings.systemPrompt,
   provider: settings.provider,
@@ -39,6 +45,7 @@ const draft = reactive({
 
 function open() {
   draft.language = settings.language
+  draft.sex = settings.sex
   draft.thinkingLevel = settings.thinkingLevel
   draft.systemPrompt = settings.systemPrompt
   draft.provider = settings.provider
@@ -52,6 +59,7 @@ function close() {
 
 function save() {
   settings.language = draft.language
+  settings.sex = draft.sex
   settings.thinkingLevel = draft.thinkingLevel
   settings.systemPrompt = draft.systemPrompt
   settings.provider = draft.provider
@@ -127,7 +135,23 @@ defineExpose({ open })
               </button>
             </div>
           </div>
-
+          <!-- 性別 -->
+          <div class="space-y-2">
+            <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">性別</label>
+            <div class="flex gap-2">
+              <button
+                v-for="opt in ([{ value: 'man', label: '男性' }, { value: 'woman', label: '女性' }] as { value: Sex; label: string }[])"
+                :key="opt.value"
+                class="px-4 py-1.5 rounded-lg text-sm transition-colors cursor-pointer"
+                :class="draft.sex === opt.value
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-100 text-gray-500 hover:text-gray-800 hover:bg-gray-200 dark:bg-white/6 dark:text-white/50 dark:hover:text-white/80 dark:hover:bg-white/10'"
+                @click="draft.sex = opt.value"
+              >
+                {{ opt.label }}
+              </button>
+            </div>
+          </div>
           <!-- 思考レベル -->
           <div class="space-y-3">
             <div class="flex items-baseline justify-between">

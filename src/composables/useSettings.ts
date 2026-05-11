@@ -1,6 +1,7 @@
 import { reactive, watch } from 'vue'
 
 export type Language = 'ja' | 'en'
+export type Sex = 'man' | 'woman'
 export type ThinkingLevel = 1 | 2 | 3 | 4 | 5
 export type Provider = 'anthropic' | 'openai' | 'deepseek' | 'ollama'
 
@@ -12,6 +13,7 @@ export interface McpServer {
 
 export interface Settings {
   language: Language
+  sex: Sex
   thinkingLevel: ThinkingLevel
   systemPrompt: string
   provider: Provider
@@ -43,6 +45,7 @@ const settings = reactive<Settings>({
   thinkingLevel: (saved.thinkingLevel as ThinkingLevel) ?? 3,
   systemPrompt:  saved.systemPrompt                     ?? '',
   provider:      (saved.provider      as Provider)      ?? 'ollama',
+  sex:           (saved.sex           as Sex)           ?? 'man',
   mcpServers:    saved.mcpServers                       ?? DEFAULT_MCP_SERVERS,
 })
 
