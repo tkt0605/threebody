@@ -34,11 +34,13 @@ export function useVoiceInput(onFinish: (text: string) => void) {
   const bars       = ref<number[]>(Array(BAR_COUNT).fill(0))
   const errorMsg   = ref<string | null>(null)
 
-  let recognition: SpeechRecognitionAPI | null = null
-  let audioCtx:    AudioContext       | null = null
-  let analyser:    AnalyserNode       | null = null
-  let stream:      MediaStream        | null = null
-  let raf:         number             | null = null
+  let recognition:   SpeechRecognitionAPI | null = null
+  let audioCtx:      AudioContext         | null = null
+  let analyser:      AnalyserNode         | null = null
+  let stream:        MediaStream          | null = null
+  let raf:           number               | null = null
+  let silenceTimer:  ReturnType<typeof setTimeout> | null = null
+  const SILENCE_MS = 2500  // 発話後この時間静かなら自動送信
 
   function drawBars() {
     if (!analyser || !audioCtx) return
@@ -60,6 +62,18 @@ export function useVoiceInput(onFinish: (text: string) => void) {
       // 知覚的なカーブ（小さな音量でも視覚的に反応させる）
       return Math.pow(sum / count / 255, 0.65)
     })
+
+    // 発話が始まった後、沈黙が続いたら自動送信
+    const hasText = !!(finalText.value || interimText.value)
+    const avgVol  = bars.value.reduce((a, b) => a + b, 0) / BAR_COUNT
+    const silent  = avgVol < 0.06
+
+    if (hasText && silent) {
+      if (!silenceTimer) silenceTimer = setTimeout(() => stop(), SILENCE_MS)
+    } else {
+      if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null }
+    }
+
     raf = requestAnimationFrame(drawBars)
   }
 
@@ -119,6 +133,7 @@ export function useVoiceInput(onFinish: (text: string) => void) {
     recognition?.abort()
     recognition = null
 
+    if (silenceTimer !== null) { clearTimeout(silenceTimer); silenceTimer = null }
     if (raf !== null) { cancelAnimationFrame(raf); raf = null }
     stream?.getTracks().forEach(t => t.stop())
     stream = null

@@ -4,7 +4,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 import dotenv from 'dotenv'
 
-dotenv.config()
+dotenv.config({ path: new URL('../../.env', import.meta.url).pathname })
 
 const app = express()
 app.use(cors({ origin: 'http://localhost:5173' }))
@@ -31,11 +31,11 @@ type LevelConfig = {
 }
 
 const LEVEL_CONFIG: Record<number, LevelConfig> = {
-  1: { anthropicModel: 'claude-haiku-4-5-20251001', openaiModel: 'gpt-4o-mini',  deepseekModel: 'deepseek-chat',     ollamaModel: 'qwen2.5:0.5b', maxTokens: 2048 },
-  2: { anthropicModel: 'claude-haiku-4-5-20251001', openaiModel: 'gpt-4o-mini',  deepseekModel: 'deepseek-chat',     ollamaModel: 'qwen2.5:0.5b', maxTokens: 4096 },
-  3: { anthropicModel: 'claude-sonnet-4-6',         openaiModel: 'gpt-4o',       deepseekModel: 'deepseek-chat',     ollamaModel: 'qwen2.5:0.5b', maxTokens: 8192 },
-  4: { anthropicModel: 'claude-sonnet-4-6',         openaiModel: 'gpt-4o',       deepseekModel: 'deepseek-reasoner', ollamaModel: 'qwen2.5:0.5b', maxTokens: 16000, thinkingBudget: 8000 },
-  5: { anthropicModel: 'claude-opus-4-7',           openaiModel: 'o3',           deepseekModel: 'deepseek-reasoner', ollamaModel: 'qwen2.5:0.5b', maxTokens: 32000, thinkingBudget: 16000 },
+  1: { anthropicModel: 'claude-haiku-4-5-20251001', openaiModel: 'gpt-4o-mini',  deepseekModel: 'deepseek-chat',     ollamaModel: 'qwen2.5:7b', maxTokens: 2048 },
+  2: { anthropicModel: 'claude-haiku-4-5-20251001', openaiModel: 'gpt-4o-mini',  deepseekModel: 'deepseek-chat',     ollamaModel: 'qwen2.5:7b', maxTokens: 4096 },
+  3: { anthropicModel: 'claude-sonnet-4-6',         openaiModel: 'gpt-4o',       deepseekModel: 'deepseek-chat',     ollamaModel: 'qwen2.5:7b', maxTokens: 8192 },
+  4: { anthropicModel: 'claude-sonnet-4-6',         openaiModel: 'gpt-4o',       deepseekModel: 'deepseek-reasoner', ollamaModel: 'qwen2.5:7b', maxTokens: 16000, thinkingBudget: 8000 },
+  5: { anthropicModel: 'claude-opus-4-7',           openaiModel: 'o3',           deepseekModel: 'deepseek-reasoner', ollamaModel: 'qwen2.5:7b', maxTokens: 32000, thinkingBudget: 16000 },
 }
 
 type Provider = 'anthropic' | 'openai' | 'deepseek' | 'ollama'

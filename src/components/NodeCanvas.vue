@@ -132,7 +132,11 @@ const { speak, cancel: cancelTTS, speaking: ttsSpeaking } = useTTS()
 const { settings } = useSettings()
 
 const voiceActive    = ref(false)
+const greetText      = ref('')   // AI挨拶中に表示するテキスト
+const hasGreeted     = ref(false)
+
 const responseText   = computed(() => {
+  if (greetText.value) return greetText.value
   const last = messages.value.at(-1)
   if (last?.role !== 'assistant') return ''
   const block = last.blocks.find(b => b.type === 'text')
@@ -160,7 +164,21 @@ watch(
 
 function onDismiss() {
   cancelTTS()
+  greetText.value = ''
   voiceActive.value = false
+}
+
+// AI が先に挨拶し、読み上げ完了後に録音を自動開始する
+function greetAndListen() {
+  const greeting = 'こんにちは！何かお手伝いできることはありますか？'
+  greetText.value = greeting
+  voiceActive.value = true
+  speak(greeting, 'ja-JP', () => {
+    greetText.value = ''
+    voiceActive.value = false
+    // スピーカー残響がマイクに入らないよう500ms待ってから録音開始
+    setTimeout(() => { start() }, 500)
+  })
 }
 
 function triggerNode(id: DragId) {
@@ -169,7 +187,16 @@ function triggerNode(id: DragId) {
       onboarded.value = true
       setTimeout(() => { slotsSummoned.value = true }, 150)
     }
-    recording.value ? stop() : start()
+    if (recording.value) {
+      stop()
+    } else if (voiceActive.value) {
+      // 挨拶中 or AI応答中はタップ無効
+    } else if (!hasGreeted.value) {
+      hasGreeted.value = true
+      greetAndListen()
+    } else {
+      start()
+    }
   }
   else if (id === 'chat')   chatDialogRef.value?.open()
   else if (id === 'mcp')    mcpDialogRef.value?.open()
@@ -351,7 +378,7 @@ function shapePath(id: string, cx: number, cy: number, r: number): string {
           font-size="11"
           font-family="system-ui, -apple-system, sans-serif"
           letter-spacing="0.1em"
-        >まず話しかけてください</text>
+        >タップして話しかける</text>
       </g>
 
       <!-- 外点：placed nodes ──────────────────── -->
