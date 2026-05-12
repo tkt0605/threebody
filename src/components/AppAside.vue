@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import ThreeBodyLogo from './ThreeBodyLogo.vue'
 import SettingsDialog from './SettingsDialog.vue'
 import { FEATURES, useTriangleNodes } from '../composables/useTriangleNodes'
@@ -8,6 +8,7 @@ import { useAuth } from '../composables/useAuth'
 import { useTheme } from '../composables/useTheme'
 
 const router = useRouter()
+const route  = useRoute()
 const { user, logout } = useAuth()
 const { isDark } = useTheme()
 
@@ -167,8 +168,33 @@ function labelColor(placed: boolean, hovered: boolean): string {
       </div>
     </div>
 
-    <!-- 会話リスト (placeholder) -->
-    <nav class="flex-1 overflow-y-auto px-3 py-2" />
+    <!-- ナビゲーション -->
+    <nav class="flex-1 overflow-y-auto px-3 py-2 space-y-0.5">
+      <button
+        class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer"
+        :class="route.path === '/'
+          ? 'bg-indigo-600/15 text-indigo-600 dark:text-indigo-400'
+          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70 dark:text-white/55 dark:hover:text-white/90 dark:hover:bg-white/6'"
+        @click="router.push('/')"
+      >
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        チャット
+      </button>
+      <button
+        class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer"
+        :class="route.path === '/aozora'
+          ? 'bg-indigo-600/15 text-indigo-600 dark:text-indigo-400'
+          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70 dark:text-white/55 dark:hover:text-white/90 dark:hover:bg-white/6'"
+        @click="router.push('/recreate_film')"
+      >
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        文庫作品
+      </button>
+    </nav>
 
     <!-- ユーザー情報 + ログアウト -->
     <div class="px-3 py-3 border-t border-black/8 dark:border-white/8">
