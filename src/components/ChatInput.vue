@@ -72,6 +72,10 @@ function onKeydown(e: KeyboardEvent) {
     :final-text="finalText"
     :interim-text="interimText"
     :error-msg="errorMsg"
+    :voice-active="false"
+    :response-text="''"
+    :response-streaming="false"
+    :tts-speaking="false"
     @stop="stop"
   />
 </template>
