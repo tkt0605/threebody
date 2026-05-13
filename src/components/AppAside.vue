@@ -33,7 +33,7 @@ function build() {
 <template>
   <aside class="flex flex-col w-52 h-screen border-r border-black/8 dark:border-white/8 shrink-0 bg-gray-50 dark:bg-gray-950">
     <!-- ロゴ -->
-    <div class="flex items-center gap-2.5 px-5 py-3.5 border-b border-black/8 dark:border-white/8">
+    <div class="flex items-center gap-2.5 px-5 py-3 border-b border-black/8 dark:border-white/8">
       <ThreeBodyLogo />
       <span class="text-gray-900 dark:text-white/90 font-semibold tracking-wide text-sm">ThreeBody</span>
     </div>
@@ -104,7 +104,7 @@ function build() {
     </nav>
 
     <!-- ユーザー -->
-    <div class="px-2 py-2 border-t border-black/8 dark:border-white/8">
+    <div class="px-2 py-5.75 border-t border-black/8 dark:border-white/8">
       <!-- ユーザー -->
       <div class="flex items-center gap-2 px-3 py-2 rounded-xl group">
         <div class="w-6 h-6 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center shrink-0">
