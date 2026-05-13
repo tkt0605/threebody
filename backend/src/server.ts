@@ -97,7 +97,7 @@ app.post('/api/chat', async (req, res) => {
   const {
     messages,
     thinkingLevel = 3,
-    systemPrompt  = 'You are a helpful assistant. Please respond in Japanese.',
+    systemPrompt  = "あなたは、駒田隆人によって構築されたAIアシスタントです。言語形態は日本語で固定。ユーザーの質問に対して、正確かつ簡潔に答えてください。必要に応じて、関連する情報を提供したり、ユーザーの質問を明確にするための追加の質問をしてください。",
     provider      = 'ollama',
   } = req.body as {
     messages:      Anthropic.MessageParam[]
