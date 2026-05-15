@@ -7,12 +7,11 @@ import { useFaceAuth } from '../composables/useFaceAuth'
 import { useLiveness } from '../composables/useLiveness'
 import ThreeBodyLogo from '../components/ThreeBodyLogo.vue'
 
-type Phase = 'email' | 'face' | 'otp' | 'done'
+type Phase = 'email' | 'face' | 'done'
 
 const router  = useRouter()
 const phase   = ref<Phase>('email')
 const email   = ref('')
-const otp     = ref('')
 const error   = ref('')
 const loading = ref(false)
 const status  = ref('')
@@ -22,7 +21,7 @@ let stream:  MediaStream | null = null
 let timerId: ReturnType<typeof setInterval> | null = null
 let faceVerified = false
 
-const { loadModels, verifyFace }                                     = useFaceAuth()
+const { loadModels }                                                 = useFaceAuth()
 const { init: initLiveness, currentLabel, progress, completed: livenessOK, processFace } = useLiveness()
 
 // ── Phase 1 → 2 ───────────────────────────────────────────────────────────
@@ -85,10 +84,15 @@ function startDetection() {
 
       try {
         const descriptor = Array.from(result.descriptor) as number[]
-        const match      = await verifyFace(email.value.trim(), descriptor)
+        const response   = await fetch('http://localhost:3000/api/auth/face/login', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ email: email.value.trim(), descriptor }),
+        })
+        const loginData = await response.json()
 
-        if (!match) {
-          error.value   = '顔が一致しません。登録した顔で再試行してください。'
+        if (!response.ok) {
+          error.value   = loginData.error ?? '顔の確認に失敗しました'
           loading.value = false
           faceVerified  = false
           initLiveness()
@@ -96,7 +100,16 @@ function startDetection() {
           return
         }
 
-        await toOtpPhase()
+        const { error: sessionError } = await supabase.auth.verifyOtp({
+          token_hash: loginData.token_hash,
+          type: 'magiclink',
+        })
+        if (sessionError) throw sessionError
+
+        phase.value   = 'done'
+        loading.value = false
+        stopCamera()
+        setTimeout(() => router.push('/'), 1200)
       } catch (e) {
         error.value   = e instanceof Error ? e.message : '顔の確認中にエラーが発生しました'
         loading.value = false
@@ -110,45 +123,6 @@ function startDetection() {
 
 function stopDetection() {
   if (timerId) { clearInterval(timerId); timerId = null }
-}
-
-// ── Phase 2 → 3 ───────────────────────────────────────────────────────────
-async function toOtpPhase() {
-  stopCamera()
-  loading.value = true
-  status.value  = ''
-
-  const { error: otpError } = await supabase.auth.signInWithOtp({ email: email.value.trim() })
-  if (otpError) {
-    error.value   = otpError.message
-    loading.value = false
-    return
-  }
-
-  loading.value = false
-  phase.value   = 'otp'
-}
-
-// ── Phase 3 → 4 ───────────────────────────────────────────────────────────
-async function verifyOtp() {
-  if (otp.value.trim().length !== 6) { error.value = '6桁のコードを入力してください'; return }
-  error.value   = ''
-  loading.value = true
-
-  const { error: err } = await supabase.auth.verifyOtp({
-    email: email.value.trim(),
-    token: otp.value.trim(),
-    type:  'email',
-  })
-
-  if (err) {
-    error.value   = err.message
-    loading.value = false
-    return
-  }
-
-  phase.value = 'done'
-  setTimeout(() => router.push('/'), 1200)
 }
 
 // ── Cleanup ───────────────────────────────────────────────────────────────
@@ -247,52 +221,7 @@ onUnmounted(stopCamera)
         </p>
       </div>
 
-      <!-- Phase 3: OTP -->
-      <div v-if="phase === 'otp'" class="bg-gray-900 border border-white/8 rounded-2xl p-8 shadow-2xl space-y-5">
-        <div class="w-12 h-12 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center mx-auto">
-          <svg class="w-6 h-6 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" stroke-linecap="round" stroke-linejoin="round"/>
-            <polyline points="22,6 12,13 2,6" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </div>
-        <h1 class="text-white/90 font-semibold text-base text-center">確認コード</h1>
-        <p class="text-xs text-white/40 text-center leading-relaxed">
-          <span class="text-white/65">{{ email }}</span><br>に送信した6桁のコードを入力してください
-        </p>
-
-        <div class="space-y-1.5">
-          <label class="text-[11px] text-white/40 uppercase tracking-widest">確認コード</label>
-          <input
-            v-model="otp"
-            type="text"
-            inputmode="numeric"
-            maxlength="6"
-            placeholder="000000"
-            class="w-full rounded-xl bg-white/5 border border-white/8 text-base text-white/90 placeholder-white/20 px-4 py-2.5 outline-none focus:border-indigo-500/60 transition-colors text-center tracking-[0.35em]"
-            @keydown.enter="verifyOtp"
-          />
-        </div>
-
-        <p v-if="error" class="text-xs text-rose-400/90 text-center bg-rose-500/8 border border-rose-500/15 rounded-lg px-3 py-2">
-          {{ error }}
-        </p>
-
-        <button
-          class="w-full py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer flex items-center justify-center gap-2"
-          :class="loading
-            ? 'bg-indigo-700/50 text-white/40 cursor-not-allowed'
-            : 'bg-indigo-600 hover:bg-indigo-500 text-white'"
-          :disabled="loading"
-          @click="verifyOtp"
-        >
-          <svg v-if="loading" class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke-linecap="round"/>
-          </svg>
-          {{ loading ? '確認中...' : '確認する' }}
-        </button>
-      </div>
-
-      <!-- Phase 4: Done -->
+      <!-- Phase 3: Done -->
       <div v-if="phase === 'done'" class="bg-gray-900 border border-white/8 rounded-2xl p-12 shadow-2xl flex flex-col items-center gap-4">
         <div class="w-14 h-14 rounded-full bg-green-600/20 border border-green-500/30 flex items-center justify-center">
           <svg class="w-7 h-7 text-green-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">

@@ -31,7 +31,7 @@ function build() {
 </script>
 
 <template>
-  <aside class="flex flex-col w-52 h-screen border-r border-black/8 dark:border-white/8 shrink-0 bg-gray-50 dark:bg-gray-950">
+  <aside class="flex flex-col w-64 h-screen border-r border-black/8 dark:border-white/8 shrink-0 bg-gray-50 dark:bg-gray-950">
     <!-- ロゴ -->
     <div class="flex items-center gap-2.5 px-5 py-3 border-b border-black/8 dark:border-white/8">
       <ThreeBodyLogo />

@@ -7,12 +7,11 @@ import { useFaceAuth } from '../composables/useFaceAuth'
 import { useLiveness } from '../composables/useLiveness'
 import ThreeBodyLogo from '../components/ThreeBodyLogo.vue'
 
-type Phase = 'email' | 'otp' | 'face' | 'done'
+type Phase = 'email' | 'face' | 'done'
 
 const router  = useRouter()
 const phase   = ref<Phase>('email')
 const email   = ref('')
-const otp     = ref('')
 const error   = ref('')
 const loading = ref(false)
 const status  = ref('')
@@ -22,41 +21,14 @@ let stream:  MediaStream | null = null
 let timerId: ReturnType<typeof setInterval> | null = null
 let registered = false
 
-const { loadModels, registerFace, linkFace } = useFaceAuth()
+const { loadModels } = useFaceAuth()
 const { init: initLiveness, currentLabel, progress, completed: livenessOK, processFace } = useLiveness()
 
-// ── Phase 1 → OTP ────────────────────────────────────────────────────────
-async function toOtpPhase() {
+// ── Phase 1 → Face ────────────────────────────────────────────────────────
+async function toFacePhase() {
   if (!email.value.trim()) { error.value = 'メールアドレスを入力してください'; return }
-  error.value   = ''
-  loading.value = true
-
-  const { error: otpError } = await supabase.auth.signInWithOtp({
-    email: email.value.trim(),
-    options: { shouldCreateUser: true },
-  })
-  if (otpError) { error.value = otpError.message; loading.value = false; return }
-
-  loading.value = false
-  phase.value   = 'otp'
-}
-
-// ── Phase OTP → Face ──────────────────────────────────────────────────────
-async function verifyOtpAndProceed() {
-  if (otp.value.trim().length !== 6) { error.value = '6桁のコードを入力してください'; return }
-  error.value   = ''
-  loading.value = true
-
-  const { error: err } = await supabase.auth.verifyOtp({
-    email: email.value.trim(),
-    token: otp.value.trim(),
-    type:  'email',
-  })
-  if (err) { error.value = err.message; loading.value = false; return }
-
-  // 認証完了 → 顔登録フェーズへ
-  loading.value = false
-  phase.value   = 'face'
+  error.value  = ''
+  phase.value  = 'face'
   startFaceSetup()
 }
 
@@ -113,11 +85,19 @@ function startDetection() {
 
       try {
         const descriptor = Array.from(result.descriptor) as number[]
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) throw new Error('ユーザー情報の取得に失敗しました')
+        const response   = await fetch('http://localhost:3000/api/auth/face/signup', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ email: email.value.trim(), descriptor }),
+        })
+        const signupData = await response.json()
+        if (!response.ok) throw new Error(signupData.error)
 
-        await registerFace(email.value.trim(), descriptor)
-        await linkFace(email.value.trim(), user.id)
+        const { error: sessionError } = await supabase.auth.verifyOtp({
+          token_hash: signupData.token_hash,
+          type: 'magiclink',
+        })
+        if (sessionError) throw sessionError
 
         phase.value   = 'done'
         loading.value = false
@@ -172,7 +152,7 @@ onUnmounted(stopCamera)
             autocomplete="email"
             placeholder="you@example.com"
             class="w-full rounded-xl bg-white/5 border border-white/8 text-sm text-white/90 placeholder-white/20 px-4 py-2.5 outline-none focus:border-indigo-500/60 transition-colors"
-            @keydown.enter="toOtpPhase"
+            @keydown.enter="toFacePhase"
           />
         </div>
 
@@ -186,7 +166,7 @@ onUnmounted(stopCamera)
             ? 'bg-indigo-700/50 text-white/40 cursor-not-allowed'
             : 'bg-indigo-600 hover:bg-indigo-500 text-white'"
           :disabled="loading"
-          @click="toOtpPhase"
+          @click="toFacePhase"
         >
           <svg v-if="loading" class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke-linecap="round"/>
@@ -198,51 +178,6 @@ onUnmounted(stopCamera)
           すでにアカウントをお持ちの方は
           <RouterLink to="/login" class="text-indigo-400 hover:text-indigo-300 transition-colors">ログイン</RouterLink>
         </p>
-      </div>
-
-      <!-- Phase OTP -->
-      <div v-if="phase === 'otp'" class="bg-gray-900 border border-white/8 rounded-2xl p-8 shadow-2xl space-y-5">
-        <div class="w-12 h-12 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center mx-auto">
-          <svg class="w-6 h-6 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" stroke-linecap="round" stroke-linejoin="round"/>
-            <polyline points="22,6 12,13 2,6" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </div>
-        <h1 class="text-white/90 font-semibold text-base text-center">メール確認</h1>
-        <p class="text-xs text-white/40 text-center leading-relaxed">
-          <span class="text-white/65">{{ email }}</span><br>に送信した6桁のコードを入力してください
-        </p>
-
-        <div class="space-y-1.5">
-          <label class="text-[11px] text-white/40 uppercase tracking-widest">確認コード</label>
-          <input
-            v-model="otp"
-            type="text"
-            inputmode="numeric"
-            maxlength="6"
-            placeholder="000000"
-            class="w-full rounded-xl bg-white/5 border border-white/8 text-base text-white/90 placeholder-white/20 px-4 py-2.5 outline-none focus:border-indigo-500/60 transition-colors text-center tracking-[0.35em]"
-            @keydown.enter="verifyOtpAndProceed"
-          />
-        </div>
-
-        <p v-if="error" class="text-xs text-rose-400/90 text-center bg-rose-500/8 border border-rose-500/15 rounded-lg px-3 py-2">
-          {{ error }}
-        </p>
-
-        <button
-          class="w-full py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer flex items-center justify-center gap-2"
-          :class="loading
-            ? 'bg-indigo-700/50 text-white/40 cursor-not-allowed'
-            : 'bg-indigo-600 hover:bg-indigo-500 text-white'"
-          :disabled="loading"
-          @click="verifyOtpAndProceed"
-        >
-          <svg v-if="loading" class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke-linecap="round"/>
-          </svg>
-          {{ loading ? '確認中...' : '確認する' }}
-        </button>
       </div>
 
       <!-- Phase Face Registration -->

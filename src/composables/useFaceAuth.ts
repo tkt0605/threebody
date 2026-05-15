@@ -1,7 +1,7 @@
 import * as faceapi from 'face-api.js'
 import { ref } from 'vue'
 
-const MODEL_URL = 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights/'
+const MODEL_URL = '/models'
 const API_BASE  = 'http://localhost:3000'
 
 const modelsLoaded = ref(false)
