@@ -3,8 +3,15 @@ import cors from 'cors'
 import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 import dotenv from 'dotenv'
+import { createClient } from '@supabase/supabase-js'
 
 dotenv.config({ path: new URL('../../.env', import.meta.url).pathname })
+
+// Service role key でRLSをバイパスして顔特徴量を操作する
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_KEY!,
+)
 
 const app = express()
 app.use(cors({ origin: 'http://localhost:5173' }))
@@ -277,6 +284,63 @@ ${excerpt}`
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', providers: ['anthropic', 'openai', 'deepseek', 'ollama'] })
+})
+
+// ── 顔認証 ────────────────────────────────────────────────────────────────
+
+function euclidean(a: number[], b: number[]): number {
+  return Math.sqrt(a.reduce((sum, v, i) => sum + (v - b[i]) ** 2, 0))
+}
+
+// 顔特徴量を登録（サインアップ時）
+app.post('/api/auth/face/register', async (req, res) => {
+  const { email, descriptor } = req.body as { email: string; descriptor: number[] }
+  if (!email || !Array.isArray(descriptor)) {
+    res.status(400).json({ error: 'email と descriptor が必要です' }); return
+  }
+
+  const { error } = await supabaseAdmin
+    .from('face_descriptors')
+    .upsert({ email, descriptor, user_id: null }, { onConflict: 'email' })
+
+  if (error) { res.status(500).json({ error: error.message }); return }
+  res.json({ ok: true })
+})
+
+// 顔特徴量を照合（ログイン時）
+app.post('/api/auth/face/verify', async (req, res) => {
+  const { email, descriptor } = req.body as { email: string; descriptor: number[] }
+  if (!email || !Array.isArray(descriptor)) {
+    res.status(400).json({ error: 'email と descriptor が必要です' }); return
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('face_descriptors')
+    .select('descriptor')
+    .eq('email', email)
+    .single()
+
+  if (error || !data) {
+    res.status(404).json({ error: '顔データが見つかりません。先にサインアップしてください。' }); return
+  }
+
+  const stored: number[] = data.descriptor
+  const distance = euclidean(descriptor, stored)
+  res.json({ match: distance < 0.6, distance })
+})
+
+// user_id を顔特徴量に紐付け（サインアップOTP確認後）
+app.post('/api/auth/face/link', async (req, res) => {
+  const { email, userId } = req.body as { email: string; userId: string }
+  if (!email || !userId) { res.status(400).json({ error: 'email と userId が必要です' }); return }
+
+  const { error } = await supabaseAdmin
+    .from('face_descriptors')
+    .update({ user_id: userId })
+    .eq('email', email)
+
+  if (error) { res.status(500).json({ error: error.message }); return }
+  res.json({ ok: true })
 })
 
 const PORT = Number(process.env.PORT ?? 3000)
