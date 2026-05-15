@@ -343,6 +343,93 @@ app.post('/api/auth/face/link', async (req, res) => {
   res.json({ ok: true })
 })
 
+// 顔認証ログイン：照合成功時にセッショントークンを返す
+app.post('/api/auth/face/login', async (req, res) => {
+  const { email, descriptor } = req.body as { email: string; descriptor: number[] }
+  if (!email || !Array.isArray(descriptor)) {
+    res.status(400).json({ error: 'email と descriptor が必要です' }); return
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('face_descriptors')
+    .select('descriptor')
+    .eq('email', email)
+    .single()
+
+  if (error || !data) {
+    res.status(404).json({ error: '顔データが見つかりません。先にサインアップしてください。' }); return
+  }
+
+  const distance = euclidean(descriptor, data.descriptor as number[])
+  if (distance >= 0.6) {
+    res.status(401).json({ error: '顔が一致しません。登録した顔で再試行してください。' }); return
+  }
+
+  const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+    type: 'magiclink',
+    email,
+  })
+
+  if (linkError || !linkData) {
+    res.status(500).json({ error: linkError?.message ?? 'セッション生成に失敗しました' }); return
+  }
+
+  res.json({ token_hash: linkData.properties.hashed_token })
+})
+
+// 顔認証サインアップ：ユーザー作成 + 顔登録 + セッショントークンを返す
+app.post('/api/auth/face/signup', async (req, res) => {
+  const { email, descriptor } = req.body as { email: string; descriptor: number[] }
+  if (!email || !Array.isArray(descriptor)) {
+    res.status(400).json({ error: 'email と descriptor が必要です' }); return
+  }
+
+  // ユーザー作成を試みる。既存の場合はメール検索で補完
+  let userId: string
+
+  const { data: userData, error: createError } = await supabaseAdmin.auth.admin.createUser({
+    email,
+    email_confirm: true,
+  })
+
+  if (createError) {
+    const { data: listData, error: listError } = await supabaseAdmin.auth.admin.listUsers()
+    if (listError) { res.status(500).json({ error: listError.message }); return }
+
+    const existing = listData.users.find(u => u.email === email)
+    if (!existing) {
+      // 既存ユーザーでもない → DBトリガー等の本物のエラー
+      console.error('[signup] createUser error:', createError)
+      res.status(400).json({
+        error: `ユーザー作成エラー: ${createError.message}`,
+        hint: 'Supabase Dashboard → Database → Triggers でトリガーを確認してください',
+      }); return
+    }
+    userId = existing.id
+  } else {
+    userId = userData.user.id
+  }
+
+  const { error: faceError } = await supabaseAdmin
+    .from('face_descriptors')
+    .upsert({ email, descriptor, user_id: userId }, { onConflict: 'email' })
+
+  if (faceError) {
+    res.status(500).json({ error: faceError.message }); return
+  }
+
+  const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+    type: 'magiclink',
+    email,
+  })
+
+  if (linkError || !linkData) {
+    res.status(500).json({ error: linkError?.message ?? 'セッション生成に失敗しました' }); return
+  }
+
+  res.json({ token_hash: linkData.properties.hashed_token })
+})
+
 const PORT = Number(process.env.PORT ?? 3000)
 app.listen(PORT, () => {
   console.log(`ThreeBody API listening on :${PORT}`)
