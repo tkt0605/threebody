@@ -2,10 +2,9 @@
 import { ref, computed, watch } from 'vue'
 import AppAside from '../components/AppAside.vue'
 import AppHeader from '../components/AppHeader.vue'
+import AppRightSidebar from '../components/AppRightSidebar.vue'
 import MessageList from '../components/MessageList.vue'
 import VoiceOverlay from '../components/VoiceOverlay.vue'
-import McpDialog from '../components/McpDialog.vue'
-import ContextDialog from '../components/ContextDialog.vue'
 import { useChat } from '../composables/useChat'
 import { useVoiceInput } from '../composables/useVoiceInput'
 import { useTTS } from '../composables/useTTS'
@@ -17,8 +16,6 @@ const { settings } = useSettings()
 
 const input       = ref('')
 const voiceActive = ref(false)
-const mcpRef      = ref<InstanceType<typeof McpDialog> | null>(null)
-const ctxRef      = ref<InstanceType<typeof ContextDialog> | null>(null)
 
 // 音声認識完了 → 自動送信
 const { recording, finalText, interimText, bars, errorMsg, BAR_COUNT, start, stop } =
@@ -78,84 +75,14 @@ function onKeydown(e: KeyboardEvent) {
 
       <!-- メッセージ一覧 -->
       <MessageList :messages="messages" />
-
-      <!-- 入力エリア -->
-      <div class="shrink-0 px-4 py-4 border-t border-black/8 dark:border-white/8">
-        <div
-          class="flex items-end gap-2 rounded-2xl border px-4 py-3 transition-colors
-                 bg-white border-black/10 focus-within:border-black/20
-                 dark:bg-white/5 dark:border-white/10 dark:focus-within:border-white/20"
-        >
-          <textarea
-            v-model="input"
-            rows="1"
-            placeholder="メッセージを入力..."
-            class="flex-1 resize-none bg-transparent text-sm outline-none max-h-32 leading-relaxed
-                   text-gray-900 placeholder-black/30
-                   dark:text-white/90 dark:placeholder-white/25"
-            style="field-sizing: content"
-            @keydown="onKeydown"
-          />
-
-          <div class="flex items-center gap-1 shrink-0">
-            <!-- MCP -->
-            <button
-              class="w-7 h-7 rounded-lg flex items-center justify-center transition-all cursor-pointer
-                     text-gray-400 hover:text-gray-700 hover:bg-gray-100
-                     dark:text-white/30 dark:hover:text-white/70 dark:hover:bg-white/8"
-              title="MCPサーバー"
-              @click="mcpRef?.open()"
-            >
-              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-
-            <!-- コンテキスト -->
-            <button
-              class="w-7 h-7 rounded-lg flex items-center justify-center transition-all cursor-pointer
-                     text-gray-400 hover:text-gray-700 hover:bg-gray-100
-                     dark:text-white/30 dark:hover:text-white/70 dark:hover:bg-white/8"
-              title="コンテキストを追加"
-              @click="ctxRef?.open()"
-            >
-              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-
-            <!-- マイク -->
-            <button
-              class="w-7 h-7 rounded-lg flex items-center justify-center transition-all cursor-pointer"
-              :class="recording
-                ? 'bg-rose-500/15 text-rose-500 dark:text-rose-400'
-                : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:text-white/30 dark:hover:text-white/70 dark:hover:bg-white/8'"
-              title="音声入力"
-              @click="recording ? stop() : start()"
-            >
-              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                <rect x="9" y="2" width="6" height="13" rx="3"/>
-                <path d="M5 10a7 7 0 0014 0M12 19v3M8 22h8" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-
-            <!-- 送信 -->
-            <button
-              :disabled="!input.trim()"
-              class="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
-              :class="input.trim()
-                ? 'bg-indigo-600 hover:bg-indigo-500 cursor-pointer'
-                : 'bg-black/6 dark:bg-white/6 cursor-default'"
-              @click="submit"
-            >
-              <svg class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 19V5M5 12l7-7 7 7" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
+
+    <AppRightSidebar
+      v-model:input="input"
+      :recording="recording"
+      @submit="submit"
+      @toggle-mic="recording ? stop() : start()"
+    />
   </div>
 
   <VoiceOverlay
@@ -172,7 +99,4 @@ function onKeydown(e: KeyboardEvent) {
     @stop="stop"
     @dismiss="onDismiss"
   />
-
-  <McpDialog     ref="mcpRef" />
-  <ContextDialog ref="ctxRef" />
 </template>
