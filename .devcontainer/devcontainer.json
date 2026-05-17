@@ -1,0 +1,36 @@
+{
+  "name": "threebody (Node.js & TypeScript)",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+
+  "remoteUser": "node",
+
+  // CLI なのでポート公開は基本不要。将来 Web 化したら足す。
+  // "forwardPorts": [],
+
+  // ホストの .env をコンテナに渡す(コミットせず使う方針なら)
+  "runArgs": ["--env-file", ".env"],
+
+  // 初回作成時: 既存の node_modules を消してから入れ直す
+  // (リポジトリに node_modules がコミットされていて、
+  //  ホスト macOS でビルドされたバイナリが Linux コンテナで動かない可能性があるため)
+  "postCreateCommand": "rm -rf node_modules && npm install",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "EditorConfig.EditorConfig",
+        "christian-kohler.npm-intellisense"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "typescript.tsdk": "node_modules/typescript/lib",
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}
