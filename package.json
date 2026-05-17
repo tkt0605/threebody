@@ -5,8 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "preview": "vite preview",
-    "dev:server": "tsx backend/src/server.ts"
+    "dev:server": "tsx backend/src/server.ts",
+    "dev:all": "concurrently -n \"vite,express\" -c \"cyan,green\" \"npm run dev\" \"npm run dev:server\"",
+    "preview": "vite preview"
+  },
+  "overrides": {
+    "node-fetch": "^2.7.0"
   },
   "keywords": [],
   "author": "",
@@ -27,6 +31,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.4",
+    "concurrently": "^9.1.2",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^25.6.0",

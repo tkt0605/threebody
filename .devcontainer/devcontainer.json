@@ -6,16 +6,18 @@
 
   "remoteUser": "node",
 
-  // CLI なのでポート公開は基本不要。将来 Web 化したら足す。
-  // "forwardPorts": [],
+  // Vite dev server (5173) + Express API server (3000)
+  "forwardPorts": [
+    5173,
+    3000
+  ],
 
-  // ホストの .env をコンテナに渡す(コミットせず使う方針なら)
-  "runArgs": ["--env-file", ".env"],
+  // .env はコード側 (dotenv) で読み込むため runArgs での受け渡しは不要
+  // .env が未作成の場合に備え、postCreateCommand でテンプレートから生成する
 
-  // 初回作成時: 既存の node_modules を消してから入れ直す
-  // (リポジトリに node_modules がコミットされていて、
-  //  ホスト macOS でビルドされたバイナリが Linux コンテナで動かない可能性があるため)
-  "postCreateCommand": "rm -rf node_modules && npm install",
+  // 初回作成時: .env がなければ .env.example からコピー（なければ空ファイル生成）し、
+  // 既存の node_modules を消してから入れ直す
+  "postCreateCommand": "[ -f .env ] || { [ -f .env.example ] && cp .env.example .env || touch .env; }; rm -rf node_modules && npm install",
 
   "customizations": {
     "vscode": {
