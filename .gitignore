@@ -5,3 +5,7 @@ node_modules/
 back.txt
 *.txt
 *.bak
+dist/
+build/
+coverage/
+logs/
