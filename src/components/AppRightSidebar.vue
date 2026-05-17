@@ -37,9 +37,53 @@ function onKeydown(e: KeyboardEvent) {
       <span class="text-sm font-semibold text-gray-900 dark:text-white/90">プロンプト入力</span>
     </div>
 
-    <!-- 入力エリア -->
-    <div class="flex flex-col flex-1 px-3 py-4 gap-3">
-      <!-- テキストエリア -->
+    <!-- 音声認識UI -->
+    <div class="flex flex-col items-center gap-4 px-5 py-6 border-b border-black/8 dark:border-white/8">
+      <!-- 波形ビジュアライザー -->
+      <div class="flex items-center gap-1 h-10">
+        <template v-for="i in 9" :key="i">
+          <div
+            class="w-1 rounded-full transition-all duration-150"
+            :class="[
+              recording ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-white/20',
+              recording ? 'animate-pulse' : ''
+            ]"
+            :style="{
+              height: recording
+                ? `${20 + Math.sin(i * 0.9) * 16}px`
+                : '6px',
+              animationDelay: `${i * 60}ms`
+            }"
+          />
+        </template>
+      </div>
+
+      <!-- マイクボタン -->
+      <button
+        class="w-14 h-14 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-md"
+        :class="recording
+          ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/30'
+          : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/30'"
+        :title="recording ? '停止' : '音声入力を開始'"
+        @click="emit('toggle-mic')"
+      >
+        <svg v-if="!recording" class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <rect x="9" y="2" width="6" height="13" rx="3"/>
+          <path d="M5 10a7 7 0 0014 0M12 19v3M8 22h8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <svg v-else class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+          <rect x="6" y="6" width="12" height="12" rx="2"/>
+        </svg>
+      </button>
+
+      <!-- ステータステキスト -->
+      <p class="text-xs text-gray-500 dark:text-white/40">
+        {{ recording ? '録音中... タップで停止' : 'タップして音声入力' }}
+      </p>
+    </div>
+
+    <!-- テキスト入力エリア（下部固定） -->
+    <div class="flex flex-col flex-1 justify-end px-3 py-4 gap-3">
       <div
         class="flex flex-col gap-2 rounded-2xl border px-4 py-3 transition-colors
                bg-white border-black/10 focus-within:border-indigo-400/60
@@ -56,52 +100,8 @@ function onKeydown(e: KeyboardEvent) {
           @keydown="onKeydown"
         />
 
-        <!-- ツールバー -->
-        <div class="flex items-center justify-between pt-1 border-t border-black/6 dark:border-white/6">
-          <div class="flex items-center gap-1">
-            <!-- MCP -->
-            <button
-              class="w-7 h-7 rounded-lg flex items-center justify-center transition-all cursor-pointer
-                     text-gray-400 hover:text-gray-700 hover:bg-gray-100
-                     dark:text-white/30 dark:hover:text-white/70 dark:hover:bg-white/8"
-              title="MCPサーバー"
-              @click="mcpRef?.open()"
-            >
-              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-
-            <!-- コンテキスト -->
-            <button
-              class="w-7 h-7 rounded-lg flex items-center justify-center transition-all cursor-pointer
-                     text-gray-400 hover:text-gray-700 hover:bg-gray-100
-                     dark:text-white/30 dark:hover:text-white/70 dark:hover:bg-white/8"
-              title="コンテキストを追加"
-              @click="ctxRef?.open()"
-            >
-              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-
-            <!-- マイク -->
-            <button
-              class="w-7 h-7 rounded-lg flex items-center justify-center transition-all cursor-pointer"
-              :class="recording
-                ? 'bg-rose-500/15 text-rose-500 dark:text-rose-400'
-                : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:text-white/30 dark:hover:text-white/70 dark:hover:bg-white/8'"
-              title="音声入力"
-              @click="emit('toggle-mic')"
-            >
-              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                <rect x="9" y="2" width="6" height="13" rx="3"/>
-                <path d="M5 10a7 7 0 0014 0M12 19v3M8 22h8" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-          </div>
-
-          <!-- 送信 -->
+        <!-- 送信ボタン -->
+        <div class="flex justify-end pt-1 border-t border-black/6 dark:border-white/6">
           <button
             :disabled="!input.trim()"
             class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all"
@@ -118,7 +118,6 @@ function onKeydown(e: KeyboardEvent) {
         </div>
       </div>
 
-      <!-- ショートカットヒント -->
       <p class="text-[11px] text-gray-400 dark:text-white/25 px-1">
         <kbd class="font-mono">Enter</kbd> で送信　<kbd class="font-mono">Shift+Enter</kbd> で改行
       </p>
