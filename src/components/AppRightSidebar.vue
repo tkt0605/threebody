@@ -55,7 +55,7 @@ function onKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <aside class="flex flex-col w-72 h-screen border-l border-black/8 dark:border-white/8 shrink-0 bg-gray-50 dark:bg-gray-950">
+  <aside class="flex flex-col w-76 h-screen border-l border-black/8 dark:border-white/8 shrink-0 bg-gray-50 dark:bg-gray-950">
     <!-- ヘッダー -->
     <div class="flex items-center gap-2 px-5 py-5.5 border-b border-black/8 dark:border-white/8">
       <svg class="w-4 h-4 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -65,7 +65,7 @@ function onKeydown(e: KeyboardEvent) {
     </div>
 
     <!-- 音声認識UI -->
-    <div class="flex flex-col items-center gap-5 px-5 py-8 border-b border-black/8 dark:border-white/8">
+    <div class="flex flex-col items-center gap-5 px-5 py-10 border-b border-black/8 dark:border-white/8">
 
       <!-- シナプス連鎖 -->
       <div class="flex items-center gap-1.5">
@@ -109,12 +109,18 @@ function onKeydown(e: KeyboardEvent) {
           :title="recording ? '停止' : '音声入力を開始'"
           @click="emit('toggle-mic')"
         >
-          <svg v-if="!recording" class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <rect x="9" y="2" width="6" height="13" rx="3"/>
-            <path d="M5 10a7 7 0 0014 0M12 19v3M8 22h8" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <svg v-else class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-            <rect x="6" y="6" width="12" height="12" rx="2"/>
+          <!-- 脳波ライン -->
+          <svg
+            class="w-8 h-4"
+            :class="{ 'wave-active': recording }"
+            viewBox="0 0 32 12"
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            :stroke-width="recording ? 2.2 : 1.8"
+          >
+            <path d="M0,6 C4,1 8,11 16,6 C20,1 24,11 32,6" />
           </svg>
         </button>
       </div>
@@ -203,6 +209,17 @@ function onKeydown(e: KeyboardEvent) {
 
 .pulse-ring {
   animation: pulse-ring 1.6s ease-out infinite;
+}
+
+/* 脳波ビート */
+@keyframes wave-beat {
+  0%, 100% { transform: scaleY(1); }
+  50%       { transform: scaleY(1.7); }
+}
+
+.wave-active {
+  transform-origin: center;
+  animation: wave-beat 0.75s ease-in-out infinite;
 }
 
 /* ステータステキストのスライドフェード */
