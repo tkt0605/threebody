@@ -17,7 +17,7 @@ const input       = ref('')
 const voiceActive = ref(false)
 
 // 音声認識完了 → 自動送信
-const { recording, finalText, interimText, start, stop, cancel } =
+const { recording, finalText, interimText, bars, start, stop, cancel } =
   useVoiceInput((text) => {
     input.value = ''
     voiceActive.value = true
@@ -80,6 +80,7 @@ function onKeydown(e: KeyboardEvent) {
     <AppRightSidebar
       v-model:input="input"
       :recording="recording"
+      :bars="bars"
       @submit="submit"
       @toggle-mic="recording ? stop() : start()"
     />

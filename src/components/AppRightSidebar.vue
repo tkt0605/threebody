@@ -5,6 +5,7 @@ import ContextDialog from './ContextDialog.vue'
 
 const props = defineProps<{
   recording: boolean
+  bars: number[]
   input: string
 }>()
 
@@ -41,18 +42,14 @@ function onKeydown(e: KeyboardEvent) {
     <div class="flex flex-col items-center gap-4 px-5 py-9 border-b border-black/8 dark:border-white/8">
       <!-- 波形ビジュアライザー -->
       <div class="flex items-center gap-1 h-10">
-        <template v-for="i in 9" :key="i">
+        <template v-for="(_, i) in 16" :key="i">
           <div
-            class="w-1 rounded-full transition-all duration-150"
-            :class="[
-              recording ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-white/20',
-              recording ? 'animate-pulse' : ''
-            ]"
+            class="w-1 rounded-full transition-[height] duration-75"
+            :class="recording ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-white/20'"
             :style="{
               height: recording
-                ? `${20 + Math.sin(i * 0.9) * 16}px`
-                : '6px',
-              animationDelay: `${i * 60}ms`
+                ? `${Math.max(4, (bars[Math.floor(i * bars.length / 16)] ?? 0) * 40)}px`
+                : '4px'
             }"
           />
         </template>
