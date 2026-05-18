@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import McpDialog from './McpDialog.vue'
 import ContextDialog from './ContextDialog.vue'
 
@@ -20,6 +20,32 @@ const emit = defineEmits<{
 const mcpRef = ref<InstanceType<typeof McpDialog> | null>(null)
 const ctxRef = ref<InstanceType<typeof ContextDialog> | null>(null)
 
+const recordingMessages = ['ふむふむ、聞いてるよ...', 'なるほど！', 'もっと続けて...', '考え中...']
+const messageIdx = ref(0)
+let messageTimer: ReturnType<typeof setInterval> | null = null
+
+watch(() => props.recording, (val) => {
+  if (val) {
+    messageTimer = setInterval(() => {
+      messageIdx.value = (messageIdx.value + 1) % recordingMessages.length
+    }, 2000)
+  } else {
+    if (messageTimer) {
+      clearInterval(messageTimer)
+      messageTimer = null
+    }
+    messageIdx.value = 0
+  }
+})
+
+onUnmounted(() => {
+  if (messageTimer) clearInterval(messageTimer)
+})
+
+const statusText = computed(() =>
+  props.recording ? recordingMessages[messageIdx.value] : '話しかけてみて'
+)
+
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault()
@@ -39,44 +65,66 @@ function onKeydown(e: KeyboardEvent) {
     </div>
 
     <!-- 音声認識UI -->
-    <div class="flex flex-col items-center gap-4 px-5 py-9 border-b border-black/8 dark:border-white/8">
-      <!-- 波形ビジュアライザー -->
-      <div class="flex items-center gap-1 h-10">
-        <template v-for="(_, i) in 16" :key="i">
-          <div
-            class="w-1 rounded-full transition-[height] duration-75"
-            :class="recording ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-white/20'"
-            :style="{
-              height: recording
-                ? `${Math.max(4, (bars[Math.floor(i * bars.length / 16)] ?? 0) * 40)}px`
-                : '4px'
-            }"
-          />
-        </template>
+    <div class="flex flex-col items-center gap-5 px-5 py-8 border-b border-black/8 dark:border-white/8">
+
+      <!-- シナプス連鎖 -->
+      <div class="flex items-center gap-1.5">
+        <div
+          v-for="i in 12"
+          :key="i"
+          class="synapse-dot w-1.5 h-1.5 rounded-full"
+          :class="recording ? 'bg-indigo-400' : 'bg-gray-300 dark:bg-white/20'"
+          :style="{
+            animationDuration: recording ? '0.85s' : '2.4s',
+            animationDelay: `${(i - 1) * (recording ? 0.07 : 0.2)}s`,
+          }"
+        />
       </div>
 
-      <!-- マイクボタン -->
-      <button
-        class="w-14 h-14 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-md"
-        :class="recording
-          ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/30'
-          : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/30'"
-        :title="recording ? '停止' : '音声入力を開始'"
-        @click="emit('toggle-mic')"
-      >
-        <svg v-if="!recording" class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-          <rect x="9" y="2" width="6" height="13" rx="3"/>
-          <path d="M5 10a7 7 0 0014 0M12 19v3M8 22h8" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <svg v-else class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-          <rect x="6" y="6" width="12" height="12" rx="2"/>
-        </svg>
-      </button>
+      <!-- マイクボタン + エフェクト -->
+      <div class="relative flex items-center justify-center w-24 h-24">
 
-      <!-- ステータステキスト -->
-      <p class="text-xs text-gray-500 dark:text-white/40">
-        {{ recording ? '録音中... タップで停止' : 'タップして音声入力' }}
-      </p>
+        <!-- パルスリング（録音中） -->
+        <template v-if="recording">
+          <div class="absolute inset-0 rounded-full border-2 border-rose-400/70 pulse-ring" />
+          <div class="absolute inset-0 rounded-full border-2 border-rose-400/40 pulse-ring" style="animation-delay: 0.65s" />
+        </template>
+
+        <!-- 周回ドット（待機中） -->
+        <template v-else>
+          <div
+            v-for="i in 5"
+            :key="i"
+            class="orbit-dot absolute w-2 h-2 rounded-full bg-indigo-300 dark:bg-indigo-400/60"
+            :style="{ '--i': i - 1, top: 'calc(50% - 4px)', left: 'calc(50% - 4px)' }"
+          />
+        </template>
+
+        <!-- メインボタン -->
+        <button
+          class="relative z-10 w-14 h-14 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-lg"
+          :class="recording
+            ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/40'
+            : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/40'"
+          :title="recording ? '停止' : '音声入力を開始'"
+          @click="emit('toggle-mic')"
+        >
+          <svg v-if="!recording" class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <rect x="9" y="2" width="6" height="13" rx="3"/>
+            <path d="M5 10a7 7 0 0014 0M12 19v3M8 22h8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <svg v-else class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="6" width="12" height="12" rx="2"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- ステータステキスト（スライド切替） -->
+      <Transition name="status" mode="out-in">
+        <p :key="statusText" class="text-xs font-medium text-indigo-500 dark:text-indigo-400">
+          {{ statusText }}
+        </p>
+      </Transition>
     </div>
 
     <!-- テキスト入力エリア（下部固定） -->
@@ -124,3 +172,44 @@ function onKeydown(e: KeyboardEvent) {
   <McpDialog ref="mcpRef" />
   <ContextDialog ref="ctxRef" />
 </template>
+
+<style scoped>
+/* シナプス伝播 */
+@keyframes synapse {
+  0%, 100% { opacity: 0.25; transform: scale(1); }
+  50%       { opacity: 1;    transform: scale(1.6); }
+}
+
+.synapse-dot {
+  animation: synapse ease-in-out infinite;
+}
+
+/* 周回ドット */
+@keyframes orbit {
+  from { transform: rotate(0deg)   translateX(36px); }
+  to   { transform: rotate(360deg) translateX(36px); }
+}
+
+.orbit-dot {
+  animation: orbit 5s linear infinite;
+  animation-delay: calc(var(--i) * -1s);
+}
+
+/* パルスリング */
+@keyframes pulse-ring {
+  0%   { transform: scale(1);   opacity: 0.8; }
+  100% { transform: scale(1.8); opacity: 0;   }
+}
+
+.pulse-ring {
+  animation: pulse-ring 1.6s ease-out infinite;
+}
+
+/* ステータステキストのスライドフェード */
+.status-enter-active,
+.status-leave-active {
+  transition: opacity 0.22s, transform 0.22s;
+}
+.status-enter-from { opacity: 0; transform: translateY(6px); }
+.status-leave-to   { opacity: 0; transform: translateY(-6px); }
+</style>
