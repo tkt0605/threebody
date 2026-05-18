@@ -1,25 +1,31 @@
-import * as faceapi from 'face-api.js'
 import { ref } from 'vue'
+import type * as FaceApi from 'face-api.js'
 
 const MODEL_URL = '/models'
 const API_BASE  = 'http://localhost:3000'
 
 const modelsLoaded = ref(false)
 let loadPromise: Promise<void> | null = null
+let faceapi: typeof FaceApi | null = null
 
 export function useFaceAuth() {
   async function loadModels(): Promise<void> {
     if (modelsLoaded.value) return
     if (loadPromise) { await loadPromise; return }
-    loadPromise = Promise.all([
-      faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
-      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-    ]).then(() => { modelsLoaded.value = true })
+    loadPromise = (async () => {
+      faceapi = await import('face-api.js')
+      await Promise.all([
+        faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+        faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+        faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+      ])
+      modelsLoaded.value = true
+    })()
     await loadPromise
   }
 
   async function extractDescriptor(video: HTMLVideoElement): Promise<Float32Array | null> {
+    if (!faceapi) return null
     const result = await faceapi
       .detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
       .withFaceLandmarks()
