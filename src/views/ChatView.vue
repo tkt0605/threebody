@@ -20,9 +20,17 @@ const voiceActive = ref(false)
 // 音声認識完了 → 自動送信
 const { recording, finalText, interimText, bars, errorMsg, BAR_COUNT, start, stop } =
   useVoiceInput((text) => {
+    input.value = ''
     voiceActive.value = true
     sendMessage(text)
   })
+
+// 録音中はリアルタイムでサイドバーのテキストエリアに流し込む
+watch([finalText, interimText], () => {
+  if (recording.value) {
+    input.value = finalText.value + interimText.value
+  }
+})
 
 // AI応答テキスト
 const responseText = computed(() => {
@@ -85,12 +93,13 @@ function onKeydown(e: KeyboardEvent) {
     />
   </div>
 
+  <!-- recording=false を渡すことで録音中はオーバーレイを出さない。AI応答・TTS表示のみ担当 -->
   <VoiceOverlay
-    :recording="recording"
-    :bars="bars"
+    :recording="false"
+    :bars="[]"
     :bar-count="BAR_COUNT"
-    :final-text="finalText"
-    :interim-text="interimText"
+    :final-text="''"
+    :interim-text="''"
     :error-msg="errorMsg"
     :voice-active="voiceActive"
     :response-text="responseText"

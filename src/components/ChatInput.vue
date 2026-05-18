@@ -1,14 +1,20 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useVoiceInput } from '../composables/useVoiceInput'
-import VoiceOverlay from './VoiceOverlay.vue'
 
 const emit = defineEmits<{ send: [text: string] }>()
 
 const input = ref('')
 
-const { recording, finalText, interimText, bars, errorMsg, BAR_COUNT, start, stop } =
+const { recording, finalText, interimText, errorMsg, start, stop } =
   useVoiceInput((text) => { input.value = text })
+
+// 録音中はリアルタイムでテキストエリアに流し込む
+watch([finalText, interimText], () => {
+  if (recording.value) {
+    input.value = finalText.value + interimText.value
+  }
+})
 
 function submit() {
   const text = input.value.trim()
@@ -27,15 +33,32 @@ function onKeydown(e: KeyboardEvent) {
 
 <template>
   <div class="px-4 pb-6 pt-2">
-    <div class="flex items-end gap-2 rounded-2xl bg-white/8 backdrop-blur-sm border border-white/10 px-4 py-3 focus-within:border-white/25 transition-colors">
-      <textarea
-        v-model="input"
-        rows="1"
-        placeholder="メッセージを入力..."
-        class="flex-1 resize-none bg-transparent text-white/90 placeholder-white/25 text-sm outline-none max-h-32 leading-relaxed"
-        style="field-sizing: content"
-        @keydown="onKeydown"
-      />
+    <!-- エラー表示 -->
+    <p v-if="errorMsg" class="text-rose-400 text-xs mb-1 px-1">{{ errorMsg }}</p>
+
+    <div
+      class="flex items-end gap-2 rounded-2xl bg-white/8 backdrop-blur-sm border px-4 py-3 transition-colors"
+      :class="recording
+        ? 'border-rose-500/50'
+        : 'border-white/10 focus-within:border-white/25'"
+    >
+      <div class="flex-1 flex flex-col gap-1 min-w-0">
+        <!-- 録音中インジケーター -->
+        <div v-if="recording" class="flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse shrink-0" />
+          <span class="text-xs text-rose-400/80 tracking-wide">録音中</span>
+        </div>
+
+        <textarea
+          v-model="input"
+          rows="1"
+          :placeholder="recording ? '話しかけてください...' : 'メッセージを入力...'"
+          class="w-full resize-none bg-transparent text-sm outline-none max-h-32 leading-relaxed"
+          :class="recording ? 'text-white/70 placeholder-white/20' : 'text-white/90 placeholder-white/25'"
+          style="field-sizing: content"
+          @keydown="onKeydown"
+        />
+      </div>
 
       <!-- Mic button -->
       <button
@@ -64,18 +87,4 @@ function onKeydown(e: KeyboardEvent) {
       </button>
     </div>
   </div>
-
-  <VoiceOverlay
-    :recording="recording"
-    :bars="bars"
-    :bar-count="BAR_COUNT"
-    :final-text="finalText"
-    :interim-text="interimText"
-    :error-msg="errorMsg"
-    :voice-active="false"
-    :response-text="''"
-    :response-streaming="false"
-    :tts-speaking="false"
-    @stop="stop"
-  />
 </template>
