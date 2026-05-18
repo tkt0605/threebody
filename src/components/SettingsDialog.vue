@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
-import { useSettings, type Language, type ThinkingLevel, type Provider, type Sex } from '../composables/useSettings'
+import { useSettings, type Language, type ThinkingLevel, type Provider, type Sex, type BodyProvider, type BodyConfig } from '../composables/useSettings'
 import { useTheme } from '../composables/useTheme'
 
 const { settings } = useSettings()
@@ -14,17 +14,14 @@ const inactiveBtnStyle = computed(() => ({
 
 const dialogRef = ref<HTMLDialogElement | null>(null)
 
-const SEX_OPTIONS: {value: Sex; label: string}[]=[
-  { value: "man", label: "男性"},
-  { value: "woman", label: "女性"}
+const BODY_PROVIDERS: { value: BodyProvider; label: string; color: string }[] = [
+  { value: 'ollama',    label: 'Ollama',    color: '#22c55e' },
+  { value: 'openai',    label: 'GPT',       color: '#0ea5e9' },
+  { value: 'anthropic', label: 'Claude',    color: '#f97316' },
+  { value: 'deepseek',  label: 'DeepSeek',  color: '#8b5cf6' },
 ]
 
-const PROVIDERS: { value: Provider; label: string; desc: string }[] = [
-  { value: 'ollama',    label: 'Ollama',    desc: 'ローカル（無料）' },
-  { value: 'anthropic', label: 'Claude',    desc: 'Anthropic API' },
-  { value: 'openai',    label: 'GPT',       desc: 'OpenAI API' },
-  { value: 'deepseek',  label: 'DeepSeek',  desc: 'DeepSeek API' },
-]
+const BODY_NAMES = ['一体', '二体', '三体'] as const
 
 const THINKING_LEVELS: { value: ThinkingLevel; label: string; desc: string; color: string }[] = [
   { value: 1, label: '速答', desc: '考えずに即答',     color: '#64748b' },
@@ -34,22 +31,32 @@ const THINKING_LEVELS: { value: ThinkingLevel; label: string; desc: string; colo
   { value: 5, label: '限界', desc: '最大思考リソース', color: '#f43f5e' },
 ]
 
+function cloneBody(b: BodyConfig): BodyConfig {
+  return { provider: b.provider, apiKey: b.apiKey, model: b.model }
+}
+
+function isBodyActive(b: BodyConfig): boolean {
+  return b.provider === 'ollama' || b.apiKey.trim().length > 0
+}
+
 const draft = reactive({
   language: settings.language,
   sex: settings.sex,
   thinkingLevel: settings.thinkingLevel,
   systemPrompt: settings.systemPrompt,
-  provider: settings.provider,
+  provider: settings.provider as Provider,
+  bodies: settings.bodies.map(cloneBody) as [BodyConfig, BodyConfig, BodyConfig],
   mcpServers: settings.mcpServers.map(s => ({ ...s })),
 })
 
 function open() {
-  draft.language = settings.language
-  draft.sex = settings.sex
+  draft.language      = settings.language
+  draft.sex           = settings.sex
   draft.thinkingLevel = settings.thinkingLevel
-  draft.systemPrompt = settings.systemPrompt
-  draft.provider = settings.provider
-  draft.mcpServers = settings.mcpServers.map(s => ({ ...s }))
+  draft.systemPrompt  = settings.systemPrompt
+  draft.provider      = settings.provider
+  draft.bodies        = settings.bodies.map(cloneBody) as [BodyConfig, BodyConfig, BodyConfig]
+  draft.mcpServers    = settings.mcpServers.map(s => ({ ...s }))
   dialogRef.value?.showModal()
 }
 
@@ -58,11 +65,15 @@ function close() {
 }
 
 function save() {
-  settings.language = draft.language
-  settings.sex = draft.sex
+  settings.language      = draft.language
+  settings.sex           = draft.sex
   settings.thinkingLevel = draft.thinkingLevel
-  settings.systemPrompt = draft.systemPrompt
-  settings.provider = draft.provider
+  settings.systemPrompt  = draft.systemPrompt
+  draft.bodies.forEach((b, i) => {
+    settings.bodies[i]!.provider = b.provider
+    settings.bodies[i]!.apiKey   = b.apiKey
+    settings.bodies[i]!.model    = b.model
+  })
   settings.mcpServers.forEach((s, i) => {
     s.enabled = draft.mcpServers[i]?.enabled ?? s.enabled
   })
@@ -82,9 +93,9 @@ defineExpose({ open })
              backdrop:bg-black/60 backdrop:backdrop-blur-sm"
       @click.self="close"
     >
-      <div class="flex flex-col">
+      <div class="flex flex-col max-h-[90vh]">
         <!-- Header -->
-        <div class="flex items-center justify-between px-6 py-4 border-b border-black/8 dark:border-white/8">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-black/8 dark:border-white/8 shrink-0">
           <h2 class="text-sm font-semibold text-gray-900 dark:text-white/90">設定</h2>
           <button
             class="transition-colors cursor-pointer text-gray-400 hover:text-gray-700 dark:text-white/40 dark:hover:text-white/80"
@@ -97,24 +108,73 @@ defineExpose({ open })
         </div>
 
         <!-- Body -->
-        <div class="px-6 py-5 space-y-6">
+        <div class="px-6 py-5 space-y-6 overflow-y-auto">
 
-          <!-- プロバイダー -->
-          <div class="space-y-2">
-            <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">プロバイダー</label>
-            <div class="grid grid-cols-2 gap-1.5">
-              <button
-                v-for="opt in PROVIDERS"
-                :key="opt.value"
-                class="flex flex-col items-start px-3 py-2 rounded-xl text-xs transition-colors cursor-pointer border"
-                :class="draft.provider === opt.value
-                  ? 'bg-indigo-600/20 border-indigo-500/60 text-indigo-600 dark:text-indigo-300'
-                  : 'border-black/8 text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:bg-white/4 dark:border-white/7 dark:text-white/45 dark:hover:text-white/70 dark:hover:bg-white/8'"
-                @click="draft.provider = opt.value"
+          <!-- 三体接続 -->
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">三体接続</label>
+              <span class="text-xs text-gray-400 dark:text-white/30">有効な体を並列クエリし合成</span>
+            </div>
+            <div class="space-y-2">
+              <div
+                v-for="(body, idx) in draft.bodies"
+                :key="idx"
+                class="rounded-xl border p-3 transition-colors"
+                :class="isBodyActive(body)
+                  ? 'border-indigo-500/40 bg-indigo-500/5 dark:bg-indigo-500/8'
+                  : 'border-black/8 dark:border-white/8'"
               >
-                <span class="font-semibold">{{ opt.label }}</span>
-                <span class="mt-0.5 text-gray-400 dark:text-white/35">{{ opt.desc }}</span>
-              </button>
+                <!-- Row header -->
+                <div class="flex items-center gap-2 mb-2">
+                  <span
+                    class="text-sm font-bold w-6 text-center"
+                    :class="isBodyActive(body) ? 'text-indigo-500 dark:text-indigo-400' : 'text-gray-400 dark:text-white/25'"
+                  >{{ BODY_NAMES[idx] }}</span>
+                  <!-- Provider pills -->
+                  <div class="flex gap-1 flex-1">
+                    <button
+                      v-for="p in BODY_PROVIDERS"
+                      :key="p.value"
+                      class="px-2 py-0.5 rounded-md text-xs transition-colors cursor-pointer border font-medium"
+                      :style="body.provider === p.value
+                        ? { background: p.color + '22', borderColor: p.color + '88', color: p.color }
+                        : {}"
+                      :class="body.provider !== p.value
+                        ? 'border-black/8 text-gray-400 hover:text-gray-600 dark:border-white/8 dark:text-white/30 dark:hover:text-white/60'
+                        : ''"
+                      @click="body.provider = p.value"
+                    >{{ p.label }}</button>
+                  </div>
+                  <!-- Active indicator -->
+                  <span
+                    class="text-xs px-1.5 py-0.5 rounded-md font-medium"
+                    :class="isBodyActive(body)
+                      ? 'bg-green-500/15 text-green-500 dark:text-green-400'
+                      : 'bg-gray-100 text-gray-400 dark:bg-white/5 dark:text-white/25'"
+                  >{{ isBodyActive(body) ? '有効' : '無効' }}</span>
+                </div>
+                <!-- Input field -->
+                <input
+                  v-if="body.provider === 'ollama'"
+                  v-model="body.model"
+                  type="text"
+                  placeholder="モデル名（例: gemma2:27b）"
+                  class="w-full rounded-lg text-xs px-3 py-1.5 outline-none transition-colors
+                         bg-gray-50 border border-black/8 text-gray-900 placeholder-black/25 focus:border-black/20
+                         dark:bg-white/5 dark:border-white/8 dark:text-white/80 dark:placeholder-white/20 dark:focus:border-white/20"
+                />
+                <input
+                  v-else
+                  v-model="body.apiKey"
+                  type="password"
+                  :placeholder="`${BODY_PROVIDERS.find(p => p.value === body.provider)?.label ?? ''} API キー`"
+                  class="w-full rounded-lg text-xs px-3 py-1.5 outline-none transition-colors
+                         bg-gray-50 border border-black/8 text-gray-900 placeholder-black/25 focus:border-black/20
+                         dark:bg-white/5 dark:border-white/8 dark:text-white/80 dark:placeholder-white/20 dark:focus:border-white/20"
+                  autocomplete="off"
+                />
+              </div>
             </div>
           </div>
 
@@ -191,7 +251,7 @@ defineExpose({ open })
         </div>
 
         <!-- Footer -->
-        <div class="flex justify-end gap-2 px-6 py-4 border-t border-black/8 dark:border-white/8">
+        <div class="flex justify-end gap-2 px-6 py-4 border-t border-black/8 dark:border-white/8 shrink-0">
           <button
             class="px-4 py-2 rounded-xl text-sm transition-colors cursor-pointer
                    text-gray-500 hover:text-gray-800 hover:bg-gray-100

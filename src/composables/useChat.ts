@@ -64,6 +64,7 @@ export function useChat() {
           thinkingLevel: settings.thinkingLevel,
           systemPrompt: settings.systemPrompt || 'You are a helpful assistant. Please respond in Japanese.',
           provider: settings.provider,
+          bodies: settings.bodies,
         }),
       })
 

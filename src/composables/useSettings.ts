@@ -4,6 +4,13 @@ export type Language = 'ja' | 'en'
 export type Sex = 'man' | 'woman'
 export type ThinkingLevel = 1 | 2 | 3 | 4 | 5
 export type Provider = 'anthropic' | 'openai' | 'deepseek' | 'ollama'
+export type BodyProvider = 'ollama' | 'openai' | 'anthropic' | 'deepseek'
+
+export interface BodyConfig {
+  provider: BodyProvider
+  apiKey: string
+  model: string
+}
 
 export interface McpServer {
   id: string
@@ -17,6 +24,7 @@ export interface Settings {
   thinkingLevel: ThinkingLevel
   systemPrompt: string
   provider: Provider
+  bodies: [BodyConfig, BodyConfig, BodyConfig]
   mcpServers: McpServer[]
 }
 
@@ -27,6 +35,12 @@ const DEFAULT_MCP_SERVERS: McpServer[] = [
   { id: 'websearch',  label: 'Web Search',       enabled: false },
   { id: 'code',       label: 'Code Interpreter', enabled: false },
   { id: 'memory',     label: 'Memory',           enabled: false },
+]
+
+const DEFAULT_BODIES: [BodyConfig, BodyConfig, BodyConfig] = [
+  { provider: 'ollama',    apiKey: '',  model: 'gemma2:27b' },
+  { provider: 'openai',    apiKey: '',  model: 'gpt-4o-mini' },
+  { provider: 'deepseek',  apiKey: '',  model: 'deepseek-chat' },
 ]
 
 function load(): Partial<Settings> {
@@ -46,6 +60,7 @@ const settings = reactive<Settings>({
   systemPrompt:  saved.systemPrompt                     ?? '',
   provider:      (saved.provider      as Provider)      ?? 'ollama',
   sex:           (saved.sex           as Sex)           ?? 'man',
+  bodies:        saved.bodies                           ?? DEFAULT_BODIES,
   mcpServers:    saved.mcpServers                       ?? DEFAULT_MCP_SERVERS,
 })
 
