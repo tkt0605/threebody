@@ -38,7 +38,7 @@ function onKeydown(e: KeyboardEvent) {
     </div>
 
     <!-- 音声認識UI -->
-    <div class="flex flex-col items-center gap-4 px-5 py-6 border-b border-black/8 dark:border-white/8">
+    <div class="flex flex-col items-center gap-4 px-5 py-9 border-b border-black/8 dark:border-white/8">
       <!-- 波形ビジュアライザー -->
       <div class="flex items-center gap-1 h-10">
         <template v-for="i in 9" :key="i">
