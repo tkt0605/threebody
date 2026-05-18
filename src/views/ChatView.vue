@@ -17,7 +17,7 @@ const input       = ref('')
 const voiceActive = ref(false)
 
 // 音声認識完了 → 自動送信
-const { recording, finalText, interimText, start, stop } =
+const { recording, finalText, interimText, start, stop, cancel } =
   useVoiceInput((text) => {
     input.value = ''
     voiceActive.value = true
@@ -53,6 +53,7 @@ watch(
 function submit() {
   const text = input.value.trim()
   if (!text) return
+  if (recording.value) cancel()  // 録音中なら onFinish を呼ばずに終了
   sendMessage(text)
   input.value = ''
 }

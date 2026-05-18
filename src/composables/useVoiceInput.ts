@@ -127,12 +127,10 @@ export function useVoiceInput(onFinish: (text: string) => void) {
     interimText.value = ''
   }
 
-  function stop() {
-    errorMsg.value = null
+  function cleanup() {
     recording.value = false
     recognition?.abort()
     recognition = null
-
     if (silenceTimer !== null) { clearTimeout(silenceTimer); silenceTimer = null }
     if (raf !== null) { cancelAnimationFrame(raf); raf = null }
     stream?.getTracks().forEach(t => t.stop())
@@ -141,14 +139,26 @@ export function useVoiceInput(onFinish: (text: string) => void) {
     audioCtx = null
     analyser = null
     bars.value = Array(BAR_COUNT).fill(0)
+  }
 
+  function stop() {
+    errorMsg.value = null
     const text = (finalText.value + interimText.value).trim()
     finalText.value = ''
     interimText.value = ''
+    cleanup()
     if (text) onFinish(text)
   }
 
-  onUnmounted(() => { if (recording.value) stop() })
+  // onFinish を呼ばずに録音だけ終了する（手動送信時など）
+  function cancel() {
+    errorMsg.value = null
+    finalText.value = ''
+    interimText.value = ''
+    cleanup()
+  }
 
-  return { recording, finalText, interimText, bars, errorMsg, BAR_COUNT, start, stop }
+  onUnmounted(() => { if (recording.value) cancel() })
+
+  return { recording, finalText, interimText, bars, errorMsg, BAR_COUNT, start, stop, cancel }
 }

@@ -6,7 +6,7 @@ const emit = defineEmits<{ send: [text: string] }>()
 
 const input = ref('')
 
-const { recording, finalText, interimText, errorMsg, start, stop } =
+const { recording, finalText, interimText, errorMsg, start, stop, cancel } =
   useVoiceInput((text) => { input.value = text })
 
 // 録音中はリアルタイムでテキストエリアに流し込む
@@ -19,6 +19,7 @@ watch([finalText, interimText], () => {
 function submit() {
   const text = input.value.trim()
   if (!text) return
+  if (recording.value) cancel()
   emit('send', text)
   input.value = ''
 }
