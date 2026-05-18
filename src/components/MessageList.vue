@@ -21,7 +21,7 @@ watch(
 <template>
   <div ref="container" class="flex-1 overflow-y-auto px-4 py-6 space-y-3 scroll-smooth">
     <div v-if="messages.length === 0" class="flex h-full items-center justify-center">
-      <p class="text-black/20 dark:text-white/20 text-sm select-none">会話を始めてください</p>
+      <p class="text-black/20 dark:text-white/40 text-sm select-none">最初の会話を始めましょう。「アイリス」と言ってください。</p>
     </div>
     <MessageBubble v-for="msg in messages" :key="msg.id" :message="msg" />
   </div>
