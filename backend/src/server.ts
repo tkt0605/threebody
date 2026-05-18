@@ -29,23 +29,110 @@ const ollama    = new OpenAI({
 })
 
 type LevelConfig = {
-  anthropicModel: string
-  openaiModel:    string
-  deepseekModel:  string
-  ollamaModel:    string
-  maxTokens:      number
-  thinkingBudget?: number
+  anthropicModel:       string
+  openaiModel:          string
+  deepseekModel:        string
+  ollamaModel:          string
+  maxTokens:            number
+  thinkingBudget?:      number  // Sonnet 4.6 以下で使用（deprecated だが機能はする）
+  adaptiveThinking?:    boolean // Opus 4.7 専用（budget_tokens は 400 になるため）
 }
 
 const LEVEL_CONFIG: Record<number, LevelConfig> = {
-  1: { anthropicModel: 'claude-haiku-4-5-20251001', openaiModel: 'gpt-4o-mini',  deepseekModel: 'deepseek-chat',     ollamaModel: 'gemma2:27b', maxTokens: 2048 },
-  2: { anthropicModel: 'claude-haiku-4-5-20251001', openaiModel: 'gpt-4o-mini',  deepseekModel: 'deepseek-chat',     ollamaModel: 'gemma2:27b', maxTokens: 4096 },
-  3: { anthropicModel: 'claude-sonnet-4-6',         openaiModel: 'gpt-4o',       deepseekModel: 'deepseek-chat',     ollamaModel: 'gemma2:27b', maxTokens: 8192 },
-  4: { anthropicModel: 'claude-sonnet-4-6',         openaiModel: 'gpt-4o',       deepseekModel: 'deepseek-reasoner', ollamaModel: 'gemma2:27b', maxTokens: 16000, thinkingBudget: 8000 },
-  5: { anthropicModel: 'claude-opus-4-7',           openaiModel: 'o3',           deepseekModel: 'deepseek-reasoner', ollamaModel: 'gemma2:27b', maxTokens: 32000, thinkingBudget: 16000 },
+  1: { anthropicModel: 'claude-haiku-4-5',  openaiModel: 'gpt-4o-mini', deepseekModel: 'deepseek-chat',     ollamaModel: 'gemma2:27b', maxTokens: 2048 },
+  2: { anthropicModel: 'claude-haiku-4-5',  openaiModel: 'gpt-4o-mini', deepseekModel: 'deepseek-chat',     ollamaModel: 'gemma2:27b', maxTokens: 4096 },
+  3: { anthropicModel: 'claude-sonnet-4-6', openaiModel: 'gpt-4o',      deepseekModel: 'deepseek-chat',     ollamaModel: 'gemma2:27b', maxTokens: 8192 },
+  4: { anthropicModel: 'claude-sonnet-4-6', openaiModel: 'gpt-4o',      deepseekModel: 'deepseek-reasoner', ollamaModel: 'gemma2:27b', maxTokens: 16000, thinkingBudget: 8000 },
+  5: { anthropicModel: 'claude-opus-4-7',   openaiModel: 'o3',           deepseekModel: 'deepseek-reasoner', ollamaModel: 'gemma2:27b', maxTokens: 32000, adaptiveThinking: true },
 }
 
 type Provider = 'anthropic' | 'openai' | 'deepseek' | 'ollama'
+
+type BodyProvider = 'ollama' | 'openai' | 'anthropic' | 'deepseek'
+
+interface BodyConfig {
+  provider: BodyProvider
+  apiKey:   string
+  model:    string
+}
+
+function createBodyClient(body: BodyConfig): { client: OpenAI | Anthropic; isAnthropic: boolean } {
+  if (body.provider === 'anthropic') {
+    return { client: new Anthropic({ apiKey: body.apiKey || process.env.ANTHROPIC_API_KEY }), isAnthropic: true }
+  }
+  const baseURLs: Record<string, string | undefined> = {
+    ollama:   'http://localhost:11434/v1',
+    deepseek: 'https://api.deepseek.com',
+  }
+  const client = new OpenAI({
+    apiKey:  body.provider === 'ollama' ? 'ollama' : (body.apiKey || undefined),
+    baseURL: baseURLs[body.provider],
+  })
+  return { client, isAnthropic: false }
+}
+
+function resolveBodyModel(body: BodyConfig, config: LevelConfig): string {
+  if (body.provider === 'ollama')    return body.model || config.ollamaModel
+  if (body.provider === 'openai')    return config.openaiModel
+  if (body.provider === 'deepseek')  return config.deepseekModel
+  return config.anthropicModel
+}
+
+async function getBodyResponse(
+  body: BodyConfig,
+  messages: OpenAI.Chat.ChatCompletionMessageParam[],
+  config: LevelConfig,
+  systemPrompt: string,
+): Promise<string> {
+  const model = resolveBodyModel(body, config)
+  const { client, isAnthropic } = createBodyClient(body)
+
+  if (isAnthropic) {
+    const anthropicClient = client as Anthropic
+    const anthropicMsgs = messages as unknown as Anthropic.MessageParam[]
+    const msg = await anthropicClient.messages.create({
+      model,
+      max_tokens: config.maxTokens,
+      messages: anthropicMsgs,
+      ...(systemPrompt ? { system: systemPrompt } : {}),
+    })
+    const block = msg.content.find(b => b.type === 'text')
+    return block?.type === 'text' ? block.text : ''
+  }
+
+  const oaiClient = client as OpenAI
+  const systemMessages: OpenAI.Chat.ChatCompletionMessageParam[] = systemPrompt
+    ? [{ role: 'system', content: systemPrompt }]
+    : []
+  const resp = await oaiClient.chat.completions.create({
+    model,
+    max_tokens: Math.min(config.maxTokens, 2048),
+    messages: [...systemMessages, ...messages],
+    stream: false,
+  })
+  return resp.choices[0]?.message?.content ?? ''
+}
+
+async function streamBodyOAI(
+  body: BodyConfig,
+  messages: OpenAI.Chat.ChatCompletionMessageParam[],
+  config: LevelConfig,
+  systemPrompt: string,
+  res: express.Response,
+): Promise<void> {
+  const model = resolveBodyModel(body, config)
+  const { client, isAnthropic } = createBodyClient(body)
+
+  if (isAnthropic) {
+    const anthropicClient = client as Anthropic
+    const anthropicMsgs = messages as unknown as Anthropic.MessageParam[]
+    await streamAnthropic(res, anthropicMsgs, { ...config, anthropicModel: model }, systemPrompt)
+    return
+  }
+
+  const oaiClient = client as OpenAI
+  await streamOpenAICompat(oaiClient, model, res, messages, config.maxTokens, systemPrompt)
+}
 
 async function streamAnthropic(
   res: express.Response,
@@ -53,23 +140,26 @@ async function streamAnthropic(
   config: LevelConfig,
   systemPrompt: string,
 ) {
-  const params: Anthropic.MessageCreateParams = {
-    model: config.anthropicModel,
+  // Opus 4.7: budget_tokens は削除済み → adaptive thinking を使う
+  // Sonnet 4.6 以下: thinkingBudget があれば enabled（非推奨だが機能する）
+  const thinkingParam = config.adaptiveThinking
+    ? { thinking: { type: 'adaptive' as const } }
+    : config.thinkingBudget
+      ? { thinking: { type: 'enabled' as const, budget_tokens: config.thinkingBudget } }
+      : {}
+
+  // messages.stream() を使う（create({ stream: true }) より型安全で取り扱いが容易）
+  const stream = anthropic.messages.stream({
+    model:      config.anthropicModel,
     max_tokens: config.maxTokens,
     messages,
     ...(systemPrompt ? { system: systemPrompt } : {}),
-    ...(config.thinkingBudget
-      ? { thinking: { type: 'enabled', budget_tokens: config.thinkingBudget } }
-      : {}),
-    stream: true,
-  }
+    ...thinkingParam,
+  })
 
-  const stream = await anthropic.messages.create(params) as AsyncIterable<Anthropic.MessageStreamEvent>
-
-  for await (const event of stream) {
-    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-      res.write(`data: ${JSON.stringify({ type: 'text', content: event.delta.text })}\n\n`)
-    }
+  // textStream は thinking ブロックを自動的にスキップしてテキストのみ流す
+  for await (const text of stream.textStream) {
+    res.write(`data: ${JSON.stringify({ type: 'text', content: text })}\n\n`)
   }
 }
 
@@ -106,21 +196,71 @@ app.post('/api/chat', async (req, res) => {
     thinkingLevel = 3,
     systemPrompt  = "あなたは、駒田隆人によって構築されたAIアシスタントです。**必ず日本語のみで回答すること。中国語・英語・その他の言語は一切使用禁止。**ユーザーの質問に対して、正確かつ簡潔に答えてください。",
     provider      = 'ollama',
+    bodies,
   } = req.body as {
     messages:      Anthropic.MessageParam[]
     thinkingLevel: number
     systemPrompt:  string
     provider:      Provider
+    bodies?:       BodyConfig[]
   }
 
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
+  res.flushHeaders()
 
-  const config      = LEVEL_CONFIG[thinkingLevel] ?? LEVEL_CONFIG[3]
+  const config      = (LEVEL_CONFIG[thinkingLevel] ?? LEVEL_CONFIG[3])!
   const oaiMessages = messages as unknown as OpenAI.Chat.ChatCompletionMessageParam[]
 
   try {
+    // ── 三体モード ─────────────────────────────────────────────────────────────
+    if (bodies && Array.isArray(bodies) && bodies.length > 0) {
+      const available = bodies.filter(b =>
+        b.provider === 'ollama' || (b.apiKey && b.apiKey.trim().length > 0)
+      )
+
+      if (available.length > 1) {
+        // 副体（二体・三体）からの見解を並列取得
+        const [primary, ...secondaries] = available as [BodyConfig, ...BodyConfig[]]
+        const secondaryResponses = await Promise.all(
+          secondaries.map(b => getBodyResponse(b, oaiMessages, config, systemPrompt))
+        )
+
+        const BODY_NAMES = ['一体', '二体', '三体']
+        const perspectives = secondaryResponses
+          .filter(r => r.trim())
+          .map((r, i) => {
+            const bodyIdx = bodies.indexOf(secondaries[i]!)
+            return `【${BODY_NAMES[bodyIdx] ?? '副体'}（${secondaries[i]!.provider}）の見解】\n${r}`
+          })
+          .join('\n\n')
+
+        const synthesisSystemPrompt = systemPrompt
+          + '\n\n以下は他の体（LLM）の見解です。これらを踏まえて、より包括的かつ統合的な最終回答を生成してください。'
+
+        const lastUserMsg = oaiMessages[oaiMessages.length - 1]
+        const synthesisMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+          ...oaiMessages.slice(0, -1),
+          {
+            role: 'user',
+            content: `${lastUserMsg?.content ?? ''}\n\n---\n${perspectives}`,
+          },
+        ]
+
+        await streamBodyOAI(primary, synthesisMessages, config, synthesisSystemPrompt, res)
+        res.write('data: [DONE]\n\n')
+        return
+      }
+
+      if (available.length === 1) {
+        await streamBodyOAI(available[0]!, oaiMessages, config, systemPrompt, res)
+        res.write('data: [DONE]\n\n')
+        return
+      }
+    }
+
+    // ── 単体モード（従来） ───────────────────────────────────────────────────────
     if (provider === 'anthropic') {
       await streamAnthropic(res, messages, config, systemPrompt)
     } else if (provider === 'openai') {
@@ -148,12 +288,12 @@ function stripTags(html: string): string {
 function cleanAozoraHtml(html: string): { title: string; author: string; text: string } {
   const titleMatch  = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)
   const authorMatch = html.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i)
-  const title  = titleMatch  ? stripTags(titleMatch[1])  : '不明'
-  const author = authorMatch ? stripTags(authorMatch[1]) : '不明'
+  const title  = titleMatch  ? stripTags(titleMatch[1]!)  : '不明'
+  const author = authorMatch ? stripTags(authorMatch[1]!) : '不明'
 
   // main_text div を抽出（なければ body 全体を使用）
   const mainMatch = html.match(/<div[^>]*class="[^"]*main_text[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
-  const mainHtml  = mainMatch ? mainMatch[1] : html
+  const mainHtml  = (mainMatch ? mainMatch[1] : html)!
 
   const deruby = mainHtml
     // <ruby><rb>漢字</rb>...<rt>よみ</rt>...</ruby> → 漢字
@@ -249,7 +389,7 @@ ${excerpt}`
         messages: [{ role: 'user', content: prompt }],
       })
       const block = message.content[0]
-      if (block.type !== 'text') throw new Error('unexpected LLM response type')
+      if (!block || block.type !== 'text') throw new Error('unexpected LLM response type')
       rawText = block.text
     } else {
       const client = provider === 'deepseek' ? deepseek : provider === 'ollama' ? ollama : openai
@@ -289,7 +429,7 @@ app.get('/api/health', (_req, res) => {
 // ── 顔認証 ────────────────────────────────────────────────────────────────
 
 function euclidean(a: number[], b: number[]): number {
-  return Math.sqrt(a.reduce((sum, v, i) => sum + (v - b[i]) ** 2, 0))
+  return Math.sqrt(a.reduce((sum, v, i) => sum + (v - (b[i] ?? 0)) ** 2, 0))
 }
 
 // 顔特徴量を登録（サインアップ時）
