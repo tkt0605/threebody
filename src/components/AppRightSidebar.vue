@@ -171,12 +171,12 @@ function onKeydown(e: KeyboardEvent) {
               key="wake"
               class="text-[11px] tracking-[0.15em] font-semibold text-violet-400"
             >「アイリス」と呼んで</span>
+            <span
+              v-else
+              key="init"
+              class="text-[11px] tracking-[0.15em] text-cyan-500/70"
+            >タップして起動</span>
           </Transition>
-          <!-- クリック起動ヒント（待機中のみ） -->
-          <span
-            v-if="!recording"
-            class="text-[10px] text-gray-400 dark:text-white/25 tracking-wide"
-          >またはタップで起動</span>
         </div>
       </div>
     </div>

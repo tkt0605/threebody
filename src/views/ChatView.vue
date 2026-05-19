@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import AppAside from '../components/AppAside.vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppRightSidebar from '../components/AppRightSidebar.vue'
@@ -30,17 +30,20 @@ const { listening: wakeListening, startListening, stopListening } = useWakeWord(
   start()
 })
 
-// ページ表示時からウェイクワード待機
-onMounted(() => startListening())
+// ユーザーが一度でも明示的にマイクを使ったかどうか
+const micEverUsed = ref(false)
 
 // 録音中はウェイクワード検知を停止（同一マイクの競合を防ぐ）
 watch(recording, (isRec) => {
-  if (isRec) stopListening()
+  if (isRec) {
+    micEverUsed.value = true
+    stopListening()
+  }
 })
 
-// 音声インタラクション終了後にウェイクワード待機を再開
+// 音声インタラクション終了後にウェイクワード待機を再開（初回操作済みの場合のみ）
 watch(voiceActive, (active) => {
-  if (!active && !recording.value) startListening()
+  if (!active && !recording.value && micEverUsed.value) startListening()
 })
 
 // 録音中はリアルタイムでサイドバーのテキストエリアに流し込む
@@ -72,17 +75,15 @@ watch(
 function submit() {
   const text = input.value.trim()
   if (!text) return
-  if (recording.value) cancel()  // 録音中なら onFinish を呼ばずに終了
+  if (recording.value) {
+    cancel()  // 録音中なら onFinish を呼ばずに終了
+    micEverUsed.value = true
+  }
   sendMessage(text)
   input.value = ''
 }
 
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-    e.preventDefault()
-    submit()
-  }
-}
+
 </script>
 
 <template>
