@@ -39,11 +39,11 @@ type LevelConfig = {
 }
 
 const LEVEL_CONFIG: Record<number, LevelConfig> = {
-  1: { anthropicModel: 'claude-haiku-4-5',  openaiModel: 'gpt-4o-mini', deepseekModel: 'deepseek-chat',     ollamaModel: 'gemma2:27b', maxTokens: 2048 },
-  2: { anthropicModel: 'claude-haiku-4-5',  openaiModel: 'gpt-4o-mini', deepseekModel: 'deepseek-chat',     ollamaModel: 'gemma2:27b', maxTokens: 4096 },
-  3: { anthropicModel: 'claude-sonnet-4-6', openaiModel: 'gpt-4o',      deepseekModel: 'deepseek-chat',     ollamaModel: 'gemma2:27b', maxTokens: 8192 },
-  4: { anthropicModel: 'claude-sonnet-4-6', openaiModel: 'gpt-4o',      deepseekModel: 'deepseek-reasoner', ollamaModel: 'gemma2:27b', maxTokens: 16000, thinkingBudget: 8000 },
-  5: { anthropicModel: 'claude-opus-4-7',   openaiModel: 'o3',           deepseekModel: 'deepseek-reasoner', ollamaModel: 'gemma2:27b', maxTokens: 32000, adaptiveThinking: true },
+  1: { anthropicModel: 'claude-haiku-4-5',  openaiModel: 'gpt-4o-mini', deepseekModel: 'deepseek-chat',     ollamaModel: 'llama3.2:1b', maxTokens: 2048 },
+  2: { anthropicModel: 'claude-haiku-4-5',  openaiModel: 'gpt-4o-mini', deepseekModel: 'deepseek-chat',     ollamaModel: 'llama3.2:1b', maxTokens: 4096 },
+  3: { anthropicModel: 'claude-sonnet-4-6', openaiModel: 'gpt-4o',      deepseekModel: 'deepseek-chat',     ollamaModel: 'llama3.2:1b', maxTokens: 8192 },
+  4: { anthropicModel: 'claude-sonnet-4-6', openaiModel: 'gpt-4o',      deepseekModel: 'deepseek-reasoner', ollamaModel: 'llama3.2:1b', maxTokens: 16000, thinkingBudget: 8000 },
+  5: { anthropicModel: 'claude-opus-4-7',   openaiModel: 'o3',           deepseekModel: 'deepseek-reasoner', ollamaModel: 'llama3.2:1b', maxTokens: 32000, adaptiveThinking: true },
 }
 
 type Provider = 'anthropic' | 'openai' | 'deepseek' | 'ollama'
@@ -393,7 +393,7 @@ ${excerpt}`
       rawText = block.text
     } else {
       const client = provider === 'deepseek' ? deepseek : provider === 'ollama' ? ollama : openai
-      const model  = provider === 'deepseek' ? 'deepseek-chat' : provider === 'ollama' ? 'gemma2:27b' : 'gpt-4o-mini'
+      const model  = provider === 'deepseek' ? 'deepseek-chat' : provider === 'ollama' ? 'llama3.2:1b' : 'gpt-4o-mini'
       const chat   = await client.chat.completions.create({
         model, max_tokens: 4096,
         // json_object モードで強制：LLMが不正なJSONを生成しなくなる
