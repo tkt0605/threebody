@@ -3,14 +3,12 @@ import ChatView      from '../views/ChatView.vue'
 import LoginView     from '../views/LoginView.vue'
 import SignupView    from '../views/SignupView.vue'
 import AuthCallback  from '../views/AuthCallback.vue'
-import AozoraView    from '../views/AozoraView.vue'
 import { supabase }  from '../lib/supabase'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/',             component: ChatView,     meta: { requiresAuth: true } },
-    { path: '/recreate_film',       component: AozoraView,   meta: { requiresAuth: true } },
     { path: '/login',        component: LoginView    },
     { path: '/signup',       component: SignupView   },
     { path: '/auth/callback', component: AuthCallback },
