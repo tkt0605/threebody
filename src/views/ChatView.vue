@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import AppAside from '../components/AppAside.vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppRightSidebar from '../components/AppRightSidebar.vue'
 import MessageList from '../components/MessageList.vue'
 import { useChat } from '../composables/useChat'
 import { useVoiceInput } from '../composables/useVoiceInput'
+import { useWakeWord } from '../composables/useWakeWord'
 import { useTTS } from '../composables/useTTS'
 import { useSettings } from '../composables/useSettings'
 
@@ -23,6 +24,24 @@ const { recording, finalText, interimText, bars, start, stop, cancel } =
     voiceActive.value = true
     sendMessage(text)
   })
+
+// 「アイリス」でウェイク → 録音開始
+const { listening: wakeListening, startListening, stopListening } = useWakeWord(() => {
+  start()
+})
+
+// ページ表示時からウェイクワード待機
+onMounted(() => startListening())
+
+// 録音中はウェイクワード検知を停止（同一マイクの競合を防ぐ）
+watch(recording, (isRec) => {
+  if (isRec) stopListening()
+})
+
+// 音声インタラクション終了後にウェイクワード待機を再開
+watch(voiceActive, (active) => {
+  if (!active && !recording.value) startListening()
+})
 
 // 録音中はリアルタイムでサイドバーのテキストエリアに流し込む
 watch([finalText, interimText], () => {
@@ -81,6 +100,7 @@ function onKeydown(e: KeyboardEvent) {
       v-model:input="input"
       :recording="recording"
       :bars="bars"
+      :wake-listening="wakeListening"
       @submit="submit"
       @toggle-mic="recording ? stop() : start()"
     />

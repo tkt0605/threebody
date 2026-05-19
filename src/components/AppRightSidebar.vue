@@ -4,9 +4,10 @@ import McpDialog from './McpDialog.vue'
 import ContextDialog from './ContextDialog.vue'
 
 const props = defineProps<{
-  recording: boolean
-  bars: number[]
-  input: string
+  recording:     boolean
+  bars:          number[]
+  input:         string
+  wakeListening: boolean
 }>()
 
 const emit = defineEmits<{
@@ -23,8 +24,9 @@ const ctxRef = ref<InstanceType<typeof ContextDialog> | null>(null)
 // ── iris 準拠の Canvas 粒子球体 ──────────────────────────────
 const CORE_PARTICLE_COUNT = 1000
 const CORE_RADIUS = 40
-const COLOR_CYAN = { r: 34,  g: 211, b: 238 }  // 待機
-const COLOR_RED  = { r: 248, g: 113, b: 113 }  // 録音
+const COLOR_CYAN   = { r: 34,  g: 211, b: 238 }  // 待機・ウェイクワード検知中
+const COLOR_PURPLE = { r: 167, g: 139, b: 250 }  // ウェイクワード待機中（区別用）
+const COLOR_RED    = { r: 248, g: 113, b: 113 }  // 録音
 
 interface CoreParticle { basePos: { x: number; y: number; z: number } }
 
@@ -63,7 +65,7 @@ function startLoop() {
       : 0
     const currentLevel = avg * 8.5  // iris: average / 30 (0-255byte) と等価
 
-    const color = isRec ? COLOR_RED : COLOR_CYAN
+    const color = isRec ? COLOR_RED : props.wakeListening ? COLOR_PURPLE : COLOR_CYAN
     ctx.fillStyle = `rgb(${color.r}, ${color.g}, ${color.b})`
 
     // 待機中のみゆっくり回転、録音中は停止（iris と同一）
@@ -157,16 +159,24 @@ function onKeydown(e: KeyboardEvent) {
         />
 
         <!-- ステータスオーバーレイ（iris の showUI 相当） -->
-        <div class="absolute inset-0 flex items-end justify-center pb-4 pointer-events-none">
+        <div class="absolute inset-0 flex flex-col items-center justify-end pb-4 pointer-events-none gap-1">
           <Transition name="status" mode="out-in">
             <span
-              :key="recording ? 'rec' : 'idle'"
-              class="text-[11px] tracking-[0.2em] font-semibold"
-              :class="recording ? 'text-red-400' : 'text-cyan-400'"
-            >
-              {{ recording ? '● 聴いてます' : '' }}
-            </span>
+              v-if="recording"
+              key="rec"
+              class="text-[11px] tracking-[0.2em] font-semibold text-red-400"
+            >● 聴いてます</span>
+            <span
+              v-else-if="wakeListening"
+              key="wake"
+              class="text-[11px] tracking-[0.15em] font-semibold text-violet-400"
+            >「アイリス」と呼んで</span>
           </Transition>
+          <!-- クリック起動ヒント（待機中のみ） -->
+          <span
+            v-if="!recording"
+            class="text-[10px] text-gray-400 dark:text-white/25 tracking-wide"
+          >またはタップで起動</span>
         </div>
       </div>
     </div>
