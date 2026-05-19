@@ -159,7 +159,7 @@ defineExpose({ open })
                   v-if="body.provider === 'ollama'"
                   v-model="body.model"
                   type="text"
-                  placeholder="モデル名（例: gemma2:27b）"
+                  placeholder="モデル名（例: llama3.2:1b）"
                   class="w-full rounded-lg text-xs px-3 py-1.5 outline-none transition-colors
                          bg-gray-50 border border-black/8 text-gray-900 placeholder-black/25 focus:border-black/20
                          dark:bg-white/5 dark:border-white/8 dark:text-white/80 dark:placeholder-white/20 dark:focus:border-white/20"
