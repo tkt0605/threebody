@@ -14,7 +14,7 @@ const supabaseAdmin = createClient(
 )
 
 const app = express()
-app.use(cors({ origin: 'http://localhost:5173' }))
+app.use(cors({ origin: process.env.VITE_ORIGIN_BASE_URL }))
 app.use(express.json())
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
