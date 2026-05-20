@@ -170,10 +170,13 @@ function onDismiss() {
 
 // AI が先に挨拶し、読み上げ完了後に録音を自動開始する
 function greetAndListen() {
-  const greeting = 'こんにちは！何かお手伝いできることはありますか？'
+  const lang = settings.language === 'ja' ? 'ja-JP' : 'en-US'
+  const greeting = settings.language === 'ja'
+    ? 'こんにちは！何かお手伝いできることはありますか？'
+    : 'Hello! How can I help you today?'
   greetText.value = greeting
   voiceActive.value = true
-  speak(greeting, 'ja-JP', () => {
+  speak(greeting, lang, () => {
     greetText.value = ''
     voiceActive.value = false
     // スピーカー残響がマイクに入らないよう500ms待ってから録音開始
@@ -449,19 +452,7 @@ function shapePath(id: string, cx: number, cy: number, r: number): string {
       >{{ node.label }}</text>
     </svg>
 
-    <!-- スキップボタン（オンボーディング中のみ） -->
-    <Transition name="ob">
-      <div
-        v-if="!onboarded"
-        class="absolute bottom-6 inset-x-0 flex justify-center pointer-events-none"
-      >
-        <button
-          class="pointer-events-auto text-xs tracking-widest transition-colors cursor-pointer
-                 text-gray-300 hover:text-gray-500 dark:text-white/20 dark:hover:text-white/45"
-          @click="skipOnboard"
-        >スキップ</button>
-      </div>
-    </Transition>
+
   </div>
 
   <!-- Voice overlay -->
