@@ -56,7 +56,7 @@ export function useChat() {
     const block = reactiveMsg.blocks[0] as TextBlock
 
     try {
-      const response = await fetch('http://localhost:3000/api/chat', {
+      const response = await fetch(`${process.env.VITE_API_BASE_URL}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -84,7 +84,7 @@ function startDetection() {
 
       try {
         const descriptor = Array.from(result.descriptor) as number[]
-        const response   = await fetch('http://localhost:3000/api/auth/face/login', {
+        const response   = await fetch(`${process.env.VITE_API_BASE_URL}/api/auth/face/login`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({ email: email.value.trim(), descriptor }),
