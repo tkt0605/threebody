@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import type { Message, TextBlock } from '../types/message'
 import { useSettings } from './useSettings'
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL as string
 function classifyError(err: unknown): string {
   if (err instanceof TypeError && err.message.toLowerCase().includes('fetch')) {
     return 'ネットワークに接続できません。バックエンドが起動しているか確認してください。'
@@ -56,7 +57,7 @@ export function useChat() {
     const block = reactiveMsg.blocks[0] as TextBlock
 
     try {
-      const response = await fetch(`${process.env.VITE_API_BASE_URL}/api/chat`, {
+      const response = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

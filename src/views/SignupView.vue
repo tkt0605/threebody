@@ -85,7 +85,7 @@ function startDetection() {
 
       try {
         const descriptor = Array.from(result.descriptor) as number[]
-        const response   = await fetch(`${process.env.VITE_API_BASE_URL}/api/auth/face/signup`, {
+        const response   = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/auth/face/signup`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({ email: email.value.trim(), descriptor }),

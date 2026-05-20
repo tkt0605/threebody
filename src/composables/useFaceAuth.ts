@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import type * as FaceApi from 'face-api.js'
 
 const MODEL_URL = '/models'
-const API_BASE  = process.env.VITE_API_BASE_URL || ''
+const API_BASE  = import.meta.env.VITE_API_BASE_URL as string
 
 const modelsLoaded = ref(false)
 let loadPromise: Promise<void> | null = null
