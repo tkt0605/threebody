@@ -29,21 +29,41 @@ const ollama    = new OpenAI({
 })
 
 type LevelConfig = {
-  anthropicModel:       string
-  openaiModel:          string
-  deepseekModel:        string
-  ollamaModel:          string
-  maxTokens:            number
-  thinkingBudget?:      number  // Sonnet 4.6 以下で使用（deprecated だが機能はする）
-  adaptiveThinking?:    boolean // Opus 4.7 専用（budget_tokens は 400 になるため）
+  anthropicModel:    string
+  openaiModel:       string
+  deepseekModel:     string
+  ollamaModel:       string
+  maxTokens:         number
+  thinkingBudget?:   number  // Sonnet 4.6 以下で使用（deprecated だが機能はする）
+  adaptiveThinking?: boolean // Opus 4.7 専用（budget_tokens は 400 になるため）
+}
+
+const M = {
+  anthropic: {
+    fast:     process.env.ANTHROPIC_MODEL_FAST!,
+    balanced: process.env.ANTHROPIC_MODEL_BALANCED!,
+    powerful: process.env.ANTHROPIC_MODEL_POWERFUL!,
+  },
+  openai: {
+    fast:     process.env.OPENAI_MODEL_FAST!,
+    balanced: process.env.OPENAI_MODEL_BALANCED!,
+    powerful: process.env.OPENAI_MODEL_POWERFUL!,
+  },
+  deepseek: {
+    fast:     process.env.DEEPSEEK_MODEL_FAST!,
+    powerful: process.env.DEEPSEEK_MODEL_POWERFUL!,
+  },
+  ollama: {
+    default:  process.env.OLLAMA_MODEL_DEFAULT!,
+  },
 }
 
 const LEVEL_CONFIG: Record<number, LevelConfig> = {
-  1: { anthropicModel: 'claude-haiku-4-5',  openaiModel: 'gpt-4o-mini', deepseekModel: 'deepseek-chat',     ollamaModel: 'llama3.2:1b', maxTokens: 2048 },
-  2: { anthropicModel: 'claude-haiku-4-5',  openaiModel: 'gpt-4o-mini', deepseekModel: 'deepseek-chat',     ollamaModel: 'llama3.2:1b', maxTokens: 4096 },
-  3: { anthropicModel: 'claude-sonnet-4-6', openaiModel: 'gpt-4o',      deepseekModel: 'deepseek-chat',     ollamaModel: 'llama3.2:1b', maxTokens: 8192 },
-  4: { anthropicModel: 'claude-sonnet-4-6', openaiModel: 'gpt-4o',      deepseekModel: 'deepseek-reasoner', ollamaModel: 'llama3.2:1b', maxTokens: 16000, thinkingBudget: 8000 },
-  5: { anthropicModel: 'claude-opus-4-7',   openaiModel: 'o3',           deepseekModel: 'deepseek-reasoner', ollamaModel: 'llama3.2:1b', maxTokens: 32000, adaptiveThinking: true },
+  1: { anthropicModel: M.anthropic.fast,     openaiModel: M.openai.fast,     deepseekModel: M.deepseek.fast,     ollamaModel: M.ollama.default, maxTokens: 2048 },
+  2: { anthropicModel: M.anthropic.fast,     openaiModel: M.openai.fast,     deepseekModel: M.deepseek.fast,     ollamaModel: M.ollama.default, maxTokens: 4096 },
+  3: { anthropicModel: M.anthropic.balanced, openaiModel: M.openai.balanced, deepseekModel: M.deepseek.fast,     ollamaModel: M.ollama.default, maxTokens: 8192 },
+  4: { anthropicModel: M.anthropic.balanced, openaiModel: M.openai.balanced, deepseekModel: M.deepseek.powerful, ollamaModel: M.ollama.default, maxTokens: 16000, thinkingBudget: 8000 },
+  5: { anthropicModel: M.anthropic.powerful, openaiModel: M.openai.powerful, deepseekModel: M.deepseek.powerful, ollamaModel: M.ollama.default, maxTokens: 32000, adaptiveThinking: true },
 }
 
 type Provider = 'anthropic' | 'openai' | 'deepseek' | 'ollama'
