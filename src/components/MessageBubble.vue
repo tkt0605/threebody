@@ -7,18 +7,20 @@ defineProps<{ message: Message }>()
 <template>
   <div
     class="flex w-full"
-    :class="message.role === 'user' ? 'justify-end' : 'justify-start'"
   >
     <div
-      class="max-w-[72%] rounded-2xl px-4 py-3 text-sm leading-relaxed"
+      class="max-w-[100%] px-4 py-3 text-sm leading-relaxed"
       :class="
         message.role === 'user'
-          ? 'bg-indigo-600 text-white rounded-br-sm'
-          : 'rounded-bl-sm backdrop-blur-sm bg-gray-100 text-gray-900 dark:bg-white/8 dark:text-white/90'
+          ? 'w-full border-t border-b border-gray-600 dark:text-white text-gray-900'
+          : 'backdrop-blur-sm  dark:text-gray-300 text-gray-800 '
       "
     >
-      <template v-for="block in message.blocks" :key="block.type">
-        <span v-if="block.type === 'text' && (block.content || message.streaming)">
+      <template v-for="(block, i ) in message.blocks" :key="i">
+        <span v-if="block.type === 'text' && (block.content || message.streaming) && message.role === 'user'">
+          ❯ {{ block.content }}<span v-if="message.streaming" class="animate-pulse">▍</span>
+        </span>
+        <span v-else-if="block.type === 'text' && (block.content || message.streaming) && message.role === 'assistant'">
           {{ block.content }}<span v-if="message.streaming" class="animate-pulse">▍</span>
         </span>
         <div
