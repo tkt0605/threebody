@@ -21,6 +21,13 @@ const BODY_PROVIDERS: { value: BodyProvider; label: string; color: string }[] = 
   { value: 'deepseek',  label: 'DeepSeek',  color: '#8b5cf6' },
 ]
 
+const MODEL_PLACEHOLDERS: Record<BodyProvider, string> = {
+  ollama:    'モデル名（例: qwen2.5:7b）',
+  openai:    'モデル名（例: gpt-4o）',
+  anthropic: 'モデル名（例: claude-sonnet-4-6）',
+  deepseek:  'モデル名（例: deepseek-chat）',
+}
+
 const BODY_NAMES = ['一体', '二体', '三体'] as const
 
 const THINKING_LEVELS: { value: ThinkingLevel; label: string; desc: string; color: string }[] = [
@@ -159,21 +166,30 @@ defineExpose({ open })
                   v-if="body.provider === 'ollama'"
                   v-model="body.model"
                   type="text"
-                  placeholder="モデル名（例: llama3.2:1b）"
+                  :placeholder="MODEL_PLACEHOLDERS.ollama"
                   class="w-full rounded-lg text-xs px-3 py-1.5 outline-none transition-colors
                          bg-gray-50 border border-black/8 text-gray-900 placeholder-black/25 focus:border-black/20
                          dark:bg-white/5 dark:border-white/8 dark:text-white/80 dark:placeholder-white/20 dark:focus:border-white/20"
                 />
-                <input
-                  v-else
-                  v-model="body.apiKey"
-                  type="password"
-                  :placeholder="`${BODY_PROVIDERS.find(p => p.value === body.provider)?.label ?? ''} API キー`"
-                  class="w-full rounded-lg text-xs px-3 py-1.5 outline-none transition-colors
-                         bg-gray-50 border border-black/8 text-gray-900 placeholder-black/25 focus:border-black/20
-                         dark:bg-white/5 dark:border-white/8 dark:text-white/80 dark:placeholder-white/20 dark:focus:border-white/20"
-                  autocomplete="off"
-                />
+                <template v-else>
+                  <input
+                    v-model="body.apiKey"
+                    type="password"
+                    :placeholder="`${BODY_PROVIDERS.find(p => p.value === body.provider)?.label ?? ''} API キー`"
+                    class="w-full rounded-lg text-xs px-3 py-1.5 outline-none transition-colors
+                           bg-gray-50 border border-black/8 text-gray-900 placeholder-black/25 focus:border-black/20
+                           dark:bg-white/5 dark:border-white/8 dark:text-white/80 dark:placeholder-white/20 dark:focus:border-white/20"
+                    autocomplete="off"
+                  />
+                  <input
+                    v-model="body.model"
+                    type="text"
+                    :placeholder="MODEL_PLACEHOLDERS[body.provider]"
+                    class="w-full rounded-lg text-xs px-3 py-1.5 outline-none transition-colors mt-1.5
+                           bg-gray-50 border border-black/8 text-gray-900 placeholder-black/25 focus:border-black/20
+                           dark:bg-white/5 dark:border-white/8 dark:text-white/80 dark:placeholder-white/20 dark:focus:border-white/20"
+                  />
+                </template>
               </div>
             </div>
           </div>
