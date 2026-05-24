@@ -30,6 +30,21 @@ const MODEL_PLACEHOLDERS: Record<BodyProvider, string> = {
 
 const BODY_NAMES = ['一体', '二体', '三体'] as const
 
+const LANGUAGES: { value: Language; label: string }[] = [
+  { value: 'ja', label: '日本語' },
+  { value: 'en', label: 'English' },
+  { value: 'zh', label: '中文' },
+  { value: 'ko', label: '한국어' },
+  { value: 'fr', label: 'Français' },
+  { value: 'es', label: 'Español' },
+  { value: 'de', label: 'Deutsch' },
+]
+
+const SEX: { value: Sex; label: string }[] = [
+  { value: 'man', label: '男性' },
+  { value: 'woman', label: '女性' }
+]
+
 const THINKING_LEVELS: { value: ThinkingLevel; label: string; desc: string; color: string }[] = [
   { value: 1, label: '速答', desc: '考えずに即答',     color: '#64748b' },
   { value: 2, label: '概略', desc: '軽く推論',         color: '#0ea5e9' },
@@ -197,35 +212,53 @@ defineExpose({ open })
           <!-- 言語 -->
           <div class="space-y-2">
             <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">言語</label>
-            <div class="flex gap-2">
-              <button
-                v-for="opt in ([{ value: 'ja', label: '日本語' }, { value: 'en', label: 'English' }] as { value: Language; label: string }[])"
-                :key="opt.value"
-                class="px-4 py-1.5 rounded-lg text-sm transition-colors cursor-pointer"
-                :class="draft.language === opt.value
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-100 text-gray-500 hover:text-gray-800 hover:bg-gray-200 dark:bg-white/6 dark:text-white/50 dark:hover:text-white/80 dark:hover:bg-white/10'"
-                @click="draft.language = opt.value"
+            <div class="relative">
+              <select
+                v-model="draft.language"
+                class="w-full appearance-none rounded-xl text-sm px-4 py-2 pr-9 outline-none cursor-pointer transition-colors
+                       bg-gray-50 border border-black/8 text-gray-900 focus:border-black/20
+                       dark:bg-white/5 dark:border-white/8 dark:text-white/90 dark:focus:border-white/20"
               >
-                {{ opt.label }}
-              </button>
+                <option
+                  v-for="opt in LANGUAGES"
+                  :key="opt.value"
+                  :value="opt.value"
+                  class="bg-white text-gray-900 dark:bg-gray-800 dark:text-white"
+                >
+                  {{ opt.label }}
+                </option>
+              </select>
+              <div class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-white/30">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
             </div>
           </div>
           <!-- 性別 -->
           <div class="space-y-2">
             <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">性別</label>
-            <div class="flex gap-2">
-              <button
-                v-for="opt in ([{ value: 'man', label: '男性' }, { value: 'woman', label: '女性' }] as { value: Sex; label: string }[])"
-                :key="opt.value"
-                class="px-4 py-1.5 rounded-lg text-sm transition-colors cursor-pointer"
-                :class="draft.sex === opt.value
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-100 text-gray-500 hover:text-gray-800 hover:bg-gray-200 dark:bg-white/6 dark:text-white/50 dark:hover:text-white/80 dark:hover:bg-white/10'"
-                @click="draft.sex = opt.value"
+            <div class="relative">
+              <select
+                v-model="draft.sex"
+                class="w-full appearance-none rounded-xl text-sm px-4 py-2 pr-9 outline-none cursor-pointer transition-colors
+                       bg-gray-50 border border-black/8 text-gray-900 focus:border-black/20
+                       dark:bg-white/5 dark:border-white/8 dark:text-white/90 dark:focus:border-white/20"
               >
-                {{ opt.label }}
-              </button>
+                <option
+                  v-for="opt in SEX"
+                  :key="opt.value"
+                  :value="opt.value"
+                  class="bg-white text-gray-900 dark:bg-gray-800 dark:text-white"
+                >
+                  {{ opt.label }}
+                </option>
+              </select>
+              <div class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-white/30">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
             </div>
           </div>
           <!-- 思考レベル -->

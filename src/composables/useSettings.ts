@@ -1,6 +1,6 @@
 import { reactive, watch } from 'vue'
 
-export type Language = 'ja' | 'en'
+export type Language = 'ja' | 'en' | 'zh' | 'ko' | 'fr' | 'es' | 'de'
 export type Sex = 'man' | 'woman'
 export type ThinkingLevel = 1 | 2 | 3 | 4 | 5
 export type Provider = 'anthropic' | 'openai' | 'deepseek' | 'ollama'
