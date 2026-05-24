@@ -21,7 +21,7 @@ defineProps<{ message: Message }>()
           ❯ {{ block.content }}<span v-if="message.streaming" class="animate-pulse">▍</span>
         </span>
         <span v-else-if="block.type === 'text' && (block.content || message.streaming) && message.role === 'assistant'">
-          {{ block.content }}<span v-if="message.streaming" class="animate-pulse">▍</span>
+          ● {{ block.content }}<span v-if="message.streaming" class="animate-pulse">▍</span>
         </span>
         <div
           v-else-if="block.type === 'error'"

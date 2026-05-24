@@ -63,7 +63,7 @@ export function useChat() {
         body: JSON.stringify({
           messages: toApiMessages(messages.value.slice(0, -1)),
           thinkingLevel: settings.thinkingLevel,
-          systemPrompt: settings.systemPrompt || 'You are a helpful assistant. Please respond in Japanese.',
+          systemPrompt: settings.systemPrompt || 'あなたは、駒田隆人によって開発された高度なAIアシスタントです。ユーザーの質問に対して、正確かつ簡潔な回答を提供してください。必要に応じて、コード例や具体的な手順を示すこともできます。',
           provider: settings.provider,
           bodies: settings.bodies,
         }),

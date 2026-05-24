@@ -57,7 +57,7 @@ const saved = load()
 const settings = reactive<Settings>({
   language:      (saved.language      as Language)      ?? 'ja',
   thinkingLevel: (saved.thinkingLevel as ThinkingLevel) ?? 3,
-  systemPrompt:  saved.systemPrompt                     ?? '',
+  systemPrompt:  saved.systemPrompt                     ?? 'あなたは、駒田隆人によって開発された高度なAIアシスタントです。ユーザーの質問に対して、正確かつ簡潔な回答を提供してください。必要に応じて、コード例や具体的な手順を示すこともできます。',
   provider:      (saved.provider      as Provider)      ?? 'ollama',
   sex:           (saved.sex           as Sex)           ?? 'man',
   bodies:        saved.bodies                           ?? DEFAULT_BODIES,
