@@ -93,9 +93,9 @@ function createBodyClient(body: BodyConfig): { client: OpenAI | Anthropic; isAnt
 
 function resolveBodyModel(body: BodyConfig, config: LevelConfig): string {
   if (body.provider === 'ollama')    return body.model || config.ollamaModel
-  if (body.provider === 'openai')    return config.openaiModel
-  if (body.provider === 'deepseek')  return config.deepseekModel
-  return config.anthropicModel
+  if (body.provider === 'openai')    return body.model || config.openaiModel
+  if (body.provider === 'deepseek')  return body.model || config.deepseekModel
+  return body.model || config.anthropicModel
 }
 
 async function getBodyResponse(
@@ -244,7 +244,7 @@ app.post('/api/chat', async (req, res) => {
         // 副体（二体・三体）からの見解を並列取得
         const [primary, ...secondaries] = available as [BodyConfig, ...BodyConfig[]]
         const secondaryResponses = await Promise.all(
-          secondaries.map(b => getBodyResponse(b, oaiMessages, config, systemPrompt))
+          secondaries.map(b => getBodyResponse(b, oaiMessages, {...config, maxTokens: 512}, systemPrompt))
         )
 
         const BODY_NAMES = ['一体', '二体', '三体']
