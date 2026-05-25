@@ -198,7 +198,17 @@ function onKeydown(e: KeyboardEvent) {
           @input="emit('update:input', ($event.target as HTMLTextAreaElement).value)"
           @keydown="onKeydown"
         />
-        <div class="flex justify-end pt-1 border-t border-black/6 dark:border-white/6">
+        <div class="flex items-center justify-between pt-1 border-t border-black/6 dark:border-white/6">
+          <button 
+            class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium transtion-all cursor-pointer
+                  text-gray-400 hover:text-indigo-400 dark:hover:bg-indigo-500/10"
+            title="映像化コンテキスト"
+            @click="ctxRef?.open()"
+          >
+            <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">                                                                            
+              <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9" stroke-linecap="round" stroke-linejoin="round"/>                                                       
+            </svg>  
+          </button>
           <button
             :disabled="!input.trim()"
             class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all"
@@ -212,6 +222,7 @@ function onKeydown(e: KeyboardEvent) {
             </svg>
             送信
           </button>
+
         </div>
       </div>
       <p class="text-[11px] text-gray-400 dark:text-white/25 px-1">

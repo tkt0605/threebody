@@ -447,6 +447,134 @@ app.post('/api/auth/face/signup', async (req, res) => {
   res.json({ token_hash: linkData.properties.hashed_token })
 })
 
+
+// ＿＿＿＿＿＿　テキストの整形ユーティリティ＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿
+function stripHtmlRuby(html: string): string{
+  return html
+    .replace(/<rt>[^<]*<\/rt>/gi, '')
+    .replace(/<rp>[^<]*<\/rp>/gi, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, '　')
+    .replace(/&#(\d+);/g, (_, n: string) => String.fromCharCode(Number(n)))
+}
+
+function stripTextRuby(text: string): string{
+  return text
+    .replace(/｜([^《]+)《[^》]+》/g, '$1')
+    .replace(/([^\s｜])《[^》]+》/g, '$1')
+}
+
+function normalizeLines(text: string):string{
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+// ── /api/scenes ───────────────────────────────────────────────────────────────
+
+const SCENE_SYSTEM_PROMPT = `\
+あなたは日本文学の映像化アシスタントです。
+与えられたテキストを読み、映像のシーンとして分割してください。
+
+以下の JSON 形式のみを返してください。説明文は不要です：
+
+{
+  "workTitle": "作品タイトル（判明する場合、不明なら空文字）",
+  "scenes": [
+    {
+      "index": 1,
+      "title": "シーンの短いタイトル（10文字以内）",
+      "excerpt": "原文から抜粋した代表的な一文",
+      "mood": "情景",
+      "summary": "映像ディレクターへの指示（30文字以内）"
+    }
+  ]
+}
+
+ルール：
+- シーン数は 5〜12 個
+- mood は「情景」「心情」「対話」のいずれか
+- excerpt は必ず原文から実際に抜粋すること
+- summary は具体的な映像描写として書くこと（色・光・動きを含めると良い）`
+
+const TEXT_LIMIT = 8000  // 長編は前半のみを対象にする
+
+interface SceneItem{
+  index: number
+  title: string
+  excerpt: string
+  mood: '情景' | '心情' | '対話'
+  summary: string
+}
+
+interface ScenesResponse{
+  workTitle: string
+  scenes: SceneItem[]
+}
+
+interface ScenesRequest{
+  url?: string
+  text?: string
+}
+
+async function fetchAozoraText(url: string): Promise<string> {
+  const parsed = new URL(url)
+  if (!parsed.hostname.endsWith('aozora.gr.jp')){
+    throw new Error('青空文庫のURLのみに対応しています。')
+  }
+  const response = await fetch(url);
+  if (!response.ok){
+    throw new Error(`テキストの取得に失敗しました。HTTP ${response.status}`)
+  }
+  const buffer = await response.arrayBuffer()
+  const decoder = new TextDecoder('shift_jis')
+  const raw = decoder.decode(buffer)
+  const isHtml = parsed.pathname.endsWith('.html') || parsed.pathname.endsWith('.htm')
+  return isHtml ? stripHtmlRuby(raw) : stripTextRuby(raw)
+}
+
+app.post('/api/scenes', async(req, res) => {
+  const {url, text} = req.body as ScenesRequest
+  if (!url && !text){
+    res.status(400).json({
+      error: 'url または、textのいずれかをしてしてください。'
+    });
+    return
+  }
+  try{
+    const raw = url ? await fetchAozoraText(url) : text!
+    const cleaned = normalizeLines(raw)
+    const input = cleaned.length > TEXT_LIMIT ? cleaned.slice(0, TEXT_LIMIT)+ '\n\n（以下省略）' : cleaned
+    const msg = await anthropic.messages.create({
+      model: M.anthropic.balanced,
+      max_tokens: 2048,
+      system: SCENE_SYSTEM_PROMPT,
+      messages: [{
+        role: 'user',
+        content: input
+      }]
+    })
+    const rawJson = msg.content.find(b => b.type === 'text')?.text ?? ''
+
+    // LLMが余分なテキストを返しても、JSON部分のみ抽出
+    const jsonMatch = rawJson.match(/\{[\s\S]*\}/)
+    if (!jsonMatch){
+      res.status(500).json({
+        error: "シーンリストの生成に失敗しました（JSON が見つかりません）。LLMの応答を確認してください。",
+      });
+      return
+    }
+    const result = JSON.parse(jsonMatch[0]) as ScenesResponse
+    res.json(result)
+  }catch(err){
+    const message = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: message })
+  }
+})
 const PORT = Number(process.env.PORT ?? 3000)
 app.listen(PORT, () => {
   console.log(`ThreeBody API listening on :${PORT}`)
