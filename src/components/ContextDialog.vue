@@ -203,26 +203,6 @@ defineExpose({ open })
           </button>
         </div>
 
-        <!-- Footer -->
-        <div class="flex justify-end gap-2 px-6 py-4 border-t border-black/8 dark:border-white/8 shrink-0">
-          <button
-            class="px-4 py-2 rounded-xl text-sm transition-colors cursor-pointer
-                   text-gray-500 hover:text-gray-800 hover:bg-gray-100
-                   dark:text-white/50 dark:hover:text-white/80 dark:hover:bg-white/6"
-            @click="close"
-          >
-            閉じる
-          </button>
-          <button
-            class="px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer
-                   bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40 disabled:cursor-not-allowed"
-            :disabled="loading || (mode === 'url' ? !urlInput.trim() : !textInput.trim())"
-            @click="generate"
-          >
-            {{ loading ? '生成中...' : 'シーンを生成' }}
-          </button>
-        </div>
-
       </div>
     </dialog>
   </Teleport>
