@@ -3,19 +3,19 @@ import { ref, reactive } from 'vue'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL as string
 
-type Mode = "url" | "text"
+type Mode = 'url' | 'text'
 
-interface SceneItem{
-  index: number
-  title: string
+interface SceneItem {
+  index:   number
+  title:   string
   excerpt: string
-  mood: '情景' | '心情' | '対話'
+  mood:    '情景' | '心情' | '対話'
   summary: string
 }
 
-interface ScenesResult{
+interface ScenesResult {
   workTitle: string
-  scenes: SceneItem[]
+  scenes:    SceneItem[]
 }
 const dialogRef = ref<HTMLDialogElement | null>(null)
 const mode = ref<Mode>('url')
@@ -182,7 +182,25 @@ defineExpose({ open })
               </p>
             </div>
           </div>
-
+        </div>
+        <!-- Footer -->
+        <div class="flex justify-end gap-2 px-6 py-4 border-t border-black/8 dark:border-white/8 shrink-0">
+          <button
+            class="px-4 py-2 rounded-xl text-sm transition-colors cursor-pointer
+                   text-gray-500 hover:text-gray-800 hover:bg-gray-100
+                   dark:text-white/50 dark:hover:text-white/80 dark:hover:bg-white/6"
+            @click="close"
+          >
+            閉じる
+          </button>
+          <button
+            class="px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer
+                   bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            :disabled="loading || (mode === 'url' ? !urlInput.trim() : !textInput.trim())"
+            @click="generate"
+          >
+            {{ loading ? '生成中...' : 'シーンを生成' }}
+          </button>
         </div>
 
         <!-- Footer -->
@@ -204,6 +222,7 @@ defineExpose({ open })
             {{ loading ? '生成中...' : 'シーンを生成' }}
           </button>
         </div>
+
       </div>
     </dialog>
   </Teleport>

@@ -1,4 +1,5 @@
 import { ref, onUnmounted } from 'vue'
+import { useSettings } from './useSettings'
 
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList
@@ -25,9 +26,20 @@ declare global {
   }
 }
 
+const LANG_LOCALE: Record<string, string> = {
+  ja: 'ja-JP',
+  en: 'en-US',
+  zh: 'zh-CN',
+  ko: 'ko-KR',
+  fr: 'fr-FR',
+  es: 'es-ES',
+  de: 'de-DE',
+}
+
 const BAR_COUNT = 32
 
 export function useVoiceInput(onFinish: (text: string) => void) {
+  const { settings } = useSettings()
   const recording  = ref(false)
   const finalText  = ref('')
   const interimText = ref('')
@@ -103,7 +115,7 @@ export function useVoiceInput(onFinish: (text: string) => void) {
     raf = requestAnimationFrame(drawBars)
 
     recognition = new SRAPI()
-    recognition.lang = 'ja-JP'
+    recognition.lang = LANG_LOCALE[settings.language] ?? 'ja-JP'
     recognition.continuous = true
     recognition.interimResults = true
 
