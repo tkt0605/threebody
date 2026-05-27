@@ -130,7 +130,7 @@ defineExpose({ open })
         </div>
 
         <!-- Body -->
-        <div class="px-6 py-5 space-y-6 overflow-y-auto">
+        <div class="px-6 py-5 space-y-6 overflow-y-auto [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-gray-600 [&::-webkit-scrollbar-thumb]:rounded-full">
 
           <!-- 三体接続 -->
           <div class="space-y-3">
