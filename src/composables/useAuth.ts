@@ -19,16 +19,13 @@ supabase.auth.onAuthStateChange((_, session) => {
 export function useAuth() {
   const isAuthenticated = computed(() => user.value !== null)
 
-  async function login(email: string, password: string): Promise<void> {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+  // Google OAuth（PKCE）。/auth/callback で code をセッションに交換する
+  async function loginWithGoogle(): Promise<void> {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    })
     if (error) throw error
-  }
-
-  async function signup(email: string, password: string): Promise<{ needsConfirmation: boolean }> {
-    const { data, error } = await supabase.auth.signUp({ email, password })
-    if (error) throw error
-    // Supabase returns a session when email confirmation is disabled
-    return { needsConfirmation: !data.session }
   }
 
   async function logout(): Promise<void> {
@@ -36,5 +33,5 @@ export function useAuth() {
     if (error) throw error
   }
 
-  return { user, isAuthenticated, initialized, login, signup, logout }
+  return { user, isAuthenticated, initialized, loginWithGoogle, logout }
 }

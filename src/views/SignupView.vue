@@ -1,14 +1,9 @@
 <script setup lang="ts">
 import { ref, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import * as faceapi from 'face-api.js'
-import { supabase } from '../lib/supabase'
-import { useFaceAuth } from '../composables/useFaceAuth'
-import { useLiveness } from '../composables/useLiveness'
+import { supabase } from '../lib/supabase';
 import ThreeBodyLogo from '../components/ThreeBodyLogo.vue'
-
-type Phase = 'email' | 'face' | 'done'
-
+type Phase = 'email' | 'face' | 'done';
 const router  = useRouter()
 const phase   = ref<Phase>('email')
 const email   = ref('')

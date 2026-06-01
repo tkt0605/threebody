@@ -1,7 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import ChatView      from '../views/ChatView.vue'
 import LoginView     from '../views/LoginView.vue'
-import SignupView    from '../views/SignupView.vue'
 import AuthCallback  from '../views/AuthCallback.vue'
 import { supabase }  from '../lib/supabase'
 
@@ -10,7 +9,8 @@ const router = createRouter({
   routes: [
     { path: '/',             component: ChatView,     meta: { requiresAuth: true } },
     { path: '/login',        component: LoginView    },
-    { path: '/signup',       component: SignupView   },
+    // Google 認証ではサインアップ/ログインの区別がないため /login に集約
+    { path: '/signup',       redirect: '/login'      },
     { path: '/auth/callback', component: AuthCallback },
   ],
 })
