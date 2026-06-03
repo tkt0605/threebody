@@ -92,6 +92,26 @@ function resolveBodyModel(body: BodyConfig, config: LevelConfig): string {
   return body.model || config.anthropicModel
 }
 
+function toAnthropicMessages(
+  messages: OpenAI.Chat.ChatCompletionMessageParam[]
+): Anthropic.MessageParam[]{
+  return messages
+    .filter((m): m is OpenAI.Chat.ChatCompletionUserMessageParam | OpenAI.Chat.ChatCompletionAssistantMessageParam =>
+      m.role === 'user' || m.role === 'assistant'
+    )
+    .map(m => ({
+      role: m.role as 'user' | 'assistant',
+      content: typeof m.content === 'string' 
+        ? m.content
+        : Array.isArray(m.content)
+          ? m.content
+            .filter((p): p is { type: 'text'; text: string} => p.type === 'text')
+            .map(p => p.text)
+            .join('')
+          : '',
+    }))
+}
+
 async function getBodyResponse(
   body: BodyConfig,
   messages: OpenAI.Chat.ChatCompletionMessageParam[],
@@ -103,7 +123,7 @@ async function getBodyResponse(
 
   if (isAnthropic) {
     const anthropicClient = client as Anthropic
-    const anthropicMsgs = messages as unknown as Anthropic.MessageParam[]
+    const anthropicMsgs = toAnthropicMessages(messages)
     const msg = await anthropicClient.messages.create({
       model,
       max_tokens: config.maxTokens,
@@ -139,8 +159,14 @@ async function streamBodyOAI(
 
   if (isAnthropic) {
     const anthropicClient = client as Anthropic
-    const anthropicMsgs = messages as unknown as Anthropic.MessageParam[]
-    await streamAnthropic(res, anthropicMsgs, { ...config, anthropicModel: model }, systemPrompt)
+    const anthropicMsgs = toAnthropicMessages(messages)
+    await streamAnthropic(
+      res,
+      anthropicMsgs, 
+      { ...config, anthropicModel: model }, 
+      systemPrompt,
+      anthropicClient
+    )
     return
   }
 
@@ -153,6 +179,7 @@ async function streamAnthropic(
   messages: Anthropic.MessageParam[],
   config: LevelConfig,
   systemPrompt: string,
+  client: Anthropic = anthropic,
 ) {
   // Opus 4.7: budget_tokens は削除済み → adaptive thinking を使う
   // Sonnet 4.6 以下: thinkingBudget があれば enabled（非推奨だが機能する）
@@ -163,7 +190,7 @@ async function streamAnthropic(
       : {}
 
   // messages.stream() を使う（create({ stream: true }) より型安全で取り扱いが容易）
-  const stream = anthropic.messages.stream({
+  const stream = client.messages.stream({
     model:      config.anthropicModel,
     max_tokens: config.maxTokens,
     messages,
@@ -376,7 +403,8 @@ interface ScenesRequest {
 
 async function fetchAozoraText(url: string): Promise<string> {
   const parsed = new URL(url)
-  if (!parsed.hostname.endsWith('aozora.gr.jp')) {
+  const ALLOWED_HOSTS = ['aozora.gr.jp', 'www.aozora.gr.jp']
+  if (!ALLOWED_HOSTS.includes(parsed.hostname)) {
     throw new Error('青空文庫（aozora.gr.jp）の URL のみ対応しています')
   }
 
