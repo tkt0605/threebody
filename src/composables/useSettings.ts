@@ -63,7 +63,7 @@ const settings = reactive<Settings>({
   thinkingLevel: (saved.thinkingLevel as ThinkingLevel) ?? 3,
   systemPrompt:  saved.systemPrompt                     ?? '',
   provider:      (saved.provider      as Provider)      ?? 'ollama',
-  bodies:        saved.bodies                           ?? DEFAULT_BODIES,
+  bodies:        ([0, 1, 2] as number[]).map(i => (saved.bodies?.[i] ?? DEFAULT_BODIES[i])) as [BodyConfig, BodyConfig, BodyConfig],
   mcpServers:    saved.mcpServers                       ?? DEFAULT_MCP_SERVERS,
 })
 

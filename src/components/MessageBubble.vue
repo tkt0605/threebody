@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { marked } from 'marked'
 import type { Message } from '../types/message'
-
+import DOMPurify from 'dompurify'
 defineProps<{ message: Message }>()
 
 marked.setOptions({ breaks: true })
@@ -27,10 +27,15 @@ function renderMarkdown(content: string): string {
         <span v-if="block.type === 'text' && (block.content || message.streaming) && message.role === 'user'">
           ❯ {{ block.content }}<span v-if="message.streaming" class="animate-pulse">▍</span>
         </span>
-        <div
+        <!-- <div
           v-else-if="block.type === 'text' && (block.content || message.streaming) && message.role === 'assistant'"
           class="prose-content"
           v-html="renderMarkdown(block.content) + (message.streaming ? '<span class=\'animate-pulse\'>▍</span>' : '')"
+        /> -->
+        <div
+          v-else-if="block.type === 'text' && (block.content || message.streaming) && message.role === 'assistant'"
+          class="prose-content"
+          v-html="DOMPurify.sanitize(renderMarkdown(block.content)) + (message.streaming ? '<span class=\'animate-pulse\'>▍</span>' : '')"
         />
         <div
           v-else-if="block.type === 'error'"

@@ -73,6 +73,7 @@ watch(
 )
 
 function submit() {
+  voiceActive.value = false; // 送信ボタンで音声モードを終了（OFF）にする。
   const text = input.value.trim()
   if (!text) return
   if (recording.value) {
