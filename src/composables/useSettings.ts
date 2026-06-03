@@ -58,7 +58,7 @@ const saved = load()
 
 const settings = reactive<Settings>({
   language:      (saved.language      as Language)      ?? 'ja',
-  voiceStyle:    (saved.voiceStyle    as VoiceStyle)    ?? 'formal',
+  voiceStyle:    (saved.voiceStyle    as VoiceStyle)    ?? 'warm',
   preset:        (saved.preset        as Preset)        ?? 'general',
   thinkingLevel: (saved.thinkingLevel as ThinkingLevel) ?? 3,
   systemPrompt:  saved.systemPrompt                     ?? '',
