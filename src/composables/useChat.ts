@@ -1,25 +1,9 @@
 import { ref } from 'vue'
 import type { Message, TextBlock } from '../types/message'
 import { useSettings } from './useSettings'
+import { buildSystemPrompt } from './useSystemPrompt'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL as string
-
-const LANGUAGE_PROMPT: Record<string, string> = {
-  ja: '必ず日本語で回答してください。',
-  en: 'Always respond in English.',
-  zh: '请始终用中文回答。',
-  ko: '항상 한국어로 답변해 주세요.',
-  fr: 'Répondez toujours en français.',
-  es: 'Responde siempre en español.',
-  de: 'Antworte immer auf Deutsch.',
-}
-
-const SEX_PROMPT: Record<string, string> = {
-  man:   'あなたは男性のAIアシスタントです。男性らしい自然な口調で話してください。',
-  woman: 'あなたは女性のAIアシスタントです。女性らしい自然な口調で話してください。',
-}
-
-
 
 function classifyError(err: unknown): string {
   if (err instanceof TypeError && err.message.toLowerCase().includes('fetch')) {
@@ -81,7 +65,7 @@ export function useChat() {
         body: JSON.stringify({
           messages: toApiMessages(messages.value.slice(0, -1)),
           thinkingLevel: settings.thinkingLevel,
-          systemPrompt: `${settings.systemPrompt || 'あなたは、駒田隆人によって開発された高度なAIアシスタントです。ユーザーの質問に対して、正確かつ簡潔な回答を提供してください。必要に応じて、コード例や具体的な手順を示すこともできます。'}\n\n${LANGUAGE_PROMPT[settings.language] ?? ''}\n\n${SEX_PROMPT[settings.sex] ?? ''}`.trim(),
+          systemPrompt: buildSystemPrompt(settings),
           provider: settings.provider,
           bodies: settings.bodies,
         }),

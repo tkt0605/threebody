@@ -1,7 +1,8 @@
 import { reactive, watch } from 'vue'
 
 export type Language = 'ja' | 'en' | 'zh' | 'ko' | 'fr' | 'es' | 'de'
-export type Sex = 'man' | 'woman'
+export type VoiceStyle = 'formal' | 'casual' | 'terse' | 'warm'
+export type Preset = 'general' | 'coding' | 'creative' | 'chat'
 export type ThinkingLevel = 1 | 2 | 3 | 4 | 5
 export type Provider = 'anthropic' | 'openai' | 'deepseek' | 'ollama'
 export type BodyProvider = 'ollama' | 'openai' | 'anthropic' | 'deepseek'
@@ -20,7 +21,8 @@ export interface McpServer {
 
 export interface Settings {
   language: Language
-  sex: Sex
+  voiceStyle: VoiceStyle
+  preset: Preset
   thinkingLevel: ThinkingLevel
   systemPrompt: string
   provider: Provider
@@ -56,10 +58,11 @@ const saved = load()
 
 const settings = reactive<Settings>({
   language:      (saved.language      as Language)      ?? 'ja',
+  voiceStyle:    (saved.voiceStyle    as VoiceStyle)    ?? 'formal',
+  preset:        (saved.preset        as Preset)        ?? 'general',
   thinkingLevel: (saved.thinkingLevel as ThinkingLevel) ?? 3,
-  systemPrompt:  saved.systemPrompt                     ?? 'あなたは、駒田隆人によって開発された高度なAIアシスタントです。ユーザーの質問に対して、正確かつ簡潔な回答を提供してください。必要に応じて、コード例や具体的な手順を示すこともできます。',
+  systemPrompt:  saved.systemPrompt                     ?? '',
   provider:      (saved.provider      as Provider)      ?? 'ollama',
-  sex:           (saved.sex           as Sex)           ?? 'man',
   bodies:        saved.bodies                           ?? DEFAULT_BODIES,
   mcpServers:    saved.mcpServers                       ?? DEFAULT_MCP_SERVERS,
 })
