@@ -55,8 +55,7 @@ const VOICE_STYLE: Record<VoiceStyle, string> = {
 }
 
 // ── Step 5: プリセット ───────────────────────────────────────────────
-const PRESET_EXTRA: Record<Preset, string> = {
-  general:  '',
+const PRESET_EXTRA: Partial<Record<Preset, string>> = {
   coding:   'コードは動作するものを優先。説明はコードの後に簡潔に。エラーは根本原因から。',
   creative: '創作の相談には共感し、積極的にアイデアを広げる。制約より可能性を語る。',
   chat:     '雑談モード。会話の流れを大切に。相手の言葉に乗っていく。',
@@ -73,24 +72,12 @@ const LANGUAGE_PROMPT: Record<string, string> = {
   de: 'Antworte auf Deutsch.',
 }
 
-// ── UI ラベル（SettingsDialog 用） ────────────────────────────────────
-export const VOICE_STYLE_OPTIONS: { value: VoiceStyle; label: string; desc: string }[] = [
-  { value: 'formal', label: '丁寧',   desc: '自然な敬語' },
-  { value: 'casual', label: 'タメ口', desc: '友達感覚' },
-  { value: 'terse',  label: '端的',   desc: '無駄なし' },
-  { value: 'warm',   label: '温かい', desc: '共感重視' },
-]
-
-export const PRESET_OPTIONS: { value: Preset; label: string; desc: string }[] = [
-  { value: 'general',  label: '汎用',   desc: 'デフォルト' },
-  { value: 'coding',   label: 'コード', desc: 'プログラミング' },
-  { value: 'creative', label: '創作',   desc: 'アイデア・物語' },
-  { value: 'chat',     label: '雑談',   desc: 'カジュアル' },
-]
 
 // ── Step 2: buildSystemPrompt ─────────────────────────────────────────
 export function buildSystemPrompt(settings: Settings): string {
   const parts: string[] = [BASE_PERSONA]
+  const lang = LANGUAGE_PROMPT[settings.language]
+  if (lang) parts.push(lang)
 
   parts.push(VOICE_STYLE[settings.voiceStyle])
 
@@ -103,9 +90,6 @@ export function buildSystemPrompt(settings: Settings): string {
   if (settings.systemPrompt?.trim()) {
     parts.push(`【追加指示】\n${settings.systemPrompt.trim()}`)
   }
-
-  const lang = LANGUAGE_PROMPT[settings.language]
-  if (lang) parts.push(lang)
 
   return parts.filter(Boolean).join('\n\n')
 }
