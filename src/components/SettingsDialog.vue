@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
-import { useSettings, type Language, type ThinkingLevel, type Provider, type Sex, type BodyProvider, type BodyConfig } from '../composables/useSettings'
+import { useSettings, type Language, type ThinkingLevel, type Provider, type VoiceStyle, type Preset, type BodyProvider, type BodyConfig } from '../composables/useSettings'
+import { VOICE_STYLE_OPTIONS, PRESET_OPTIONS } from '../composables/useSystemPrompt'
 import { useTheme } from '../composables/useTheme'
 
 const { settings } = useSettings()
@@ -40,11 +41,6 @@ const LANGUAGES: { value: Language; label: string }[] = [
   { value: 'de', label: 'Deutsch' },
 ]
 
-const SEX: { value: Sex; label: string }[] = [
-  { value: 'man', label: '男性' },
-  { value: 'woman', label: '女性' }
-]
-
 const THINKING_LEVELS: { value: ThinkingLevel; label: string; desc: string; color: string }[] = [
   { value: 1, label: '速答', desc: '考えずに即答',     color: '#64748b' },
   { value: 2, label: '概略', desc: '軽く推論',         color: '#0ea5e9' },
@@ -62,18 +58,20 @@ function isBodyActive(b: BodyConfig): boolean {
 }
 
 const draft = reactive({
-  language: settings.language,
-  sex: settings.sex,
+  language:      settings.language,
+  voiceStyle:    settings.voiceStyle,
+  preset:        settings.preset,
   thinkingLevel: settings.thinkingLevel,
-  systemPrompt: settings.systemPrompt,
-  provider: settings.provider as Provider,
-  bodies: settings.bodies.map(cloneBody) as [BodyConfig, BodyConfig, BodyConfig],
-  mcpServers: settings.mcpServers.map(s => ({ ...s })),
+  systemPrompt:  settings.systemPrompt,
+  provider:      settings.provider as Provider,
+  bodies:        settings.bodies.map(cloneBody) as [BodyConfig, BodyConfig, BodyConfig],
+  mcpServers:    settings.mcpServers.map(s => ({ ...s })),
 })
 
 function open() {
   draft.language      = settings.language
-  draft.sex           = settings.sex
+  draft.voiceStyle    = settings.voiceStyle
+  draft.preset        = settings.preset
   draft.thinkingLevel = settings.thinkingLevel
   draft.systemPrompt  = settings.systemPrompt
   draft.provider      = settings.provider
@@ -88,7 +86,8 @@ function close() {
 
 function save() {
   settings.language      = draft.language
-  settings.sex           = draft.sex
+  settings.voiceStyle    = draft.voiceStyle as VoiceStyle
+  settings.preset        = draft.preset as Preset
   settings.thinkingLevel = draft.thinkingLevel
   settings.systemPrompt  = draft.systemPrompt
   draft.bodies.forEach((b, i) => {
@@ -235,30 +234,27 @@ defineExpose({ open })
               </div>
             </div>
           </div>
-          <!-- 性別 -->
-          <div class="space-y-2">
-            <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">性別</label>
-            <div class="relative">
-              <select
-                v-model="draft.sex"
-                class="w-full appearance-none rounded-xl text-sm px-4 py-2 pr-9 outline-none cursor-pointer transition-colors
-                       bg-gray-50 border border-black/8 text-gray-900 focus:border-black/20
-                       dark:bg-white/5 dark:border-white/8 dark:text-white/90 dark:focus:border-white/20"
+          <!-- 話し方 -->
+          <div class="space-y-3">
+            <div class="flex items-baseline justify-between">
+              <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">話し方</label>
+              <span class="text-xs text-gray-400 dark:text-white/30">
+                {{ VOICE_STYLE_OPTIONS.find(o => o.value === draft.voiceStyle)?.desc ?? '' }}
+              </span>
+            </div>
+            <div class="flex gap-1.5">
+              <button
+                v-for="opt in VOICE_STYLE_OPTIONS"
+                :key="opt.value"
+                class="flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl text-xs transition-all cursor-pointer border"
+                :class="draft.voiceStyle === opt.value
+                  ? 'bg-indigo-500/10 border-indigo-500/60 text-indigo-500 dark:text-indigo-400'
+                  : ''"
+                :style="draft.voiceStyle !== opt.value ? inactiveBtnStyle : {}"
+                @click="draft.voiceStyle = opt.value"
               >
-                <option
-                  v-for="opt in SEX"
-                  :key="opt.value"
-                  :value="opt.value"
-                  class="bg-white text-gray-900 dark:bg-gray-800 dark:text-white"
-                >
-                  {{ opt.label }}
-                </option>
-              </select>
-              <div class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-white/30">
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </div>
+                <span class="font-semibold">{{ opt.label }}</span>
+              </button>
             </div>
           </div>
           <!-- 思考レベル -->
@@ -285,13 +281,37 @@ defineExpose({ open })
             </div>
           </div>
 
-          <!-- システムプロンプト -->
+          <!-- プリセット -->
+          <div class="space-y-3">
+            <div class="flex items-baseline justify-between">
+              <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">プリセット</label>
+              <span class="text-xs text-gray-400 dark:text-white/30">
+                {{ PRESET_OPTIONS.find(o => o.value === draft.preset)?.desc ?? '' }}
+              </span>
+            </div>
+            <div class="flex gap-1.5">
+              <button
+                v-for="opt in PRESET_OPTIONS"
+                :key="opt.value"
+                class="flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl text-xs transition-all cursor-pointer border"
+                :class="draft.preset === opt.value
+                  ? 'bg-indigo-500/10 border-indigo-500/60 text-indigo-500 dark:text-indigo-400'
+                  : ''"
+                :style="draft.preset !== opt.value ? inactiveBtnStyle : {}"
+                @click="draft.preset = opt.value"
+              >
+                <span class="font-semibold">{{ opt.label }}</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 追加指示 -->
           <div class="space-y-2">
-            <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">システムプロンプト</label>
+            <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">追加指示</label>
             <textarea
               v-model="draft.systemPrompt"
-              rows="5"
-              placeholder="AIの根本的な振る舞いを定義してください..."
+              rows="4"
+              placeholder="ベース人格に上乗せする指示があれば..."
               class="w-full rounded-xl text-sm px-4 py-3 outline-none resize-none leading-relaxed transition-colors
                      bg-gray-50 border border-black/8 text-gray-900 placeholder-black/25 focus:border-black/20
                      dark:bg-white/5 dark:border-white/8 dark:text-white/90 dark:placeholder-white/20 dark:focus:border-white/20"
