@@ -101,7 +101,7 @@ function toAnthropicMessages(
     )
     .map(m => ({
       role: m.role as 'user' | 'assistant',
-      content: typeof m.content === 'string' 
+      content: typeof m.content === 'string'
         ? m.content
         : Array.isArray(m.content)
           ? m.content
@@ -110,6 +110,18 @@ function toAnthropicMessages(
             .join('')
           : '',
     }))
+}
+
+function extractTextContent(
+  content: OpenAI.Chat.ChatCompletionMessageParam['content']
+): string {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content))
+    return content
+      .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+      .map(p => p.text)
+      .join('')
+  return ''
 }
 
 async function getBodyResponse(
@@ -225,7 +237,7 @@ async function streamOpenAICompat(
 
   for await (const chunk of stream) {
     const content = chunk.choices[0]?.delta?.content
-    if (content) {
+    if (content != null) {
       res.write(`data: ${JSON.stringify({ type: 'text', content })}\n\n`)
     }
   }
@@ -270,11 +282,12 @@ app.post('/api/chat', async (req, res) => {
 
         const BODY_NAMES = ['一体', '二体', '三体']
         const perspectives = secondaryResponses
-          .filter(r => r.trim())
           .map((r, i) => {
+            if (!r.trim()) return null
             const bodyIdx = bodies.indexOf(secondaries[i]!)
             return `【${BODY_NAMES[bodyIdx] ?? '副体'}（${secondaries[i]!.provider}）の見解】\n${r}`
           })
+          .filter(Boolean)
           .join('\n\n')
 
         const synthesisSystemPrompt = systemPrompt
@@ -285,7 +298,7 @@ app.post('/api/chat', async (req, res) => {
           ...oaiMessages.slice(0, -1),
           {
             role: 'user',
-            content: `${lastUserMsg?.content ?? ''}\n\n---\n${perspectives}`,
+            content: `${extractTextContent(lastUserMsg?.content)}\n\n---\n${perspectives}`,
           },
         ]
 
@@ -408,13 +421,25 @@ async function fetchAozoraText(url: string): Promise<string> {
     throw new Error('青空文庫（aozora.gr.jp）の URL のみ対応しています')
   }
 
-  const response = await fetch(url)
+  const MAX_BYTES = 5 * 1024 * 1024
+
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(10000),
+  })
   if (!response.ok) {
     throw new Error(`青空文庫から取得できませんでした (HTTP ${response.status})`)
   }
 
+  const contentLength = Number(response.headers.get('content-length') ?? 0)
+  if (contentLength > MAX_BYTES) {
+    throw new Error('ファイルサイズが上限（5MB）を超えています')
+  }
+
   // 青空文庫は Shift-JIS エンコード
-  const buffer  = await response.arrayBuffer()
+  const buffer = await response.arrayBuffer()
+  if (buffer.byteLength > MAX_BYTES) {
+    throw new Error('ファイルサイズが上限（5MB）を超えています')
+  }
   const decoder = new TextDecoder('shift_jis')
   const raw     = decoder.decode(buffer)
 
@@ -447,13 +472,17 @@ app.post('/api/scenes', async (req, res) => {
 
     const rawJson = msg.content.find(b => b.type === 'text')?.text ?? ''
 
-    // LLM が余分なテキストを返しても JSON 部分だけ抽出する
     const jsonMatch = rawJson.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
       res.status(500).json({ error: 'シーンリストの生成に失敗しました（JSON が見つかりません）' }); return
     }
 
-    const result = JSON.parse(jsonMatch[0]) as ScenesResponse
+    let result: ScenesResponse
+    try {
+      result = JSON.parse(jsonMatch[0]) as ScenesResponse
+    } catch {
+      result = JSON.parse(rawJson) as ScenesResponse
+    }
     res.json(result)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
