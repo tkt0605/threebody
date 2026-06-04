@@ -12,26 +12,27 @@ function renderMarkdown(content: string): string {
 </script>
 
 <template>
-  <div
-    class="flex w-full"
-  >
+  <div class="flex flex-col w-full">
+    <span
+      class="px-4 pt-3 pb-0.5 text-xs font-medium tracking-wide"
+      :class="message.role === 'user'
+        ? 'text-gray-400 dark:text-gray-500'
+        : 'text-indigo-400'"
+    >
+      {{ message.role === 'user' ? 'あなた' : 'I.R.I.S' }}
+    </span>
     <div
       class="max-w-[100%] px-4 py-3 text-sm leading-relaxed"
       :class="
         message.role === 'user'
-          ? 'w-full border-t border-b border-gray-600 dark:text-white text-gray-900'
-          : 'backdrop-blur-sm  dark:text-gray-300 text-gray-800 '
+          ? 'w-full border-b border-gray-600 dark:text-white text-gray-900'
+          : 'backdrop-blur-sm dark:text-gray-300 text-gray-800'
       "
     >
       <template v-for="(block, i) in message.blocks" :key="i">
-        <span v-if="block.type === 'text' && (block.content || message.streaming) && message.role === 'user'">
+        <span class="block" v-if="block.type === 'text' && (block.content || message.streaming) && message.role === 'user'">
           ❯ {{ block.content }}<span v-if="message.streaming" class="animate-pulse">▍</span>
         </span>
-        <!-- <div
-          v-else-if="block.type === 'text' && (block.content || message.streaming) && message.role === 'assistant'"
-          class="prose-content"
-          v-html="renderMarkdown(block.content) + (message.streaming ? '<span class=\'animate-pulse\'>▍</span>' : '')"
-        /> -->
         <div
           v-else-if="block.type === 'text' && (block.content || message.streaming) && message.role === 'assistant'"
           class="prose-content"
