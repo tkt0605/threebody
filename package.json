@@ -7,7 +7,10 @@
     "dev": "vite",
     "dev:server": "tsx backend/src/server.ts",
     "dev:all": "concurrently -n \"vite,express\" -c \"cyan,green\" \"npm run dev\" \"npm run dev:server\"",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "",
+    "typecheck:backend": "",
+    "lint": "eslint ."
   },
   "overrides": {
     "node-fetch": "^2.7.0"
