@@ -1,5 +1,5 @@
 export default [
   {
-    ignores: ['dist/**', 'node_modules/**', '**/*.ts', '**/*.tsx', '**/*.vue']
+    ignores: ['dist/**', 'node_modules/**']
   }
 ];

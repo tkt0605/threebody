@@ -8,9 +8,10 @@
     "dev:server": "tsx backend/src/server.ts",
     "dev:all": "concurrently -n \"vite,express\" -c \"cyan,green\" \"npm run dev\" \"npm run dev:server\"",
     "preview": "vite preview",
-    "typecheck": "",
-    "typecheck:backend": "",
-    "lint": "eslint ."
+    "typecheck": "vue-tsc --noEmit",
+    "typecheck:backend": "tsc --noEmit -p backend/tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run"
   },
   "overrides": {
     "node-fetch": "^2.7.0"
@@ -39,15 +40,19 @@
     "@types/dompurify": "^3.0.5",
     "@types/express": "^5.0.6",
     "@types/node": "^25.6.0",
+    "@types/supertest": "^7.2.0",
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-vue": "^6.0.6",
     "autoprefixer": "^10.5.0",
     "concurrently": "^9.1.2",
+    "jsdom": "^29.1.1",
     "postcss": "^8.5.13",
+    "supertest": "^7.2.2",
     "tailwindcss": "^4.2.4",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "vite": "^8.0.10",
+    "vitest": "^4.1.8",
     "vue-tsc": "^3.2.7"
   }
 }
