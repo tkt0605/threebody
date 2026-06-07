@@ -20,7 +20,7 @@
   "postCreateCommand": "[ -f .env ] || { [ -f .env.example ] && cp .env.example .env || touch .env; }; rm -rf node_modules && npm install",
 
   // コンテナ起動のたびに Ollama を並列推論モードで起動
-  "postStartCommand": "pkill -f 'ollama serve' 2>/dev/null; sleep 1 && OLLAMA_NUM_PARALLEL=2 ollama serve > /tmp/ollama.log 2>&1 &",
+  "postStartCommand": "echo 'Using host Ollama via host.docker.internal' ",
 
   "customizations": {
     "vscode": {
