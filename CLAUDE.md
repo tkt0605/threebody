@@ -26,7 +26,6 @@ npm run dev:all
 ### フロントエンド (`src/`)
 - **Vue 3 Composition API** + TypeScript + Tailwind CSS v4
 - **ルーティング**: `src/router/index.ts` — `/`（要認証）、`/login`、`/signup`、`/auth/callback`
-- **認証**: Supabase Auth (PKCE フロー) + 顔認証（face-api.js）
 
 ### バックエンド (`backend/src/server.ts`)
 - **単一ファイル** の Express サーバー
@@ -60,10 +59,6 @@ Composables はモジュールレベルのシングルトンとして設計さ�
 |---|---|
 | `POST /api/chat` | SSEチャット（三体モード対応） |
 | `GET /api/health` | ヘルスチェック |
-| `POST /api/auth/face/register` | 顔特徴量登録 |
-| `POST /api/auth/face/verify` | 顔照合 |
-| `POST /api/auth/face/login` | 顔認証ログイン（magic link 発行） |
-| `POST /api/auth/face/signup` | 顔認証サインアップ |
 | `POST /api/scenes` | 青空文庫テキストからシーン生成 |
 
 ## 環境変数 (`.env`)
@@ -89,6 +84,5 @@ Composables はモジュールレベルのシングルトンとして設計さ�
 - `useVoiceInput.ts` — Web Speech API で音声認識、コールバックで送信
 - `useWakeWord.ts` — 「アイリス」でウェイクワード検知 → 録音開始
 - `useTTS.ts` — SpeechSynthesis API でAI応答を読み上げ
-- `useLiveness.ts` / `useFaceAuth.ts` — face-api.js による顔検出・認証
 
 録音中はウェイクワード検知を停止し、同一マイクの競合を防ぐ（`ChatView.vue:37-42`）。
