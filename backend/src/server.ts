@@ -10,6 +10,8 @@ const app = express()
 app.use(cors({ origin: process.env.VITE_ORIGIN_BASE_URL }))
 app.use(express.json())
 
+const OLLAMA_BASE_URL = `${process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434'}/v1`
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const openai    = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 const deepseek  = new OpenAI({
@@ -18,7 +20,7 @@ const deepseek  = new OpenAI({
 })
 const ollama    = new OpenAI({
   apiKey:  'ollama',
-  baseURL: 'http://localhost:11434/v1',
+  baseURL: OLLAMA_BASE_URL,
 })
 
 type LevelConfig = {
@@ -75,7 +77,7 @@ function createBodyClient(body: BodyConfig): { client: OpenAI | Anthropic; isAnt
     return { client: new Anthropic({ apiKey: body.apiKey || process.env.ANTHROPIC_API_KEY }), isAnthropic: true }
   }
   const baseURLs: Record<string, string | undefined> = {
-    ollama:   'http://localhost:11434/v1',
+    ollama:   OLLAMA_BASE_URL,
     deepseek: 'https://api.deepseek.com',
   }
   const client = new OpenAI({
@@ -250,12 +252,14 @@ app.post('/api/chat', async (req, res) => {
     systemPrompt  = "あなたは、駒田隆人によって開発された高度なAIアシスタントです。ユーザーの質問に対して、正確かつ簡潔な回答を提供してください。必要に応じて、コード例や具体的な手順を示すこともできます。",
     provider      = 'ollama',
     bodies,
+    model,
   } = req.body as {
     messages:      Anthropic.MessageParam[]
     thinkingLevel: number
     systemPrompt:  string
     provider:      Provider
     bodies?:       BodyConfig[]
+    model?:        string
   }
 
   res.setHeader('Content-Type', 'text/event-stream')
@@ -318,11 +322,11 @@ app.post('/api/chat', async (req, res) => {
     if (provider === 'anthropic') {
       await streamAnthropic(res, messages, config, systemPrompt)
     } else if (provider === 'openai') {
-      await streamOpenAICompat(openai, config.openaiModel, res, oaiMessages, config.maxTokens, systemPrompt)
+      await streamOpenAICompat(openai, model || config.openaiModel, res, oaiMessages, config.maxTokens, systemPrompt)
     } else if (provider === 'deepseek') {
-      await streamOpenAICompat(deepseek, config.deepseekModel, res, oaiMessages, config.maxTokens, systemPrompt)
+      await streamOpenAICompat(deepseek, model || config.deepseekModel, res, oaiMessages, config.maxTokens, systemPrompt)
     } else {
-      await streamOpenAICompat(ollama, config.ollamaModel, res, oaiMessages, config.maxTokens, systemPrompt)
+      await streamOpenAICompat(ollama, model || config.ollamaModel, res, oaiMessages, config.maxTokens, systemPrompt)
     }
     res.write('data: [DONE]\n\n')
   } catch (err) {
