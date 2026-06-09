@@ -13,11 +13,6 @@ app.use(express.json())
 const OLLAMA_BASE_URL = `${process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434'}/v1`
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-const openai    = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-const deepseek  = new OpenAI({
-  apiKey:  process.env.DEEPSEEK_API_KEY,
-  baseURL: 'https://api.deepseek.com',
-})
 const ollama    = new OpenAI({
   apiKey:  'ollama',
   baseURL: OLLAMA_BASE_URL,
@@ -74,24 +69,21 @@ interface BodyConfig {
 
 function createBodyClient(body: BodyConfig): { client: OpenAI | Anthropic; isAnthropic: boolean } {
   if (body.provider === 'anthropic') {
-    return { client: new Anthropic({ apiKey: body.apiKey || process.env.ANTHROPIC_API_KEY }), isAnthropic: true }
+    return { client: new Anthropic({ apiKey: body.apiKey }), isAnthropic: true }
   }
   const baseURLs: Record<string, string | undefined> = {
     ollama:   OLLAMA_BASE_URL,
     deepseek: 'https://api.deepseek.com',
   }
   const client = new OpenAI({
-    apiKey:  body.provider === 'ollama' ? 'ollama' : (body.apiKey || undefined),
+    apiKey:  body.provider === 'ollama' ? 'ollama' : body.apiKey,
     baseURL: baseURLs[body.provider],
   })
   return { client, isAnthropic: false }
 }
 
-function resolveBodyModel(body: BodyConfig, config: LevelConfig): string {
-  if (body.provider === 'ollama')    return body.model || config.ollamaModel
-  if (body.provider === 'openai')    return body.model || config.openaiModel
-  if (body.provider === 'deepseek')  return body.model || config.deepseekModel
-  return body.model || config.anthropicModel
+function resolveBodyModel(body: BodyConfig): string {
+  return body.model
 }
 
 function toAnthropicMessages(
@@ -132,7 +124,7 @@ async function getBodyResponse(
   config: LevelConfig,
   systemPrompt: string,
 ): Promise<string> {
-  const model = resolveBodyModel(body, config)
+  const model = resolveBodyModel(body)
   const { client, isAnthropic } = createBodyClient(body)
 
   if (isAnthropic) {
@@ -168,7 +160,7 @@ async function streamBodyOAI(
   systemPrompt: string,
   res: express.Response,
 ): Promise<void> {
-  const model = resolveBodyModel(body, config)
+  const model = resolveBodyModel(body)
   const { client, isAnthropic } = createBodyClient(body)
 
   if (isAnthropic) {
@@ -253,6 +245,7 @@ app.post('/api/chat', async (req, res) => {
     provider      = 'ollama',
     bodies,
     model,
+    apiKey,
   } = req.body as {
     messages:      Anthropic.MessageParam[]
     thinkingLevel: number
@@ -260,6 +253,7 @@ app.post('/api/chat', async (req, res) => {
     provider:      Provider
     bodies?:       BodyConfig[]
     model?:        string
+    apiKey?:       string
   }
 
   res.setHeader('Content-Type', 'text/event-stream')
@@ -274,7 +268,8 @@ app.post('/api/chat', async (req, res) => {
     // ── 三体モード ─────────────────────────────────────────────────────────────
     if (bodies && Array.isArray(bodies) && bodies.length > 0) {
       const available = bodies.filter(b =>
-        b.provider === 'ollama' || (b.apiKey && b.apiKey.trim().length > 0)
+        b.model?.trim().length > 0 &&
+        (b.provider === 'ollama' || b.apiKey?.trim().length > 0)
       )
 
       if (available.length > 1) {
@@ -320,13 +315,16 @@ app.post('/api/chat', async (req, res) => {
 
     // ── 単体モード（従来） ───────────────────────────────────────────────────────
     if (provider === 'anthropic') {
-      await streamAnthropic(res, messages, config, systemPrompt)
+      const client = new Anthropic({ apiKey })
+      await streamAnthropic(res, messages, config, systemPrompt, client)
     } else if (provider === 'openai') {
-      await streamOpenAICompat(openai, model || config.openaiModel, res, oaiMessages, config.maxTokens, systemPrompt)
+      const client = new OpenAI({ apiKey })
+      await streamOpenAICompat(client, model ?? '', res, oaiMessages, config.maxTokens, systemPrompt)
     } else if (provider === 'deepseek') {
-      await streamOpenAICompat(deepseek, model || config.deepseekModel, res, oaiMessages, config.maxTokens, systemPrompt)
+      const client = new OpenAI({ apiKey, baseURL: 'https://api.deepseek.com' })
+      await streamOpenAICompat(client, model ?? '', res, oaiMessages, config.maxTokens, systemPrompt)
     } else {
-      await streamOpenAICompat(ollama, model || config.ollamaModel, res, oaiMessages, config.maxTokens, systemPrompt)
+      await streamOpenAICompat(ollama, model ?? '', res, oaiMessages, config.maxTokens, systemPrompt)
     }
     res.write('data: [DONE]\n\n')
   } catch (err) {
