@@ -68,6 +68,7 @@ export function useChat() {
           systemPrompt: buildSystemPrompt(settings),
           provider: settings.provider,
           bodies: settings.bodies,
+          model: settings.bodies.find(b => b.provider === settings.provider)?.model,
         }),
       })
 
