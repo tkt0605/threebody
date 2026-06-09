@@ -40,9 +40,9 @@ const DEFAULT_MCP_SERVERS: McpServer[] = [
 ]
 
 const DEFAULT_BODIES: [BodyConfig, BodyConfig, BodyConfig] = [
-  { provider: 'ollama',    apiKey: '',  model: 'llama3.2:1b' },
-  { provider: 'openai',    apiKey: '',  model: 'gpt-4o-mini' },
-  { provider: 'deepseek',  apiKey: '',  model: 'deepseek-chat' },
+  { provider: 'ollama',   apiKey: '', model: '' },
+  { provider: 'openai',   apiKey: '', model: '' },
+  { provider: 'deepseek', apiKey: '', model: '' },
 ]
 
 function load(): Partial<Settings> {

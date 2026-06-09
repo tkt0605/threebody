@@ -54,7 +54,8 @@ function cloneBody(b: BodyConfig): BodyConfig {
 }
 
 function isBodyActive(b: BodyConfig): boolean {
-  return b.provider === 'ollama' || b.apiKey.trim().length > 0
+  if (b.provider === 'ollama') return b.model.trim().length > 0
+  return b.apiKey.trim().length > 0
 }
 
 const draft = reactive({
