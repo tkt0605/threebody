@@ -140,7 +140,7 @@ function onKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <aside class="flex flex-col w-76 h-screen border-l border-black/8 dark:border-white/8 shrink-0 bg-gray-50 dark:bg-gray-950">
+  <aside class="flex flex-col w-86 h-screen border-l border-black/8 dark:border-white/8 shrink-0 bg-gray-50 dark:bg-gray-950">
     <!-- ヘッダー -->
     <div class="flex items-center gap-2 px-5 py-5.5 border-b border-black/8 dark:border-white/8">
       <svg class="w-4 h-4 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
