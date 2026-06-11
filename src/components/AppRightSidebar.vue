@@ -84,6 +84,10 @@ const CLUSTER_PULSE_FREQ  = [0.05, 0.07, 0.09]
 const CLUSTER_PULSE_PHASE = [0, (2 * Math.PI) / 3, (4 * Math.PI) / 3]
 const CLUSTER_PULSE_AMOUNT = 0.15
 
+// converging（統合回答ストリーム中）：1つの球として脈動
+const CONVERGING_PULSE_FREQ = 0.1
+const CONVERGING_PULSE_AMOUNT = 0.05
+
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 let animationId: number | null = null
 let frameTime = 0  // 回転角の累積カウンタ
@@ -146,10 +150,12 @@ function startLoop() {
     for (const p of coreParticles) {
       const clusterIdx = p.subIndex % subDivisor
 
-      // thinking 中：クラスタごとに異なるリズムで脈動
+      // thinking 中：クラスタごとに異なるリズムで脈動 / converging 中：1つの球として脈動
       const pulse = splitting
         ? 1 + Math.sin(frameTime * CLUSTER_PULSE_FREQ[clusterIdx]! + CLUSTER_PULSE_PHASE[clusterIdx]!) * CLUSTER_PULSE_AMOUNT
-        : 1
+        : aiState.value === 'converging' && !isRec
+          ? 1 + Math.sin(frameTime * CONVERGING_PULSE_FREQ) * CONVERGING_PULSE_AMOUNT
+          : 1
 
       // 録音中：音量に応じてランダム振動
       const vx = isRec ? (Math.random() - 0.5) * currentLevel * 12 : 0
