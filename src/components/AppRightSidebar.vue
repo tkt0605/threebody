@@ -3,7 +3,8 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import McpDialog from './McpDialog.vue'
 import ContextDialog from './ContextDialog.vue'
 import { useChat } from '../composables/useChat'
-import { useSettings, type BodyConfig } from '../composables/useSettings'
+import { useSettings, type BodyConfig, type BodyProvider } from '../composables/useSettings'
+import { BODY_PROVIDER_COLORS } from '../constants/bodyProviders'
 
 const props = defineProps<{
   recording:     boolean
@@ -69,6 +70,20 @@ function isBodyAvailable(b: BodyConfig) {
   return b.model.trim().length > 0 && (b.provider === 'ollama' || b.apiKey.trim().length > 0)
 }
 
+// 各体のプロバイダーカラー（thinking 時のクラスタ色分け用）
+function hexToRgb(hex: string) {
+  const n = parseInt(hex.slice(1), 16)
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }
+}
+const BODY_PROVIDER_RGB = Object.fromEntries(
+  Object.entries(BODY_PROVIDER_COLORS).map(([provider, hex]) => [provider, hexToRgb(hex)])
+) as Record<BodyProvider, { r: number; g: number; b: number }>
+
+// クラスタごとの脈動リズム（周波数・位相をずらして「思考」のばらつきを表現）
+const CLUSTER_PULSE_FREQ  = [0.05, 0.07, 0.09]
+const CLUSTER_PULSE_PHASE = [0, (2 * Math.PI) / 3, (4 * Math.PI) / 3]
+const CLUSTER_PULSE_AMOUNT = 0.15
+
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 let animationId: number | null = null
 let frameTime = 0  // 回転角の累積カウンタ
@@ -94,7 +109,7 @@ function startLoop() {
     const currentLevel = avg * 8.5  // iris: average / 30 (0-255byte) と等価
 
     const color = isRec ? COLOR_RED : props.wakeListening ? COLOR_PURPLE : COLOR_CYAN
-    ctx.fillStyle = `rgb(${color.r}, ${color.g}, ${color.b})`
+    const defaultFillStyle = `rgb(${color.r}, ${color.g}, ${color.b})`
 
     // 待機中のみゆっくり回転、録音中は停止（iris と同一）
     const rot = frameTime * (isRec ? 0 : 0.002)
@@ -106,7 +121,8 @@ function startLoop() {
     }
 
     // thinking 中はアクティブな体の数に応じて分裂、それ以外は中心へ収束（イージング）
-    const activeBodyCount = settings.bodies.filter(isBodyAvailable).length
+    const availableBodies = settings.bodies.filter(isBodyAvailable)
+    const activeBodyCount = availableBodies.length
     const clusterCount = activeBodyCount >= 3 ? 3 : activeBodyCount === 2 ? 2 : 1
     const splitting = aiState.value === 'thinking' && !isRec && clusterCount >= 2
     const targets = clusterCount === 3 ? CLUSTER_TARGETS[3] : CLUSTER_TARGETS[2]
@@ -119,14 +135,29 @@ function startLoop() {
     }
     const subDivisor = splitting ? clusterCount : MAX_CLUSTERS
 
+    // クラスタごとの色（担当する体のプロバイダーカラー）
+    const clusterFillStyles = splitting
+      ? Array.from({ length: clusterCount }, (_, g) => {
+          const rgb = BODY_PROVIDER_RGB[availableBodies[g]?.provider ?? 'ollama']
+          return `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`
+        })
+      : null
+
     for (const p of coreParticles) {
+      const clusterIdx = p.subIndex % subDivisor
+
+      // thinking 中：クラスタごとに異なるリズムで脈動
+      const pulse = splitting
+        ? 1 + Math.sin(frameTime * CLUSTER_PULSE_FREQ[clusterIdx]! + CLUSTER_PULSE_PHASE[clusterIdx]!) * CLUSTER_PULSE_AMOUNT
+        : 1
+
       // 録音中：音量に応じてランダム振動
       const vx = isRec ? (Math.random() - 0.5) * currentLevel * 12 : 0
       const vy = isRec ? (Math.random() - 0.5) * currentLevel * 12 : 0
       const vz = isRec ? (Math.random() - 0.5) * currentLevel * 12 : 0
 
-      // 音量で膨張（iris と同一）
-      const exp = isRec ? 1.0 + currentLevel * 0.1 : 1.0
+      // 音量で膨張（iris と同一）+ thinking 時のクラスタ脈動
+      const exp = (isRec ? 1.0 + currentLevel * 0.1 : 1.0) * pulse
 
       const px = p.basePos.x * CORE_RADIUS * exp + vx
       const py = p.basePos.y * CORE_RADIUS * exp + vy
@@ -137,10 +168,11 @@ function startLoop() {
       const rz = px * Math.sin(rot) + pz * Math.cos(rot)
 
       // クラスタ中心オフセットを加算（thinking 時の分裂）
-      const c = clusterCenters[p.subIndex % subDivisor]!
+      const c = clusterCenters[clusterIdx]!
       const { x, y, s } = project(rx + c.x, py + c.y, rz + c.z)
 
       ctx.globalAlpha = Math.max(0.1, s * 0.8)
+      ctx.fillStyle = clusterFillStyles ? clusterFillStyles[clusterIdx]! : defaultFillStyle
       ctx.beginPath()
       ctx.arc(x, y, (isRec ? 1.5 : 1.0) * s, 0, Math.PI * 2)
       ctx.fill()

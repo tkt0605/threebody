@@ -3,6 +3,7 @@ import { ref, reactive, computed } from 'vue'
 import { useSettings, type Language, type ThinkingLevel, type Provider, type VoiceStyle, type Preset, type BodyProvider, type BodyConfig } from '../composables/useSettings'
 import { VOICE_STYLE_OPTIONS, PRESET_OPTIONS } from '../composables/useSettingsOptions'
 import { useTheme } from '../composables/useTheme'
+import { BODY_PROVIDER_COLORS } from '../constants/bodyProviders'
 
 const { settings } = useSettings()
 const { isDark } = useTheme()
@@ -16,10 +17,10 @@ const inactiveBtnStyle = computed(() => ({
 const dialogRef = ref<HTMLDialogElement | null>(null)
 
 const BODY_PROVIDERS: { value: BodyProvider; label: string; color: string }[] = [
-  { value: 'ollama',    label: 'Ollama',    color: '#22c55e' },
-  { value: 'openai',    label: 'GPT',       color: '#0ea5e9' },
-  { value: 'anthropic', label: 'Claude',    color: '#f97316' },
-  { value: 'deepseek',  label: 'DeepSeek',  color: '#8b5cf6' },
+  { value: 'ollama',    label: 'Ollama',    color: BODY_PROVIDER_COLORS.ollama },
+  { value: 'openai',    label: 'GPT',       color: BODY_PROVIDER_COLORS.openai },
+  { value: 'anthropic', label: 'Claude',    color: BODY_PROVIDER_COLORS.anthropic },
+  { value: 'deepseek',  label: 'DeepSeek',  color: BODY_PROVIDER_COLORS.deepseek },
 ]
 
 const MODEL_PLACEHOLDERS: Record<BodyProvider, string> = {
