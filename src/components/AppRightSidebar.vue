@@ -2,6 +2,8 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import McpDialog from './McpDialog.vue'
 import ContextDialog from './ContextDialog.vue'
+import { useChat } from '../composables/useChat'
+import { useSettings, type BodyConfig } from '../composables/useSettings'
 
 const props = defineProps<{
   recording:     boolean
@@ -21,25 +23,51 @@ const emit = defineEmits<{
 const mcpRef = ref<InstanceType<typeof McpDialog> | null>(null)
 const ctxRef = ref<InstanceType<typeof ContextDialog> | null>(null)
 
+const { aiState } = useChat()
+const { settings } = useSettings()
+
 // ── iris 準拠の Canvas 粒子球体 ──────────────────────────────
 const CORE_PARTICLE_COUNT = 1000
 const CORE_RADIUS = 40
+const MAX_CLUSTERS = 3
+const SUB_DIVISIONS = 6  // 2分割・3分割どちらにも均等に対応できる公倍数
 const COLOR_CYAN   = { r: 34,  g: 211, b: 238 }  // 待機・ウェイクワード検知中
 const COLOR_PURPLE = { r: 167, g: 139, b: 250 }  // ウェイクワード待機中（区別用）
 const COLOR_RED    = { r: 248, g: 113, b: 113 }  // 録音
 
-interface CoreParticle { basePos: { x: number; y: number; z: number } }
+interface CoreParticle { basePos: { x: number; y: number; z: number }; subIndex: number }
 
-// フィボナッチ球面分布（iris と同一アルゴリズム）
+// フィボナッチ球面分布（iris と同一アルゴリズム）。subIndex でクラスタに均等振り分け
 const coreParticles: CoreParticle[] = (() => {
   const phi = Math.PI * (3 - Math.sqrt(5))
   return Array.from({ length: CORE_PARTICLE_COUNT }, (_, i) => {
     const y = 1 - (i / (CORE_PARTICLE_COUNT - 1)) * 2
     const r = Math.sqrt(1 - y * y)
     const theta = phi * i
-    return { basePos: { x: Math.cos(theta) * r, y, z: Math.sin(theta) * r } }
+    return { basePos: { x: Math.cos(theta) * r, y, z: Math.sin(theta) * r }, subIndex: i % SUB_DIVISIONS }
   })
 })()
+
+// ── クラスタ配置（thinking 時にアクティブな体の数だけ分裂、それ以外は中心に収束） ──
+const TRIANGLE_RADIUS = CORE_RADIUS * 1.4
+function clusterTargets(n: number) {
+  return Array.from({ length: n }, (_, i) => {
+    const angle = -Math.PI / 2 + (i * 2 * Math.PI) / n
+    return { x: Math.cos(angle) * TRIANGLE_RADIUS, y: Math.sin(angle) * TRIANGLE_RADIUS, z: 0 }
+  })
+}
+const CLUSTER_TARGETS: Record<2 | 3, { x: number; y: number; z: number }[]> = {
+  2: clusterTargets(2),
+  3: clusterTargets(3),
+}
+const MERGED_TARGET = { x: 0, y: 0, z: 0 }
+const CLUSTER_EASE = 0.08
+const clusterCenters = Array.from({ length: MAX_CLUSTERS }, () => ({ x: 0, y: 0, z: 0 }))
+
+// 設定済み（model指定済み・ollama以外はAPIキーも設定済み）の体の数
+function isBodyAvailable(b: BodyConfig) {
+  return b.model.trim().length > 0 && (b.provider === 'ollama' || b.apiKey.trim().length > 0)
+}
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 let animationId: number | null = null
@@ -77,6 +105,20 @@ function startLoop() {
       return { x: cx + x * s, y: cy + y * s, s }
     }
 
+    // thinking 中はアクティブな体の数に応じて分裂、それ以外は中心へ収束（イージング）
+    const activeBodyCount = settings.bodies.filter(isBodyAvailable).length
+    const clusterCount = activeBodyCount >= 3 ? 3 : activeBodyCount === 2 ? 2 : 1
+    const splitting = aiState.value === 'thinking' && !isRec && clusterCount >= 2
+    const targets = clusterCount === 3 ? CLUSTER_TARGETS[3] : CLUSTER_TARGETS[2]
+    for (let g = 0; g < MAX_CLUSTERS; g++) {
+      const target = splitting && g < clusterCount ? targets[g]! : MERGED_TARGET
+      const c = clusterCenters[g]!
+      c.x += (target.x - c.x) * CLUSTER_EASE
+      c.y += (target.y - c.y) * CLUSTER_EASE
+      c.z += (target.z - c.z) * CLUSTER_EASE
+    }
+    const subDivisor = splitting ? clusterCount : MAX_CLUSTERS
+
     for (const p of coreParticles) {
       // 録音中：音量に応じてランダム振動
       const vx = isRec ? (Math.random() - 0.5) * currentLevel * 12 : 0
@@ -94,7 +136,9 @@ function startLoop() {
       const rx = px * Math.cos(rot) - pz * Math.sin(rot)
       const rz = px * Math.sin(rot) + pz * Math.cos(rot)
 
-      const { x, y, s } = project(rx, py, rz)
+      // クラスタ中心オフセットを加算（thinking 時の分裂）
+      const c = clusterCenters[p.subIndex % subDivisor]!
+      const { x, y, s } = project(rx + c.x, py + c.y, rz + c.z)
 
       ctx.globalAlpha = Math.max(0.1, s * 0.8)
       ctx.beginPath()
