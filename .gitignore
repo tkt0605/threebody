@@ -9,4 +9,3 @@ dist/
 build/
 coverage/
 logs/
-*.gif
