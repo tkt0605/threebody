@@ -2,7 +2,7 @@
 > 3つのモデルが並列で考え、球体がその思考を可視化する。 
 > LLM APIまたは、OllamaのローカルLLMのモデルを自由に組み合わせられる。
 
-![demo](threebody_demo.gif)
+![threebody_demo](threebody_demo.gif)
 
 ## これはどんなものか？ 
 従来のものは、モデルもUIも固定である。
