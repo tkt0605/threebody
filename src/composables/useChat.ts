@@ -19,6 +19,7 @@ function classifyError(err: unknown): string {
 }
 
 const messages = ref<Message[]>([])
+const aiState = ref<'idle' | 'thinking' | 'converging'>('idle');
 
 function createId() {
   return crypto.randomUUID()
@@ -59,6 +60,7 @@ export function useChat() {
     const block = reactiveMsg.blocks[0] as TextBlock
 
     try {
+      aiState.value = 'thinking';
       const response = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -93,7 +95,10 @@ export function useChat() {
           if (data === '[DONE]') break outer
           try {
             const parsed = JSON.parse(data) as { type: string; content?: string; message?: string }
-            if (parsed.type === 'text' && parsed.content) block.content += parsed.content
+            if (parsed.type === 'text' && parsed.content){
+              block.content += parsed.content
+              if (aiState.value !== 'converging') aiState.value = 'converging'
+            }
             if (parsed.type === 'error') throw new Error(parsed.message)
           } catch (e) {
             if (e instanceof SyntaxError) continue
@@ -106,8 +111,9 @@ export function useChat() {
       reactiveMsg.blocks.push({ type: 'error', message: classifyError(err) })
     } finally {
       reactiveMsg.streaming = false  // Proxy 経由で書くことで watch を発火させる
+      aiState.value = 'idle';
     }
   }
 
-  return { messages, sendMessage }
+  return { messages, sendMessage, aiState }
 }
