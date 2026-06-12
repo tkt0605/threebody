@@ -5,7 +5,7 @@ import MessageBubble from './MessageBubble.vue'
 import { useSettings } from '../composables/useSettings'
 
 const { settings } = useSettings()
-const props = defineProps<{ messages: Message[] }>()
+const props = defineProps<{ messages: Message[]; draftMessage?: Message | null }>()
 
 const hasActiveBody = computed(() => {
   return settings.bodies.some(b =>
@@ -15,15 +15,16 @@ const hasActiveBody = computed(() => {
 })
 const container = ref<HTMLElement | null>(null)
 
-watch(
-  () => props.messages,
-  () => nextTick(() => {
+function scrollToBottom() {
+  nextTick(() => {
     if (container.value) {
       container.value.scrollTop = container.value.scrollHeight
     }
-  }),
-  { deep: true }
-)
+  })
+}
+
+watch(() => props.messages, scrollToBottom, { deep: true })
+watch(() => props.draftMessage, scrollToBottom, { deep: true })
 </script>
 
 <template>
@@ -38,5 +39,6 @@ watch(
         </div>
       </div>
     <MessageBubble v-for="msg in messages" :key="msg.id" :message="msg" />
+    <MessageBubble v-if="draftMessage" :message="draftMessage" />
   </div>
 </template>

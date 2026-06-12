@@ -262,55 +262,6 @@ function onKeydown(e: KeyboardEvent) {
         </div>
       </div>
     </div>
-
-    <!-- テキスト入力エリア -->
-    <div class="flex flex-col flex-1 justify-end px-3 py-4 gap-3">
-      <div
-        class="flex flex-col gap-2 rounded-2xl border px-4 py-3 transition-colors
-               bg-white border-black/10 focus-within:border-indigo-400/60
-               dark:bg-white/5 dark:border-white/10 dark:focus-within:border-indigo-400/40"
-      >
-        <textarea
-          :value="input"
-          rows="3"
-          placeholder="メッセージを入力..."
-          class="w-full resize-none bg-transparent text-sm outline-none leading-relaxed
-                 text-gray-900 placeholder-black/30
-                 dark:text-white/90 dark:placeholder-white/25"
-          @input="emit('update:input', ($event.target as HTMLTextAreaElement).value)"
-          @keydown="onKeydown"
-        />
-        <div class="flex items-center justify-between pt-1 border-t border-black/6 dark:border-white/6">
-          <button 
-            class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium transtion-all cursor-pointer
-                  text-gray-400 hover:text-indigo-400 dark:hover:bg-indigo-500/10"
-            title="映像化コンテキスト"
-            @click="ctxRef?.open()"
-          >
-            <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">                                                                            
-              <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9" stroke-linecap="round" stroke-linejoin="round"/>                                                       
-            </svg>  
-          </button>
-          <button
-            :disabled="!input.trim()"
-            class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all"
-            :class="input.trim()
-              ? 'bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer'
-              : 'bg-black/6 dark:bg-white/6 text-gray-400 dark:text-white/25 cursor-default'"
-            @click="emit('submit')"
-          >
-            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 19V5M5 12l7-7 7 7" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            送信
-          </button>
-
-        </div>
-      </div>
-      <p class="text-[11px] text-gray-400 dark:text-white/25 px-1">
-        <kbd class="font-mono">Enter</kbd> で送信　<kbd class="font-mono">Shift+Enter</kbd> で改行
-      </p>
-    </div>
   </aside>
 
   <McpDialog ref="mcpRef" />
