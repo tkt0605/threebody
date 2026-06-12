@@ -9,6 +9,7 @@ import { useVoiceInput } from '../composables/useVoiceInput'
 import { useWakeWord } from '../composables/useWakeWord'
 import { useTTS } from '../composables/useTTS'
 import { useSettings } from '../composables/useSettings'
+import type { Message } from '../types/message'
 
 const { messages, sendMessage } = useChat()
 const { speak } = useTTS()
@@ -50,6 +51,18 @@ watch(voiceActive, (active) => {
 watch([finalText, interimText], () => {
   if (recording.value) {
     input.value = finalText.value + interimText.value
+  }
+})
+
+// 録音中の音声認識結果を「あなた」の発言としてリアルタイムにメッセージ一覧へ表示
+const draftMessage = computed<Message | null>(() => {
+  if (!recording.value) return null
+  return {
+    id: 'draft',
+    role: 'user',
+    blocks: [{ type: 'text', content: finalText.value + interimText.value }],
+    timestamp: new Date(),
+    streaming: true,
   }
 })
 
@@ -95,7 +108,7 @@ function submit() {
       <AppHeader />
 
       <!-- メッセージ一覧 -->
-      <MessageList :messages="messages" />
+      <MessageList :messages="messages" :draft-message="draftMessage" />
     </div>
 
     <AppRightSidebar
