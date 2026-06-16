@@ -73,7 +73,8 @@ function build() {
         {{ building ? 'ビルド中...' : built ? '完了' : 'ビルド' }}
       </button>
     </div>
-
+    <!-- アーカイブ一覧 -->
+     
     <!-- ナビゲーション -->
     <nav class="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
       <button
