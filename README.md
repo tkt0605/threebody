@@ -1,6 +1,7 @@
 # Three Body
 > 3つのモデルが並列で考え、球体がその思考を可視化する。 
 > LLM APIまたは、OllamaのローカルLLMのモデルを自由に組み合わせられる。
+> 声で話しかけ、声で会話が完結する。
 
 ![threebody_demo_0616](threebody_demo_0616.gif)
 
