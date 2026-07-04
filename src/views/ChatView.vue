@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import AppAside from '../components/AppAside.vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppRightSidebar from '../components/AppRightSidebar.vue'
@@ -11,9 +11,13 @@ import { useTTS } from '../composables/useTTS'
 import { useSettings } from '../composables/useSettings'
 import type { Message } from '../types/message'
 
-const { messages, sendMessage } = useChat()
+const { messages, sendMessage, loadHistory } = useChat()
 const { speak } = useTTS()
 const { settings } = useSettings()
+
+onMounted(() => {
+  loadHistory()
+})
 
 const input       = ref('')
 const voiceActive = ref(false)

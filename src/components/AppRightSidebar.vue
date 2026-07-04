@@ -262,6 +262,11 @@ function onKeydown(e: KeyboardEvent) {
               class="text-[11px] tracking-[0.15em] font-semibold text-violet-400"
             >「アイリス」と呼んで</span>
             <span
+              v-else-if="aiState !== 'idle'"
+              key="thinking"
+              class="text-[11px] tracking-[0.15em] font-semibold text-emerald-400"
+            >考えています…</span>
+            <span
               v-else
               key="init"
               class="text-[11px] tracking-[0.15em] text-cyan-500/70"
