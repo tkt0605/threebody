@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import type { Message, TextBlock } from '../types/message'
-import { useSettings } from './useSettings'
+import { useSettings, type BodyProvider } from './useSettings'
 import { buildSystemPrompt } from './useSystemPrompt'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL as string
@@ -19,7 +19,11 @@ function classifyError(err: unknown): string {
 }
 
 const messages = ref<Message[]>([])
-const aiState = ref<'idle' | 'thinking' | 'converging'>('idle');
+const aiState = ref<'idle' | 'thinking' | 'synthesizing' | 'converging'>('idle');
+
+export interface PendingBody { bodyIndex: number; name: string; provider: BodyProvider }
+// 三体モードで現在応答待ちの副体一覧（body_start〜body_doneの間だけ存在）
+const pendingBodies = ref<PendingBody[]>([])
 
 function createId() {
   return crypto.randomUUID()
@@ -61,6 +65,7 @@ export function useChat() {
 
     try {
       aiState.value = 'thinking';
+      pendingBodies.value = []
       const response = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -94,7 +99,24 @@ export function useChat() {
           const data = line.slice(6)
           if (data === '[DONE]') break outer
           try {
-            const parsed = JSON.parse(data) as { type: string; content?: string; message?: string }
+            const parsed = JSON.parse(data) as {
+              type: string
+              content?: string
+              message?: string
+              bodyIndex?: number
+              name?: string
+              provider?: string
+            }
+            if (parsed.type === 'body_start' && parsed.bodyIndex != null) {
+              pendingBodies.value.push({ bodyIndex: parsed.bodyIndex, name: parsed.name ?? '副体', provider: (parsed.provider ?? 'ollama') as BodyProvider })
+            }
+            if (parsed.type === 'body_done' && parsed.bodyIndex != null) {
+              pendingBodies.value = pendingBodies.value.filter(b => b.bodyIndex !== parsed.bodyIndex)
+            }
+            if (parsed.type === 'synthesis_start') {
+              pendingBodies.value = []
+              aiState.value = 'synthesizing'
+            }
             if (parsed.type === 'text' && parsed.content){
               block.content += parsed.content
               if (aiState.value !== 'converging') aiState.value = 'converging'
@@ -112,8 +134,9 @@ export function useChat() {
     } finally {
       reactiveMsg.streaming = false  // Proxy 経由で書くことで watch を発火させる
       aiState.value = 'idle';
+      pendingBodies.value = []
     }
   }
 
-  return { messages, sendMessage, aiState }
+  return { messages, sendMessage, aiState, pendingBodies }
 }

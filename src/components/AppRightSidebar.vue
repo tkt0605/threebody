@@ -24,7 +24,7 @@ const emit = defineEmits<{
 const mcpRef = ref<InstanceType<typeof McpDialog> | null>(null)
 const ctxRef = ref<InstanceType<typeof ContextDialog> | null>(null)
 
-const { aiState } = useChat()
+const { aiState, pendingBodies } = useChat()
 const { settings } = useSettings()
 
 // ── iris 準拠の Canvas 粒子球体 ──────────────────────────────
@@ -112,7 +112,11 @@ function startLoop() {
       : 0
     const currentLevel = avg * 8.5  // iris: average / 30 (0-255byte) と等価
 
-    const color = isRec ? COLOR_RED : props.wakeListening ? COLOR_PURPLE : COLOR_CYAN
+    // 応答生成中（thinking〜synthesizing〜converging）は完了するまで待機色（青）に戻さず、
+    // 主体（一体）のプロバイダー色を保持する（統合中に色が一瞬青に戻ってしまう不自然さを防ぐ）
+    const primaryBody = aiState.value !== 'idle' ? settings.bodies.find(isBodyAvailable) : undefined
+    const processingColor = primaryBody ? BODY_PROVIDER_RGB[primaryBody.provider] : null
+    const color = isRec ? COLOR_RED : props.wakeListening ? COLOR_PURPLE : processingColor ?? COLOR_CYAN
     const defaultFillStyle = `rgb(${color.r}, ${color.g}, ${color.b})`
 
     // 待機中のみゆっくり回転、録音中は停止（iris と同一）
@@ -124,8 +128,12 @@ function startLoop() {
       return { x: cx + x * s, y: cy + y * s, s }
     }
 
-    // thinking 中はアクティブな体の数に応じて分裂、それ以外は中心へ収束（イージング）
-    const availableBodies = settings.bodies.filter(isBodyAvailable)
+    // thinking 中は「まだ回答待ちの副体」の数に応じて分裂し、1体ずつ完了するたびにクラスタが
+    // 中心へ収束していく（= 待ち時間の進捗が見える化される）。converging/synthesizing は常に1つに統合
+    const isThreeBody = aiState.value === 'thinking' && pendingBodies.value.length > 0
+    const availableBodies = isThreeBody
+      ? pendingBodies.value
+      : settings.bodies.filter(isBodyAvailable)
     const activeBodyCount = availableBodies.length
     const clusterCount = activeBodyCount >= 3 ? 3 : activeBodyCount === 2 ? 2 : 1
     const splitting = aiState.value === 'thinking' && !isRec && clusterCount >= 2
@@ -153,7 +161,7 @@ function startLoop() {
       // thinking 中：クラスタごとに異なるリズムで脈動 / converging 中：1つの球として脈動
       const pulse = splitting
         ? 1 + Math.sin(frameTime * CLUSTER_PULSE_FREQ[clusterIdx]! + CLUSTER_PULSE_PHASE[clusterIdx]!) * CLUSTER_PULSE_AMOUNT
-        : aiState.value === 'converging' && !isRec
+        : (aiState.value === 'converging' || aiState.value === 'synthesizing') && !isRec
           ? 1 + Math.sin(frameTime * CONVERGING_PULSE_FREQ) * CONVERGING_PULSE_AMOUNT
           : 1
 
