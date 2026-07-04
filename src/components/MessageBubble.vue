@@ -2,7 +2,15 @@
 import { marked } from 'marked'
 import type { Message } from '../types/message'
 import DOMPurify from 'dompurify'
-defineProps<{ message: Message }>()
+import { BODY_ROLE_COLORS } from '../constants/bodyProviders'
+import { useChat } from '../composables/useChat'
+defineProps<{ message: Message; orphaned?: boolean }>()
+
+const { retryMessage, deleteMessage } = useChat()
+
+function roleColor(bodyIndex: number): string {
+  return BODY_ROLE_COLORS[bodyIndex] ?? '#8b8b8b'
+}
 
 marked.setOptions({ breaks: true })
 
@@ -86,9 +94,36 @@ function handleCopyClick(event: MouseEvent) {
         <div
           v-else-if="block.type === 'text' && (block.content || message.streaming) && message.role === 'assistant'"
           class="prose-content"
+          :class="block.bodyIndex != null ? 'border-l-2 pl-3 -ml-3' : ''"
+          :style="block.bodyIndex != null ? { borderColor: roleColor(block.bodyIndex) } : {}"
           v-html="DOMPurify.sanitize(renderMarkdown(block.content)) + (message.streaming ? '<span class=\'animate-pulse\'>▍</span>' : '')"
           @click="handleCopyClick"
         />
+        <div v-else-if="block.type === 'perspective' && block.bodies.length > 0" class="space-y-2 mb-3">
+          <div class="grid gap-2" :class="block.bodies.length > 1 ? 'grid-cols-2' : 'grid-cols-1'">
+            <div
+              v-for="b in block.bodies"
+              :key="b.bodyIndex"
+              class="rounded-xl border px-3 py-2.5 text-xs leading-relaxed bg-black/[0.02] dark:bg-white/[0.03]"
+              :style="{ borderColor: roleColor(b.bodyIndex) + '40' }"
+            >
+              <div class="flex items-center gap-1.5 mb-1.5 font-medium" :style="{ color: roleColor(b.bodyIndex) }">
+                <span class="w-1.5 h-1.5 rounded-full shrink-0" :style="{ background: roleColor(b.bodyIndex) }" />
+                {{ b.name }}
+              </div>
+              <div
+                class="prose-content text-gray-600 dark:text-white/60"
+                v-html="DOMPurify.sanitize(renderMarkdown(b.content)) + (!b.done ? '<span class=\'animate-pulse\'>▍</span>' : '')"
+                @click="handleCopyClick"
+              />
+            </div>
+          </div>
+          <div class="flex items-center gap-2 text-[10px] tracking-wide text-gray-400 dark:text-white/30">
+            <span class="flex-1 border-t border-dashed border-black/10 dark:border-white/10" />
+            一体が統合
+            <span class="flex-1 border-t border-dashed border-black/10 dark:border-white/10" />
+          </div>
+        </div>
         <div
           v-else-if="block.type === 'error'"
           class="flex items-start gap-2 rounded-xl px-3 py-2.5 text-xs bg-red-500/10 border border-red-500/30 text-red-300 mt-1"
@@ -99,6 +134,19 @@ function handleCopyClick(event: MouseEvent) {
           <span>{{ block.message }}</span>
         </div>
       </template>
+      <div v-if="orphaned" class="flex gap-2 pt-1">
+        <button
+          class="text-xs px-3 py-1.5 rounded-lg transition-colors cursor-pointer
+                 bg-gray-100 hover:bg-gray-200/70 text-gray-600
+                 dark:bg-white/6 dark:hover:bg-white/10 dark:text-white/60"
+          @click="retryMessage(message)"
+        >もう一度送信</button>
+        <button
+          class="text-xs px-3 py-1.5 rounded-lg transition-colors cursor-pointer
+                 bg-red-500/10 hover:bg-red-500/15 text-red-400"
+          @click="deleteMessage(message.id)"
+        >削除する</button>
+      </div>
     </div>
   </div>
 </template>

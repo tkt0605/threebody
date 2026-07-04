@@ -25,6 +25,13 @@ function scrollToBottom() {
 
 watch(() => props.messages, scrollToBottom, { deep: true })
 watch(() => props.draftMessage, scrollToBottom, { deep: true })
+
+// リロード等でAIの返答が保存される前に途切れ、応答が欠けたまま宙ぶらりんになったユーザー発言かどうか
+function isOrphaned(msg: Message, index: number): boolean {
+  if (msg.role !== 'user') return false
+  const next = props.messages[index + 1]
+  return !next || next.role !== 'assistant'
+}
 </script>
 
 <template>
@@ -38,7 +45,12 @@ watch(() => props.draftMessage, scrollToBottom, { deep: true })
           最初の会話を始めましょう。
         </div>
       </div>
-    <MessageBubble v-for="msg in messages" :key="msg.id" :message="msg" />
+    <MessageBubble
+      v-for="(msg, idx) in messages"
+      :key="msg.id"
+      :message="msg"
+      :orphaned="isOrphaned(msg, idx)"
+    />
     <MessageBubble v-if="draftMessage" :message="draftMessage" />
   </div>
 </template>

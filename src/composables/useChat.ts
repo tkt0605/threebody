@@ -1,5 +1,5 @@
 import { ref, watch } from 'vue'
-import type { Message, TextBlock } from '../types/message'
+import type { Message, TextBlock, PerspectiveBlock } from '../types/message'
 import { useSettings, type BodyProvider } from './useSettings'
 import { buildSystemPrompt } from './useSystemPrompt'
 import { supabase } from '../lib/supabase'
@@ -56,8 +56,18 @@ function toApiMessages(msgs: Message[]) {
   }))
 }
 
+// sessions.user_id は user_setting.id への外部キーのため、先にプロフィール行を用意しておく必要がある
+async function ensureUserProfile(userId: string): Promise<void> {
+  const { error } = await supabase
+    .from('user_setting')
+    .upsert({ id: userId }, { onConflict: 'id', ignoreDuplicates: true })
+  if (error) throw error
+}
+
 async function ensureSession(userId: string): Promise<string> {
   if (sessionId) return sessionId
+
+  await ensureUserProfile(userId)
 
   const { data: existing, error: selectErr } = await supabase
     .from('sessions')
@@ -89,7 +99,13 @@ async function loadHistory(): Promise<void> {
   const { user } = useAuth()
   if (!user.value) return
 
-  const sid = await ensureSession(user.value.id)
+  let sid: string
+  try {
+    sid = await ensureSession(user.value.id)
+  } catch (err) {
+    console.error('セッションの取得に失敗しました', err)
+    return
+  }
 
   const { data, error } = await supabase
     .from('messages')
@@ -139,6 +155,17 @@ async function persistMessage(message: Message): Promise<void> {
 
   const { error: blocksErr } = await supabase.from('content_blocks').insert(blockRows)
   if (blocksErr) throw blocksErr
+}
+
+// AIの返答が保存される前に中断された等で、応答が欠けたまま宙ぶらりんになったメッセージを削除する
+async function deleteMessage(id: string): Promise<void> {
+  messages.value = messages.value.filter(m => m.id !== id)
+  try {
+    await supabase.from('content_blocks').delete().eq('message_id', id)
+    await supabase.from('messages').delete().eq('id', id)
+  } catch (err) {
+    console.error('メッセージの削除に失敗しました', err)
+  }
 }
 
 export function useChat() {
@@ -212,13 +239,36 @@ export function useChat() {
             }
             if (parsed.type === 'body_start' && parsed.bodyIndex != null) {
               pendingBodies.value.push({ bodyIndex: parsed.bodyIndex, name: parsed.name ?? '副体', provider: (parsed.provider ?? 'ollama') as BodyProvider })
+
+              let perspectiveBlock = reactiveMsg.blocks.find((b): b is PerspectiveBlock => b.type === 'perspective')
+              if (!perspectiveBlock) {
+                perspectiveBlock = { type: 'perspective', bodies: [] }
+                reactiveMsg.blocks.unshift(perspectiveBlock)
+              }
+              perspectiveBlock.bodies.push({
+                bodyIndex: parsed.bodyIndex,
+                name:      parsed.name ?? '副体',
+                provider:  parsed.provider ?? 'ollama',
+                content:   '',
+                done:      false,
+              })
+            }
+            if (parsed.type === 'body_text' && parsed.bodyIndex != null && parsed.content) {
+              const perspectiveBlock = reactiveMsg.blocks.find((b): b is PerspectiveBlock => b.type === 'perspective')
+              const entry = perspectiveBlock?.bodies.find(b => b.bodyIndex === parsed.bodyIndex)
+              if (entry) entry.content += parsed.content
             }
             if (parsed.type === 'body_done' && parsed.bodyIndex != null) {
               pendingBodies.value = pendingBodies.value.filter(b => b.bodyIndex !== parsed.bodyIndex)
+
+              const perspectiveBlock = reactiveMsg.blocks.find((b): b is PerspectiveBlock => b.type === 'perspective')
+              const entry = perspectiveBlock?.bodies.find(b => b.bodyIndex === parsed.bodyIndex)
+              if (entry) entry.done = true
             }
             if (parsed.type === 'synthesis_start') {
               pendingBodies.value = []
               aiState.value = 'synthesizing'
+              if (parsed.bodyIndex != null) block.bodyIndex = parsed.bodyIndex
             }
             if (parsed.type === 'text' && parsed.content){
               block.content += parsed.content
@@ -232,7 +282,7 @@ export function useChat() {
         }
       }
     } catch (err) {
-      if (!block.content) reactiveMsg.blocks.shift()
+      if (!block.content) reactiveMsg.blocks.splice(reactiveMsg.blocks.indexOf(block), 1)
       reactiveMsg.blocks.push({ type: 'error', message: classifyError(err) })
     } finally {
       reactiveMsg.streaming = false  // Proxy 経由で書くことで watch を発火させる
@@ -242,5 +292,12 @@ export function useChat() {
     }
   }
 
-  return { messages, sendMessage, aiState, pendingBodies, loadHistory }
+  // 応答が欠けたまま宙ぶらりんになったユーザーメッセージを、削除した上で送り直す
+  async function retryMessage(message: Message): Promise<void> {
+    const text = flattenText(message.blocks)
+    await deleteMessage(message.id)
+    if (text.trim()) await sendMessage(text)
+  }
+
+  return { messages, sendMessage, aiState, pendingBodies, loadHistory, deleteMessage, retryMessage }
 }
