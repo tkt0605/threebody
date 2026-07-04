@@ -118,39 +118,56 @@ function extractTextContent(
   return ''
 }
 
-async function getBodyResponse(
+// 副体（二体・三体）の見解をリアルタイムに可視化するため、非ストリーミングではなく
+// body_text イベントを逐次送出しながら全文を蓄積して返す
+async function streamSecondaryBody(
   body: BodyConfig,
+  bodyIndex: number,
   messages: OpenAI.Chat.ChatCompletionMessageParam[],
   config: LevelConfig,
   systemPrompt: string,
+  res: express.Response,
 ): Promise<string> {
   const model = resolveBodyModel(body)
   const { client, isAnthropic } = createBodyClient(body)
+  let full = ''
+
+  const emit = (text: string) => {
+    full += text
+    res.write(`data: ${JSON.stringify({ type: 'body_text', bodyIndex, content: text })}\n\n`)
+  }
 
   if (isAnthropic) {
     const anthropicClient = client as Anthropic
     const anthropicMsgs = toAnthropicMessages(messages)
-    const msg = await anthropicClient.messages.create({
+    const stream = anthropicClient.messages.stream({
       model,
       max_tokens: config.maxTokens,
       messages: anthropicMsgs,
       ...(systemPrompt ? { system: systemPrompt } : {}),
     })
-    const block = msg.content.find(b => b.type === 'text')
-    return block?.type === 'text' ? block.text : ''
+    for await (const text of stream.textStream) emit(text)
+    return full
   }
 
   const oaiClient = client as OpenAI
   const systemMessages: OpenAI.Chat.ChatCompletionMessageParam[] = systemPrompt
     ? [{ role: 'system', content: systemPrompt }]
     : []
-  const resp = await oaiClient.chat.completions.create({
+  const stream = await oaiClient.chat.completions.create({
     model,
     max_tokens: Math.min(config.maxTokens, 2048),
     messages: [...systemMessages, ...messages],
-    stream: false,
+    stream: true,
   })
-  return resp.choices[0]?.message?.content ?? ''
+  for await (const chunk of stream) {
+    // Ollamaのreasoningモデル（deepseek-r1等）は思考内容を content ではなく
+    // reasoning フィールドに入れて返すため、フォールバックとして拾う
+    const delta = chunk.choices[0]?.delta as { content?: string; reasoning?: string } | undefined
+    const content = delta?.content || delta?.reasoning
+    if (content) emit(content)
+  }
+  return full
 }
 
 async function streamBodyOAI(
@@ -230,8 +247,11 @@ async function streamOpenAICompat(
   })
 
   for await (const chunk of stream) {
-    const content = chunk.choices[0]?.delta?.content
-    if (content != null) {
+    // Ollamaのreasoningモデル（deepseek-r1等）は思考内容を content ではなく
+    // reasoning フィールドに入れて返すため、フォールバックとして拾う
+    const delta = chunk.choices[0]?.delta as { content?: string; reasoning?: string } | undefined
+    const content = delta?.content || delta?.reasoning
+    if (content) {
       res.write(`data: ${JSON.stringify({ type: 'text', content })}\n\n`)
     }
   }
@@ -283,7 +303,7 @@ app.post('/api/chat', async (req, res) => {
             const bodyIdx = bodies.indexOf(b)
             const name    = BODY_NAMES[bodyIdx] ?? '副体'
             res.write(`data: ${JSON.stringify({ type: 'body_start', bodyIndex: bodyIdx, name, provider: b.provider })}\n\n`)
-            const text = await getBodyResponse(b, oaiMessages, {...config, maxTokens: 512}, systemPrompt)
+            const text = await streamSecondaryBody(b, bodyIdx, oaiMessages, {...config, maxTokens: 512}, systemPrompt, res)
             res.write(`data: ${JSON.stringify({ type: 'body_done', bodyIndex: bodyIdx })}\n\n`)
             return { bodyIdx, name, provider: b.provider, text }
           })
@@ -309,7 +329,7 @@ app.post('/api/chat', async (req, res) => {
           },
         ]
 
-        res.write(`data: ${JSON.stringify({ type: 'synthesis_start' })}\n\n`)
+        res.write(`data: ${JSON.stringify({ type: 'synthesis_start', bodyIndex: bodies.indexOf(primary) })}\n\n`)
         await streamBodyOAI(primary, synthesisMessages, config, synthesisSystemPrompt, res)
         res.write('data: [DONE]\n\n')
         return
