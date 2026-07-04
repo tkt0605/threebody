@@ -10,3 +10,4 @@ build/
 coverage/
 logs/
 threebody_demo.gif
+*.png
