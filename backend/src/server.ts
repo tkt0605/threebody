@@ -273,18 +273,26 @@ app.post('/api/chat', async (req, res) => {
       )
 
       if (available.length > 1) {
-        // 副体（二体・三体）からの見解を並列取得
+        // 副体（二体・三体）からの見解を並列取得。完了ごとに body_start/body_done を通知し、
+        // フロントで「どの体がまだ話しているか」をリアルタイムに可視化できるようにする
         const [primary, ...secondaries] = available as [BodyConfig, ...BodyConfig[]]
-        const secondaryResponses = await Promise.all(
-          secondaries.map(b => getBodyResponse(b, oaiMessages, {...config, maxTokens: 512}, systemPrompt))
+        const BODY_NAMES = ['一体', '二体', '三体']
+
+        const secondaryResults = await Promise.all(
+          secondaries.map(async (b) => {
+            const bodyIdx = bodies.indexOf(b)
+            const name    = BODY_NAMES[bodyIdx] ?? '副体'
+            res.write(`data: ${JSON.stringify({ type: 'body_start', bodyIndex: bodyIdx, name, provider: b.provider })}\n\n`)
+            const text = await getBodyResponse(b, oaiMessages, {...config, maxTokens: 512}, systemPrompt)
+            res.write(`data: ${JSON.stringify({ type: 'body_done', bodyIndex: bodyIdx })}\n\n`)
+            return { bodyIdx, name, provider: b.provider, text }
+          })
         )
 
-        const BODY_NAMES = ['一体', '二体', '三体']
-        const perspectives = secondaryResponses
-          .map((r, i) => {
-            if (!r.trim()) return null
-            const bodyIdx = bodies.indexOf(secondaries[i]!)
-            return `【${BODY_NAMES[bodyIdx] ?? '副体'}（${secondaries[i]!.provider}）の見解】\n${r}`
+        const perspectives = secondaryResults
+          .map(({ bodyIdx, name, provider, text }) => {
+            if (!text.trim()) return null
+            return `【${name}（${provider}）の見解】\n${text}`
           })
           .filter(Boolean)
           .join('\n\n')
@@ -301,6 +309,7 @@ app.post('/api/chat', async (req, res) => {
           },
         ]
 
+        res.write(`data: ${JSON.stringify({ type: 'synthesis_start' })}\n\n`)
         await streamBodyOAI(primary, synthesisMessages, config, synthesisSystemPrompt, res)
         res.write('data: [DONE]\n\n')
         return
