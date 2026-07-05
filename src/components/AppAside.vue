@@ -3,13 +3,21 @@ import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import ThreeBodyLogo from './ThreeBodyLogo.vue'
 import SettingsDialog from './SettingsDialog.vue'
+import ArchiveViewerDialog from './ArchiveViewerDialog.vue'
 import { useAuth } from '../composables/useAuth'
+import { useChat } from '../composables/useChat'
 
 const router = useRouter()
 const route  = useRoute()
 const { user, logout } = useAuth()
+const { archivedSessions, deleteArchive } = useChat()
 
 const settingsDialog = ref<InstanceType<typeof SettingsDialog> | null>(null)
+const archiveViewer  = ref<InstanceType<typeof ArchiveViewerDialog> | null>(null)
+
+function formatArchiveLabel(d: Date): string {
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
+}
 
 const building = ref(false)
 const built    = ref(false)
@@ -74,7 +82,30 @@ function build() {
       </button>
     </div>
     <!-- アーカイブ一覧 -->
-     
+    <div v-if="archivedSessions.length > 0" class="px-2 py-2 border-b border-black/8 dark:border-white/8 space-y-0.5 max-h-40 overflow-y-auto">
+      <p class="px-3 pb-1 text-[10px] uppercase tracking-widest text-gray-400 dark:text-white/30">アーカイブ</p>
+      <button
+        v-for="session in archivedSessions"
+        :key="session.id"
+        class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-colors cursor-pointer
+               text-gray-500 hover:text-gray-800 hover:bg-gray-200/70
+               dark:text-white/45 dark:hover:text-white/80 dark:hover:bg-white/6"
+        @click="archiveViewer?.open(session.id)"
+      >
+        <svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="truncate">{{ formatArchiveLabel(session.startedAt) }} の会話</span>
+        <!-- アーカイブの削除 -->
+        <span class="ml-auto text-gray-400 dark:text-white/30 hover:text-rose-500 dark:hover:text-rose-400" @click.stop="deleteArchive(session.id)">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16">
+            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+            <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+          </svg>
+        </span>
+      </button>
+    </div>
+
     <!-- ナビゲーション -->
     <nav class="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
       <button
@@ -93,7 +124,7 @@ function build() {
     </nav>
 
     <!-- ユーザー -->
-    <div class="px-2 py-5.75 border-t border-black/8 dark:border-white/8">
+    <div class="px-2 py-4 border-t border-black/8 dark:border-white/8">
       <!-- ユーザー -->
       <div class="flex items-center gap-2 px-3 py-2 rounded-xl group">
         <div class="w-6 h-6 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center shrink-0">
@@ -116,4 +147,5 @@ function build() {
   </aside>
 
   <SettingsDialog ref="settingsDialog" />
+  <ArchiveViewerDialog ref="archiveViewer" />
 </template>

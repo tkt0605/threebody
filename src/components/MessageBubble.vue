@@ -4,7 +4,7 @@ import type { Message } from '../types/message'
 import DOMPurify from 'dompurify'
 import { BODY_ROLE_COLORS } from '../constants/bodyProviders'
 import { useChat } from '../composables/useChat'
-defineProps<{ message: Message; orphaned?: boolean }>()
+defineProps<{ message: Message; orphaned?: boolean; readonly?: boolean }>()
 
 const { retryMessage, deleteMessage } = useChat()
 
@@ -134,7 +134,7 @@ function handleCopyClick(event: MouseEvent) {
           <span>{{ block.message }}</span>
         </div>
       </template>
-      <div v-if="orphaned" class="flex gap-2 pt-1">
+      <div v-if="orphaned && !readonly" class="flex gap-2 pt-1">
         <button
           class="text-xs px-3 py-1.5 rounded-lg transition-colors cursor-pointer
                  bg-gray-100 hover:bg-gray-200/70 text-gray-600
