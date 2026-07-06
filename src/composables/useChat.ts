@@ -1,7 +1,8 @@
 import { ref, watch } from 'vue'
 import type { Message, TextBlock, PerspectiveBlock } from '../types/message'
 import { useSettings, type BodyProvider } from './useSettings'
-import { buildSystemPrompt } from './useSystemPrompt'
+import { buildSystemPrompt, buildBodyPersonaPrompt } from './useSystemPrompt'
+import { BODY_PERSONA_INFO } from '../constants/bodyPersonas'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 
@@ -332,7 +333,13 @@ export function useChat() {
           thinkingLevel: settings.thinkingLevel,
           systemPrompt: buildSystemPrompt(settings),
           provider: settings.provider,
-          bodies: settings.bodies,
+          bodies: settings.bodies.map(b => ({
+            provider: b.provider,
+            apikey: b.apiKey,
+            model: b.model,
+            name: BODY_PERSONA_INFO[b.role].name,
+            personaPrompt: buildBodyPersonaPrompt(settings, b.role),
+          })),
           model:  settings.bodies.find(b => b.provider === settings.provider)?.model,
           apiKey: settings.bodies.find(b => b.provider === settings.provider)?.apiKey,
         }),

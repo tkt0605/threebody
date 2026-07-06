@@ -6,8 +6,9 @@ export type Preset = 'general' | 'coding' | 'creative' | 'chat'
 export type ThinkingLevel = 1 | 2 | 3 | 4 | 5
 export type Provider = 'anthropic' | 'openai' | 'deepseek' | 'ollama'
 export type BodyProvider = 'ollama' | 'openai' | 'anthropic' | 'deepseek'
-
+export type BodyPersona = 'optimist' | 'skeptic' | 'realist'
 export interface BodyConfig {
+  role: BodyPersona,
   provider: BodyProvider
   apiKey: string
   model: string
@@ -26,9 +27,9 @@ export interface Settings {
 const STORAGE_KEY = 'threebody-settings'
 
 const DEFAULT_BODIES: [BodyConfig, BodyConfig, BodyConfig] = [
-  { provider: 'ollama',   apiKey: '', model: '' },
-  { provider: 'openai',   apiKey: '', model: '' },
-  { provider: 'deepseek', apiKey: '', model: '' },
+  { role: 'optimist', provider: 'ollama',   apiKey: '', model: '' },
+  { role: 'skeptic', provider: 'openai',   apiKey: '', model: '' },
+  { role: 'realist', provider: 'deepseek', apiKey: '', model: '' },
 ]
 
 function load(): Partial<Settings> {
@@ -49,7 +50,10 @@ const settings = reactive<Settings>({
   thinkingLevel: (saved.thinkingLevel as ThinkingLevel) ?? 3,
   systemPrompt:  saved.systemPrompt                     ?? '',
   provider:      (saved.provider      as Provider)      ?? 'ollama',
-  bodies:        ([0, 1, 2] as number[]).map(i => (saved.bodies?.[i] ?? DEFAULT_BODIES[i])) as [BodyConfig, BodyConfig, BodyConfig],
+  bodies:        ([0, 1, 2] as number[]).map(i => ({
+    ...DEFAULT_BODIES[i],
+    ...saved.bodies?.[i]
+  })) as [BodyConfig, BodyConfig, BodyConfig],
 })
 
 watch(settings, (val) => {

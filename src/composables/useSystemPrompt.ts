@@ -1,4 +1,5 @@
-import type { Settings, VoiceStyle, Preset } from './useSettings'
+import type { Settings, VoiceStyle, Preset, BodyPersona } from './useSettings'
+import { BODY_PERSONA_INFO } from '../constants/bodyPersonas'
 
 // ── Step 1: ベース人格 ────────────────────────────────────────────────
 // 口調の指示はVOICE_STYLEに完全委譲。会話パターンと誠実さのみ定義する。
@@ -92,4 +93,8 @@ export function buildSystemPrompt(settings: Settings): string {
   }
 
   return parts.filter(Boolean).join('\n\n')
+}
+
+export function buildBodyPersonaPrompt(settings: Settings, role: BodyPersona): string {
+  return `${buildSystemPrompt(settings)}\n\n${BODY_PERSONA_INFO[role].personaPrompt}`
 }
