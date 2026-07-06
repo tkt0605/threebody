@@ -130,7 +130,7 @@ function build() {
         <div class="w-6 h-6 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center shrink-0">
           <span class="text-indigo-600 dark:text-indigo-300 text-[10px] font-semibold uppercase">{{ user?.email?.charAt(0) ?? '?' }}</span>
         </div>
-        <span class="flex-1 text-xs text-gray-400 dark:text-white/35 truncate">{{ user?.email }}</span>
+        <span class="flex-1 text-xs text-gray-400 dark:text-white/35 truncate"></span>
         <button
           class="opacity-0 group-hover:opacity-100 transition-all cursor-pointer text-gray-400 hover:text-rose-500 dark:text-white/25 dark:hover:text-rose-400"
           title="ログアウト"

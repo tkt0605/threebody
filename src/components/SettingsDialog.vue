@@ -50,6 +50,14 @@ const THINKING_LEVELS: { value: ThinkingLevel; label: string; desc: string; colo
   { value: 5, label: '限界', desc: '最大思考リソース', color: '#f43f5e' },
 ]
 
+// 普段は「浅く/深く」の1ダイヤルだけを見せる。プロバイダー/モデル/思考レベルの詳細は「詳細設定」の奥へ
+const SIMPLE_LEVELS: { value: ThinkingLevel; label: string; desc: string; color: string }[] = [
+  { value: 2, label: '浅く', desc: '速く簡潔に答える',   color: '#0ea5e9' },
+  { value: 4, label: '深く', desc: 'じっくり考えて答える', color: '#8b5cf6' },
+]
+
+const showAdvanced = ref(false)
+
 function cloneBody(b: BodyConfig): BodyConfig {
   return { provider: b.provider, apiKey: b.apiKey, model: b.model }
 }
@@ -133,80 +141,24 @@ defineExpose({ open })
         <!-- Body -->
         <div class="px-6 py-5 space-y-6 overflow-y-auto [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-gray-600 [&::-webkit-scrollbar-thumb]:rounded-full">
 
-          <!-- 三体接続 -->
+          <!-- 浅く/深く（普段はこれだけ） -->
           <div class="space-y-3">
-            <div class="flex items-center justify-between">
-              <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">三体接続</label>
-              <span class="text-xs text-gray-400 dark:text-white/30">有効な体を並列クエリし合成</span>
+            <div class="flex items-baseline justify-between">
+              <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">考える深さ</label>
+              <span class="text-xs" :style="{ color: (SIMPLE_LEVELS.find(l => l.value === draft.thinkingLevel) ?? THINKING_LEVELS[draft.thinkingLevel - 1])!.color }">
+                {{ (SIMPLE_LEVELS.find(l => l.value === draft.thinkingLevel) ?? THINKING_LEVELS[draft.thinkingLevel - 1])!.desc }}
+              </span>
             </div>
-            <div class="space-y-2">
-              <div
-                v-for="(body, idx) in draft.bodies"
-                :key="idx"
-                class="rounded-xl border p-3 transition-colors"
-                :class="isBodyActive(body)
-                  ? 'border-indigo-500/40 bg-indigo-500/5 dark:bg-indigo-500/8'
-                  : 'border-black/8 dark:border-white/8'"
-              >
-                <!-- Row header -->
-                <div class="flex items-center gap-2 mb-2">
-                  <span
-                    class="text-sm font-bold w-6 text-center"
-                    :class="isBodyActive(body) ? 'text-indigo-500 dark:text-indigo-400' : 'text-gray-400 dark:text-white/25'"
-                  >{{ BODY_NAMES[idx] }}</span>
-                  <!-- Provider pills -->
-                  <div class="flex gap-1 flex-1">
-                    <button
-                      v-for="p in BODY_PROVIDERS"
-                      :key="p.value"
-                      class="px-2 py-0.5 rounded-md text-xs transition-colors cursor-pointer border font-medium"
-                      :style="body.provider === p.value
-                        ? { background: p.color + '22', borderColor: p.color + '88', color: p.color }
-                        : {}"
-                      :class="body.provider !== p.value
-                        ? 'border-black/8 text-gray-400 hover:text-gray-600 dark:border-white/8 dark:text-white/30 dark:hover:text-white/60'
-                        : ''"
-                      @click="body.provider = p.value"
-                    >{{ p.label }}</button>
-                  </div>
-                  <!-- Active indicator -->
-                  <span
-                    class="text-xs px-1.5 py-0.5 rounded-md font-medium"
-                    :class="isBodyActive(body)
-                      ? 'bg-green-500/15 text-green-500 dark:text-green-400'
-                      : 'bg-gray-100 text-gray-400 dark:bg-white/5 dark:text-white/25'"
-                  >{{ isBodyActive(body) ? '有効' : '無効' }}</span>
-                </div>
-                <!-- Input field -->
-                <input
-                  v-if="body.provider === 'ollama'"
-                  v-model="body.model"
-                  type="text"
-                  :placeholder="MODEL_PLACEHOLDERS.ollama"
-                  class="w-full rounded-lg text-xs px-3 py-1.5 outline-none transition-colors
-                         bg-gray-50 border border-black/8 text-gray-900 placeholder-black/25 focus:border-black/20
-                         dark:bg-white/5 dark:border-white/8 dark:text-white/80 dark:placeholder-white/20 dark:focus:border-white/20"
-                />
-                <template v-else>
-                  <input
-                    v-model="body.apiKey"
-                    type="password"
-                    :placeholder="`${BODY_PROVIDERS.find(p => p.value === body.provider)?.label ?? ''} API キー`"
-                    class="w-full rounded-lg text-xs px-3 py-1.5 outline-none transition-colors
-                           bg-gray-50 border border-black/8 text-gray-900 placeholder-black/25 focus:border-black/20
-                           dark:bg-white/5 dark:border-white/8 dark:text-white/80 dark:placeholder-white/20 dark:focus:border-white/20"
-                    autocomplete="off"
-                  />
-                  <input
-                    v-model="body.model"
-                    type="text"
-                    :placeholder="MODEL_PLACEHOLDERS[body.provider]"
-                    class="w-full rounded-lg text-xs px-3 py-1.5 outline-none transition-colors mt-1.5
-                           bg-gray-50 border border-black/8 text-gray-900 placeholder-black/25 focus:border-black/20
-                           dark:bg-white/5 dark:border-white/8 dark:text-white/80 dark:placeholder-white/20 dark:focus:border-white/20"
-                  />
-                </template>
-              </div>
+            <div class="flex gap-1.5">
+              <button
+                v-for="lvl in SIMPLE_LEVELS"
+                :key="lvl.value"
+                class="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border"
+                :style="draft.thinkingLevel === lvl.value
+                  ? { background: lvl.color + '22', borderColor: lvl.color + '99', color: lvl.color }
+                  : inactiveBtnStyle"
+                @click="draft.thinkingLevel = lvl.value"
+              >{{ lvl.label }}</button>
             </div>
           </div>
 
@@ -259,30 +211,6 @@ defineExpose({ open })
               </button>
             </div>
           </div>
-          <!-- 思考レベル -->
-          <div class="space-y-3">
-            <div class="flex items-baseline justify-between">
-              <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">思考レベル</label>
-              <span class="text-xs" :style="{ color: THINKING_LEVELS[draft.thinkingLevel - 1]!.color }">
-                Lv.{{ draft.thinkingLevel }} — {{ THINKING_LEVELS[draft.thinkingLevel - 1]!.desc }}
-              </span>
-            </div>
-            <div class="flex gap-1.5">
-              <button
-                v-for="lvl in THINKING_LEVELS"
-                :key="lvl.value"
-                class="flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl text-xs transition-all cursor-pointer border"
-                :style="draft.thinkingLevel === lvl.value
-                  ? { background: lvl.color + '22', borderColor: lvl.color + '99', color: lvl.color }
-                  : inactiveBtnStyle"
-                @click="draft.thinkingLevel = lvl.value"
-              >
-                <span class="font-bold text-sm">{{ lvl.value }}</span>
-                <span class="tracking-wide">{{ lvl.label }}</span>
-              </button>
-            </div>
-          </div>
-
           <!-- プリセット -->
           <div class="space-y-3">
             <div class="flex items-baseline justify-between">
@@ -318,6 +246,126 @@ defineExpose({ open })
                      bg-gray-50 border border-black/8 text-gray-900 placeholder-black/25 focus:border-black/20
                      dark:bg-white/5 dark:border-white/8 dark:text-white/90 dark:placeholder-white/20 dark:focus:border-white/20"
             />
+          </div>
+
+          <!-- 詳細設定（プロバイダー/モデル/思考レベルの生の値） -->
+          <div class="pt-1 border-t border-black/8 dark:border-white/8">
+            <button
+              class="w-full flex items-center justify-between py-3 text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50 cursor-pointer"
+              @click="showAdvanced = !showAdvanced"
+            >
+              詳細設定
+              <svg
+                class="w-3.5 h-3.5 transition-transform"
+                :class="showAdvanced ? 'rotate-180' : ''"
+                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              >
+                <path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+
+            <div v-if="showAdvanced" class="space-y-6 pb-1">
+              <!-- 三体接続 -->
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">三体接続</label>
+                  <span class="text-xs text-gray-400 dark:text-white/30">有効な体を並列クエリし合成</span>
+                </div>
+                <div class="space-y-2">
+                  <div
+                    v-for="(body, idx) in draft.bodies"
+                    :key="idx"
+                    class="rounded-xl border p-3 transition-colors"
+                    :class="isBodyActive(body)
+                      ? 'border-indigo-500/40 bg-indigo-500/5 dark:bg-indigo-500/8'
+                      : 'border-black/8 dark:border-white/8'"
+                  >
+                    <!-- Row header -->
+                    <div class="flex items-center gap-2 mb-2">
+                      <span
+                        class="text-sm font-bold w-6 text-center"
+                        :class="isBodyActive(body) ? 'text-indigo-500 dark:text-indigo-400' : 'text-gray-400 dark:text-white/25'"
+                      >{{ BODY_NAMES[idx] }}</span>
+                      <!-- Provider pills -->
+                      <div class="flex gap-1 flex-1">
+                        <button
+                          v-for="p in BODY_PROVIDERS"
+                          :key="p.value"
+                          class="px-2 py-0.5 rounded-md text-xs transition-colors cursor-pointer border font-medium"
+                          :style="body.provider === p.value
+                            ? { background: p.color + '22', borderColor: p.color + '88', color: p.color }
+                            : {}"
+                          :class="body.provider !== p.value
+                            ? 'border-black/8 text-gray-400 hover:text-gray-600 dark:border-white/8 dark:text-white/30 dark:hover:text-white/60'
+                            : ''"
+                          @click="body.provider = p.value"
+                        >{{ p.label }}</button>
+                      </div>
+                      <!-- Active indicator -->
+                      <span
+                        class="text-xs px-1.5 py-0.5 rounded-md font-medium"
+                        :class="isBodyActive(body)
+                          ? 'bg-green-500/15 text-green-500 dark:text-green-400'
+                          : 'bg-gray-100 text-gray-400 dark:bg-white/5 dark:text-white/25'"
+                      >{{ isBodyActive(body) ? '有効' : '無効' }}</span>
+                    </div>
+                    <!-- Input field -->
+                    <input
+                      v-if="body.provider === 'ollama'"
+                      v-model="body.model"
+                      type="text"
+                      :placeholder="MODEL_PLACEHOLDERS.ollama"
+                      class="w-full rounded-lg text-xs px-3 py-1.5 outline-none transition-colors
+                             bg-gray-50 border border-black/8 text-gray-900 placeholder-black/25 focus:border-black/20
+                             dark:bg-white/5 dark:border-white/8 dark:text-white/80 dark:placeholder-white/20 dark:focus:border-white/20"
+                    />
+                    <template v-else>
+                      <input
+                        v-model="body.apiKey"
+                        type="password"
+                        :placeholder="`${BODY_PROVIDERS.find(p => p.value === body.provider)?.label ?? ''} API キー`"
+                        class="w-full rounded-lg text-xs px-3 py-1.5 outline-none transition-colors
+                               bg-gray-50 border border-black/8 text-gray-900 placeholder-black/25 focus:border-black/20
+                               dark:bg-white/5 dark:border-white/8 dark:text-white/80 dark:placeholder-white/20 dark:focus:border-white/20"
+                        autocomplete="off"
+                      />
+                      <input
+                        v-model="body.model"
+                        type="text"
+                        :placeholder="MODEL_PLACEHOLDERS[body.provider]"
+                        class="w-full rounded-lg text-xs px-3 py-1.5 outline-none transition-colors mt-1.5
+                               bg-gray-50 border border-black/8 text-gray-900 placeholder-black/25 focus:border-black/20
+                               dark:bg-white/5 dark:border-white/8 dark:text-white/80 dark:placeholder-white/20 dark:focus:border-white/20"
+                      />
+                    </template>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 思考レベル（詳細: 1〜5） -->
+              <div class="space-y-3">
+                <div class="flex items-baseline justify-between">
+                  <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">思考レベル（詳細）</label>
+                  <span class="text-xs" :style="{ color: THINKING_LEVELS[draft.thinkingLevel - 1]!.color }">
+                    Lv.{{ draft.thinkingLevel }} — {{ THINKING_LEVELS[draft.thinkingLevel - 1]!.desc }}
+                  </span>
+                </div>
+                <div class="flex gap-1.5">
+                  <button
+                    v-for="lvl in THINKING_LEVELS"
+                    :key="lvl.value"
+                    class="flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl text-xs transition-all cursor-pointer border"
+                    :style="draft.thinkingLevel === lvl.value
+                      ? { background: lvl.color + '22', borderColor: lvl.color + '99', color: lvl.color }
+                      : inactiveBtnStyle"
+                    @click="draft.thinkingLevel = lvl.value"
+                  >
+                    <span class="font-bold text-sm">{{ lvl.value }}</span>
+                    <span class="tracking-wide">{{ lvl.label }}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
