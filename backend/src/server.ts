@@ -63,8 +63,9 @@ type BodyProvider = 'ollama' | 'openai' | 'anthropic' | 'deepseek'
 interface BodyConfig {
   provider: BodyProvider
   apiKey:   string
-  
   model:    string
+  name?: string
+  personaPrompt?: string
 }
 
 function createBodyClient(body: BodyConfig): { client: OpenAI | Anthropic; isAnthropic: boolean } {
@@ -298,14 +299,13 @@ app.post('/api/chat', async (req, res) => {
         // 副体（二体・三体）からの見解を並列取得。完了ごとに body_start/body_done を通知し、
         // フロントで「どの体がまだ話しているか」をリアルタイムに可視化できるようにする
         const [primary, ...secondaries] = available as [BodyConfig, ...BodyConfig[]]
-        const BODY_NAMES = ['一体', '二体', '三体']
 
         const secondaryResults = await Promise.all(
           secondaries.map(async (b) => {
             const bodyIdx = bodies.indexOf(b)
-            const name    = BODY_NAMES[bodyIdx] ?? '副体'
+            const name    = b.name ?? '副体'
             res.write(`data: ${JSON.stringify({ type: 'body_start', bodyIndex: bodyIdx, name, provider: b.provider })}\n\n`)
-            const text = await streamSecondaryBody(b, bodyIdx, oaiMessages, {...config, maxTokens: 512}, systemPrompt, res)
+            const text = await streamSecondaryBody(b, bodyIdx, oaiMessages, {...config, maxTokens: 512},b.personaPrompt ?? systemPrompt, res)
             res.write(`data: ${JSON.stringify({ type: 'body_done', bodyIndex: bodyIdx })}\n\n`)
             return { bodyIdx, name, provider: b.provider, text }
           })
