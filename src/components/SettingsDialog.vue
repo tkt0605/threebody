@@ -59,7 +59,7 @@ const SIMPLE_LEVELS: { value: ThinkingLevel; label: string; desc: string; color:
 const showAdvanced = ref(false)
 
 function cloneBody(b: BodyConfig): BodyConfig {
-  return { provider: b.provider, apiKey: b.apiKey, model: b.model }
+  return { role: b.role, provider: b.provider, apiKey: b.apiKey, model: b.model }
 }
 
 function isBodyActive(b: BodyConfig): boolean {
