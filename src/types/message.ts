@@ -19,12 +19,7 @@ export type BodyPerspective = {
 }
 export type PerspectiveBlock = { type: 'perspective'; bodies: BodyPerspective[] }
 
-// Future block types
-export type ImageBlock = { type: 'image'; url: string; alt?: string }
-export type MapBlock = { type: 'map'; lat: number; lng: number; zoom?: number }
-export type GameBlock = { type: 'game'; gameId: string }
-
-export type ContentBlock = TextBlock | ErrorBlock | PerspectiveBlock | ImageBlock | MapBlock | GameBlock
+export type ContentBlock = TextBlock | ErrorBlock | PerspectiveBlock
 
 export type Message = {
   id: string

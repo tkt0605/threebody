@@ -75,7 +75,6 @@ const draft = reactive({
   systemPrompt:  settings.systemPrompt,
   provider:      settings.provider as Provider,
   bodies:        settings.bodies.map(cloneBody) as [BodyConfig, BodyConfig, BodyConfig],
-  mcpServers:    settings.mcpServers.map(s => ({ ...s })),
 })
 
 function open() {
@@ -86,7 +85,6 @@ function open() {
   draft.systemPrompt  = settings.systemPrompt
   draft.provider      = settings.provider
   draft.bodies        = settings.bodies.map(cloneBody) as [BodyConfig, BodyConfig, BodyConfig]
-  draft.mcpServers    = settings.mcpServers.map(s => ({ ...s }))
   dialogRef.value?.showModal()
 }
 
@@ -104,9 +102,6 @@ function save() {
     settings.bodies[i]!.provider = b.provider
     settings.bodies[i]!.apiKey   = b.apiKey
     settings.bodies[i]!.model    = b.model
-  })
-  settings.mcpServers.forEach((s, i) => {
-    s.enabled = draft.mcpServers[i]?.enabled ?? s.enabled
   })
   close()
 }

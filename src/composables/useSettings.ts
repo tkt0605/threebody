@@ -13,12 +13,6 @@ export interface BodyConfig {
   model: string
 }
 
-export interface McpServer {
-  id: string
-  label: string
-  enabled: boolean
-}
-
 export interface Settings {
   language: Language
   voiceStyle: VoiceStyle
@@ -27,17 +21,9 @@ export interface Settings {
   systemPrompt: string
   provider: Provider
   bodies: [BodyConfig, BodyConfig, BodyConfig]
-  mcpServers: McpServer[]
 }
 
 const STORAGE_KEY = 'threebody-settings'
-
-const DEFAULT_MCP_SERVERS: McpServer[] = [
-  { id: 'filesystem', label: 'Filesystem',      enabled: false },
-  { id: 'websearch',  label: 'Web Search',       enabled: false },
-  { id: 'code',       label: 'Code Interpreter', enabled: false },
-  { id: 'memory',     label: 'Memory',           enabled: false },
-]
 
 const DEFAULT_BODIES: [BodyConfig, BodyConfig, BodyConfig] = [
   { provider: 'ollama',   apiKey: '', model: '' },
@@ -64,7 +50,6 @@ const settings = reactive<Settings>({
   systemPrompt:  saved.systemPrompt                     ?? '',
   provider:      (saved.provider      as Provider)      ?? 'ollama',
   bodies:        ([0, 1, 2] as number[]).map(i => (saved.bodies?.[i] ?? DEFAULT_BODIES[i])) as [BodyConfig, BodyConfig, BodyConfig],
-  mcpServers:    saved.mcpServers                       ?? DEFAULT_MCP_SERVERS,
 })
 
 watch(settings, (val) => {

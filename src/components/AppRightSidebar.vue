@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import McpDialog from './McpDialog.vue'
 import ContextDialog from './ContextDialog.vue'
 import { useChat } from '../composables/useChat'
 import { useSettings, type BodyConfig, type BodyProvider } from '../composables/useSettings'
@@ -17,11 +16,9 @@ const emit = defineEmits<{
   'update:input': [value: string]
   submit: []
   'toggle-mic': []
-  'open-mcp': []
   'open-context': []
 }>()
 
-const mcpRef = ref<InstanceType<typeof McpDialog> | null>(null)
 const ctxRef = ref<InstanceType<typeof ContextDialog> | null>(null)
 
 const { aiState, pendingBodies } = useChat()
@@ -277,7 +274,6 @@ function onKeydown(e: KeyboardEvent) {
     </div>
   </aside>
 
-  <McpDialog ref="mcpRef" />
   <ContextDialog ref="ctxRef" />
 </template>
 
