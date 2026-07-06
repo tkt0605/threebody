@@ -11,3 +11,4 @@ coverage/
 logs/
 threebody_demo.gif
 *.png
+.DS_Store
