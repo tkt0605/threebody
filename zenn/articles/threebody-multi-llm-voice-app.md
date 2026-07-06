@@ -1,7 +1,7 @@
 ---
-title:  "3つのLLMを三角形に配置して議論させる音声AIアプリを2ヶ月作った話（ThreeBody）"
-emoji:  "🔺"
-type:  "tech"
+title: "3つのLLMを三角形に配置して議論させる音声AIアプリを2ヶ月作った話（ThreeBody）"
+emoji: "🔺"
+type: "tech"
 topics:  ["vue", "typescript", "claude", "llm", "supabase"]
 published: true
 ---
