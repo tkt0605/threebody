@@ -32,7 +32,8 @@
     "uuid": "^14.0.0",
     "vue": "^3.5.33",
     "vue-router": "^5.0.6",
-    "winston": "^3.19.0"
+    "winston": "^3.19.0",
+    "zenn-cli": "^0.5.2"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.4",
