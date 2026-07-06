@@ -146,7 +146,8 @@ async function streamSecondaryBody(
       messages: anthropicMsgs,
       ...(systemPrompt ? { system: systemPrompt } : {}),
     })
-    for await (const text of stream.textStream) emit(text)
+    stream.on('text', (textDelta) => emit(textDelta))
+    await stream.finalMessage()
     return full
   }
 
@@ -222,9 +223,10 @@ async function streamAnthropic(
   })
 
   // textStream は thinking ブロックを自動的にスキップしてテキストのみ流す
-  for await (const text of stream.textStream) {
-    res.write(`data: ${JSON.stringify({ type: 'text', content: text })}\n\n`)
-  }
+  stream.on('text', (textDelta) => {  
+    res.write(`data: ${JSON.stringify({ type: 'text', content: textDelta })}\n\n`)
+  })
+  await stream.finalMessage()
 }
 
 async function streamOpenAICompat(
