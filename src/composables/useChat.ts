@@ -6,7 +6,7 @@ import { BODY_PERSONA_INFO } from '../constants/bodyPersonas'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL as string
+const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:3000'
 
 function classifyError(err: unknown): string {
   if (err instanceof TypeError && err.message.toLowerCase().includes('fetch')) {

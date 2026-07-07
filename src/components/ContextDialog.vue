@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL as string
+const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:3000'
 
 type Mode = 'url' | 'text'
 
