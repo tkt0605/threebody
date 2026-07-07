@@ -31,6 +31,7 @@ export function useAuth() {
   async function logout(): Promise<void> {
     const { error } = await supabase.auth.signOut()
     if (error) throw error
+    console.log('Logged out')
   }
 
   return { user, isAuthenticated, initialized, loginWithGoogle, logout }

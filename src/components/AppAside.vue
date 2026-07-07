@@ -23,8 +23,10 @@ const building = ref(false)
 const built    = ref(false)
 
 async function handleLogout() {
+  console.log('Logging out...')
   await logout()
   router.push('/login')
+  console.log('Logged out and redirected to login page')
 }
 
 function build() {
