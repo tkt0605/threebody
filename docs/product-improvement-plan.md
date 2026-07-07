@@ -72,4 +72,4 @@
 
 - `.DS_Store` — Gitで**追跡されている**（`.gitignore`に`.DS_Store`の記載がない）。誤コミット防止のため`.gitignore`に追加し、`git rm --cached .DS_Store`で追跡解除すべき
 - ルート直下のスクリーンショット3枚（`スクリーンショット 2026-07-05 *.png`）— `*.png`が`.gitignore`対象のため追跡はされていないが、作業ディレクトリに残ったままでREADME等からもリンクされていない。用途が終わっていれば削除
-- `threebody_demo_withAPI.gif` — READMEからリンクされている唯一のメディアなので、これは残す
+- `threebody_demo_withAPI2.gif` — READMEからリンクされている唯一のメディアなので、これは残す
