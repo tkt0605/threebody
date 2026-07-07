@@ -335,7 +335,7 @@ export function useChat() {
           provider: settings.provider,
           bodies: settings.bodies.map(b => ({
             provider: b.provider,
-            apikey: b.apiKey,
+            apiKey: b.apiKey,
             model: b.model,
             name: BODY_PERSONA_INFO[b.role].name,
             personaPrompt: buildBodyPersonaPrompt(settings, b.role),
