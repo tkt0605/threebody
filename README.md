@@ -3,7 +3,7 @@
 > LLM APIまたは、OllamaのローカルLLMのモデルを自由に組み合わせられる。
 > 声で話しかけ、声で会話が完結する。
 
-![threebody_demo_withAPI2](threebody_demo_withAPI2.gif)
+![2026_07_10_テストDEMO](2026_07_10_テストDEMO.gif)
 
 # 今すぐ試す
 https://threebody-phi.vercel.app
