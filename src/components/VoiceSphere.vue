@@ -1,25 +1,21 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import ContextDialog from './ContextDialog.vue'
 import { useChat } from '../composables/useChat'
 import { useSettings, type BodyConfig, type BodyProvider } from '../composables/useSettings'
 import { BODY_PROVIDER_COLORS } from '../constants/bodyProviders'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   recording:     boolean
   bars:          number[]
-  input:         string
   wakeListening: boolean
-}>()
+  showStatus?:   boolean
+  idleLabel?:    string
+}>(), {
+  showStatus: true,
+  idleLabel:  'タップして起動',
+})
 
-const emit = defineEmits<{
-  'update:input': [value: string]
-  submit: []
-  'toggle-mic': []
-  'open-context': []
-}>()
-
-const ctxRef = ref<InstanceType<typeof ContextDialog> | null>(null)
+const emit = defineEmits<{ click: [] }>()
 
 const { aiState, pendingBodies } = useChat()
 const { settings } = useSettings()
@@ -207,74 +203,57 @@ function resizeCanvas() {
   canvas.height = canvas.parentElement.clientHeight
 }
 
+let resizeObserver: ResizeObserver | null = null
+
 onMounted(() => {
   resizeCanvas()
+  resizeObserver = new ResizeObserver(resizeCanvas)
+  if (canvasRef.value?.parentElement) resizeObserver.observe(canvasRef.value.parentElement)
   window.addEventListener('resize', resizeCanvas)
   startLoop()
 })
 
 onUnmounted(() => {
   stopLoop()
+  resizeObserver?.disconnect()
   window.removeEventListener('resize', resizeCanvas)
 })
-
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-    e.preventDefault()
-    emit('submit')
-  }
-}
 </script>
 
 <template>
-  <aside class="flex flex-col w-86 h-screen border-l border-black/8 dark:border-white/8 shrink-0 bg-gray-50 dark:bg-gray-950">
-    <!-- ヘッダー -->
-    <div class="flex items-center gap-2 px-5 py-5.5 border-b border-black/8 dark:border-white/8">
-      <svg class="w-4 h-4 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-        <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      <span class="text-sm font-semibold text-gray-900 dark:text-white/90">プロンプト入力</span>
+  <div class="relative w-full h-full rounded-full overflow-hidden bg-gray-50 dark:bg-gray-950" style="aspect-ratio: 1">
+    <canvas
+      ref="canvasRef"
+      class="block w-full h-full cursor-pointer"
+      @click="emit('click')"
+    />
+
+    <!-- ステータスオーバーレイ（iris の showUI 相当） -->
+    <div v-if="showStatus" class="absolute inset-0 flex flex-col items-center justify-end pb-4 pointer-events-none gap-1">
+      <Transition name="status" mode="out-in">
+        <span
+          v-if="recording"
+          key="rec"
+          class="text-[11px] tracking-[0.2em] font-semibold text-red-400"
+        >● 聴いてます</span>
+        <span
+          v-else-if="wakeListening"
+          key="wake"
+          class="text-[11px] tracking-[0.15em] font-semibold text-violet-400"
+        >「アイリス」と呼んで</span>
+        <span
+          v-else-if="aiState !== 'idle'"
+          key="thinking"
+          class="text-[11px] tracking-[0.15em] font-semibold text-emerald-400"
+        >考えています…</span>
+        <span
+          v-else
+          key="init"
+          class="text-[11px] tracking-[0.15em] text-cyan-500/70"
+        >{{ idleLabel }}</span>
+      </Transition>
     </div>
-
-    <!-- Canvas 音声認識エリア -->
-    <div class="border-b border-black/8 dark:border-white/8">
-      <div class="relative w-full rounded-2xl overflow-hidden bg-gray-50 dark:bg-gray-950" style="aspect-ratio: 1">
-        <canvas
-          ref="canvasRef"
-          class="block w-full h-full cursor-pointer"
-          @click="emit('toggle-mic')"
-        />
-
-        <!-- ステータスオーバーレイ（iris の showUI 相当） -->
-        <div class="absolute inset-0 flex flex-col items-center justify-end pb-4 pointer-events-none gap-1">
-          <Transition name="status" mode="out-in">
-            <span
-              v-if="recording"
-              key="rec"
-              class="text-[11px] tracking-[0.2em] font-semibold text-red-400"
-            >● 聴いてます</span>
-            <span
-              v-else-if="wakeListening"
-              key="wake"
-              class="text-[11px] tracking-[0.15em] font-semibold text-violet-400"
-            >「アイリス」と呼んで</span>
-            <span
-              v-else-if="aiState !== 'idle'"
-              key="thinking"
-              class="text-[11px] tracking-[0.15em] font-semibold text-emerald-400"
-            >考えています…</span>
-            <span
-              v-else
-              key="init"
-              class="text-[11px] tracking-[0.15em] text-cyan-500/70"
-            >タップして起動</span>
-          </Transition>
-        </div>
-      </div>
-    </div>
-  </aside>
-
-  <ContextDialog ref="ctxRef" />
+  </div>
 </template>
 
 <style scoped>

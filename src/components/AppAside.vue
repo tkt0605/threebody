@@ -1,16 +1,18 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import ThreeBodyLogo from './ThreeBodyLogo.vue'
 import SettingsDialog from './SettingsDialog.vue'
 import ArchiveViewerDialog from './ArchiveViewerDialog.vue'
 import { useAuth } from '../composables/useAuth'
 import { useChat } from '../composables/useChat'
+import { useAsideDrawer } from '../composables/useAsideDrawer'
 
 const router = useRouter()
 const route  = useRoute()
 const { user, logout } = useAuth()
 const { archivedSessions, deleteArchive } = useChat()
+const { asideOpen, closeAside } = useAsideDrawer()
 
 const settingsDialog = ref<InstanceType<typeof SettingsDialog> | null>(null)
 const archiveViewer  = ref<InstanceType<typeof ArchiveViewerDialog> | null>(null)
@@ -24,6 +26,7 @@ const built    = ref(false)
 
 async function handleLogout() {
   console.log('Logging out...')
+  closeAside()
   await logout()
   router.push('/login')
   console.log('Logged out and redirected to login page')
@@ -38,10 +41,45 @@ function build() {
     setTimeout(() => { built.value = false }, 2000)
   }, 1200)
 }
+
+function goChat() {
+  router.push('/')
+  closeAside()
+}
+
+function openSettings() {
+  settingsDialog.value?.open()
+  closeAside()
+}
+
+function openArchive(sessionId: string) {
+  archiveViewer.value?.open(sessionId)
+  closeAside()
+}
+
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && asideOpen.value) closeAside()
+}
+onMounted(() => document.addEventListener('keydown', onKeydown))
+onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <aside class="flex flex-col w-64 h-screen border-r border-black/8 dark:border-white/8 shrink-0 bg-gray-50 dark:bg-gray-950">
+  <Teleport to="body">
+    <!-- Backdrop -->
+    <Transition name="aside-backdrop">
+      <div
+        v-if="asideOpen"
+        class="fixed inset-0 bg-black/50 z-40"
+        @click="closeAside"
+      />
+    </Transition>
+
+    <aside
+      class="fixed inset-y-0 left-0 z-50 flex flex-col w-64 max-w-[85vw] h-screen border-r border-black/8 dark:border-white/8 shrink-0 bg-gray-50 dark:bg-gray-950
+             transition-transform duration-200 ease-out"
+      :class="asideOpen ? 'translate-x-0' : '-translate-x-full'"
+    >
     <!-- ロゴ -->
     <div class="flex items-center gap-2.5 px-5 py-3 border-b border-black/8 dark:border-white/8">
       <ThreeBodyLogo />
@@ -54,7 +92,7 @@ function build() {
         class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer
                text-gray-600 hover:text-gray-900 hover:bg-gray-200/70
                dark:text-white/55 dark:hover:text-white/90 dark:hover:bg-white/6"
-        @click="settingsDialog?.open()"
+        @click="openSettings"
       >
         <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
           <path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/>
@@ -92,7 +130,7 @@ function build() {
         class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-colors cursor-pointer
                text-gray-500 hover:text-gray-800 hover:bg-gray-200/70
                dark:text-white/45 dark:hover:text-white/80 dark:hover:bg-white/6"
-        @click="archiveViewer?.open(session.id)"
+        @click="openArchive(session.id)"
       >
         <svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
           <path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4" stroke-linecap="round" stroke-linejoin="round"/>
@@ -115,7 +153,7 @@ function build() {
         :class="route.path === '/'
           ? 'bg-indigo-600/12 text-indigo-600 dark:text-indigo-400'
           : 'text-gray-600 hover:text-gray-900 hover:bg-black/5 dark:text-white/55 dark:hover:text-white/90 dark:hover:bg-white/6'"
-        @click="router.push('/')"
+        @click="goChat"
       >
         <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
           <path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" stroke-linecap="round" stroke-linejoin="round"/>
@@ -146,8 +184,14 @@ function build() {
         </button>
       </div>
     </div>
-  </aside>
+    </aside>
+  </Teleport>
 
   <SettingsDialog ref="settingsDialog" />
   <ArchiveViewerDialog ref="archiveViewer" />
 </template>
+
+<style scoped>
+.aside-backdrop-enter-active, .aside-backdrop-leave-active { transition: opacity 0.2s ease; }
+.aside-backdrop-enter-from, .aside-backdrop-leave-to { opacity: 0; }
+</style>
