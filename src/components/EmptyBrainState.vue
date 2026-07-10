@@ -14,7 +14,7 @@ const emit = defineEmits<{ 'open-settings': [] }>()
 
     <div class="space-y-1.5">
       <p class="text-gray-500 dark:text-white/50 text-sm font-medium">脳みそがまだないよ、、、</p>
-      <p class="text-gray-400 dark:text-white/35 text-xs">APIキーとモデルを入れてね。</p>
+      <p class="text-gray-400 dark:text-white/35 text-xs">APIキーとモデルを入れてね。（例：Anthropic, OpenAI等々）</p>
     </div>
 
     <button
