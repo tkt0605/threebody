@@ -1,10 +1,6 @@
-# .claude/commands/git_status.md
-
 ---
-
 description: git diffとgit statusの結果を要点ごとに整理して実行。
 allowed-tools: Bash(git status:*),  Bash(git diff:*)
-
 ---
 
 ## 現在の状況
