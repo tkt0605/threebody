@@ -22,7 +22,7 @@ defineExpose({ open, close })
   <Teleport to="body">
     <dialog
       ref="dialogRef"
-      class="fixed inset-0 m-0 w-screen h-screen max-w-none max-h-none p-0 rounded-none
+      class="fixed inset-0 m-0 w-screen h-dvh max-w-none max-h-none p-0 rounded-none
              bg-gray-50 text-gray-900
              dark:bg-gray-950 dark:text-white
              backdrop:bg-black/60 backdrop:backdrop-blur-sm"
