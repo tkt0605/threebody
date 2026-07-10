@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import ThreeBodyLogo from './ThreeBodyLogo.vue'
 import SettingsDialog from './SettingsDialog.vue'
@@ -16,6 +16,10 @@ const { asideOpen, closeAside } = useAsideDrawer()
 
 const settingsDialog = ref<InstanceType<typeof SettingsDialog> | null>(null)
 const archiveViewer  = ref<InstanceType<typeof ArchiveViewerDialog> | null>(null)
+
+const displayName = computed(() =>
+  user.value?.user_metadata?.full_name ?? user.value?.user_metadata?.name ?? user.value?.email ?? 'ゲスト'
+)
 
 function formatArchiveLabel(d: Date): string {
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
@@ -168,11 +172,11 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
       <!-- ユーザー -->
       <div class="flex items-center gap-2 px-3 py-2 rounded-xl group">
         <div class="w-6 h-6 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center shrink-0">
-          <span class="text-indigo-600 dark:text-indigo-300 text-[10px] font-semibold uppercase">{{ user?.email?.charAt(0) ?? '?' }}</span>
+          <span class="text-indigo-600 dark:text-indigo-300 text-[10px] font-semibold uppercase">{{ displayName.charAt(0) }}</span>
         </div>
-        <span class="flex-1 text-xs text-gray-400 dark:text-white/35 truncate">{{ user?.email ?? 'ゲスト' }}</span>
+        <span class="flex-1 text-xs text-gray-400 dark:text-white/35 truncate">{{ displayName }}</span>
         <button
-          class="opacity-0 group-hover:opacity-100 transition-all cursor-pointer text-gray-400 hover:text-rose-500 dark:text-white/25 dark:hover:text-rose-400"
+          class="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all cursor-pointer text-gray-400 hover:text-rose-500 dark:text-white/25 dark:hover:text-rose-400"
           title="ログアウト"
           @click="handleLogout"
         >
