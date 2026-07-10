@@ -12,3 +12,4 @@ logs/
 threebody_demo.gif
 *.png
 .DS_Store
+.claude/feature/
