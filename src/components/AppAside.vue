@@ -85,13 +85,13 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
       :class="asideOpen ? 'translate-x-0' : '-translate-x-full'"
     >
     <!-- ロゴ -->
-    <div class="flex items-center gap-2.5 px-5 py-3 border-b border-black/8 dark:border-white/8">
+    <div class="flex shrink-0 items-center gap-2.5 px-5 py-3 border-b border-black/8 dark:border-white/8">
       <ThreeBodyLogo />
       <span class="text-gray-900 dark:text-white/90 font-semibold tracking-wide text-sm">ThreeBody</span>
     </div>
 
     <!-- 設定 + ビルド -->
-    <div class="px-3 py-3 border-b border-black/8 dark:border-white/8 space-y-1.5">
+    <div class="px-3 py-3 shrink-0 border-b border-black/8 dark:border-white/8 space-y-1.5">
       <button
         class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer
                text-gray-600 hover:text-gray-900 hover:bg-gray-200/70
@@ -125,8 +125,23 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
         {{ building ? 'ビルド中...' : built ? '完了' : 'ビルド' }}
       </button>
     </div>
-    <!-- アーカイブ一覧 -->
-    <div v-if="archivedSessions.length > 0" class="px-2 py-2 border-b border-black/8 dark:border-white/8 space-y-0.5 max-h-40 overflow-y-auto">
+
+    <!-- ナビゲーション -->
+    <nav class="flex-1 min-h-0 shrink-0 overflow-y-auto px-2 py-2 space-y-0.5">
+      <button
+        class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer"
+        :class="route.path === '/'
+          ? 'bg-indigo-600/12 text-indigo-600 dark:text-indigo-400'
+          : 'text-gray-600 hover:text-gray-900 hover:bg-black/5 dark:text-white/55 dark:hover:text-white/90 dark:hover:bg-white/6'"
+        @click="goChat"
+      >
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        チャット
+      </button>
+          <!-- アーカイブ一覧 -->
+    <div v-if="archivedSessions.length > 0" class="px-2 py-2 shrink-0 space-y-0.5 min-h-0 overflow-y-auto">
       <p class="px-3 pb-1 text-[10px] uppercase tracking-widest text-gray-400 dark:text-white/30">アーカイブ</p>
       <button
         v-for="session in archivedSessions"
@@ -149,26 +164,9 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
         </span>
       </button>
     </div>
-
-    <!-- ナビゲーション -->
-    <nav class="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
-      <button
-        class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer"
-        :class="route.path === '/'
-          ? 'bg-indigo-600/12 text-indigo-600 dark:text-indigo-400'
-          : 'text-gray-600 hover:text-gray-900 hover:bg-black/5 dark:text-white/55 dark:hover:text-white/90 dark:hover:bg-white/6'"
-        @click="goChat"
-      >
-        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-          <path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        チャット
-      </button>
-
     </nav>
-
     <!-- ユーザー -->
-    <div class="px-2 py-4 border-t border-black/8 dark:border-white/8">
+    <div class="px-2 py-4 border-t border-black/8 dark:border-white/8 shrink-0">
       <!-- ユーザー -->
       <div class="flex items-center gap-2 px-3 py-2 rounded-xl group">
         <div class="w-6 h-6 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center shrink-0">
@@ -188,7 +186,8 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
         </button>
       </div>
     </div>
-    </aside>
+    <div class="shrink-0 sm:hidden px-2 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] border-t border-black/8 dark:border-white/8"></div>
+  </aside>
   </Teleport>
 
   <SettingsDialog ref="settingsDialog" />
