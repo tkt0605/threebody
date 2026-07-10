@@ -66,6 +66,8 @@ function onKeydown(e: KeyboardEvent) {
 }
 onMounted(() => document.addEventListener('keydown', onKeydown))
 onUnmounted(() => document.removeEventListener('keydown', onKeydown))
+
+defineExpose({ openSettings })
 </script>
 
 <template>

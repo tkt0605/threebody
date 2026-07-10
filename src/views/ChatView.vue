@@ -11,13 +11,11 @@ import { useVoiceInput } from '../composables/useVoiceInput'
 import { useWakeWord } from '../composables/useWakeWord'
 import { useTTS } from '../composables/useTTS'
 import { useSettings } from '../composables/useSettings'
-import { useAsideDrawer } from '../composables/useAsideDrawer'
 import type { Message } from '../types/message'
 
 const { messages, sendMessage, loadHistory, aiState } = useChat()
 const { speak } = useTTS()
 const { settings } = useSettings()
-const { openAside } = useAsideDrawer()
 
 onMounted(() => {
   loadHistory()
@@ -26,6 +24,7 @@ onMounted(() => {
 const voiceActive = ref(false)
 
 const voiceDialog = ref<InstanceType<typeof VoiceSphereDialog> | null>(null)
+const appAside = ref<InstanceType<typeof AppAside> | null>(null)
 
 // 履歴が空の状態から中央の球体で最初の発話をした場合、思考（thinking）が終わって
 // 一体に収束するまではチャットログへ画面遷移させず、中央の球体画面のままにする
@@ -117,7 +116,7 @@ watch(
     <main class="flex-1 min-h-0 flex flex-col overflow-hidden">
       <!-- APIキー・モデル未設定：脳みそがまだない -->
       <div v-if="!hasActiveBody" class="flex-1 flex items-center justify-center">
-        <EmptyBrainState @open-settings="openAside" />
+        <EmptyBrainState @open-settings="appAside?.openSettings()" />
       </div>
 
       <!-- 設定済み・会話なし（最初の発話が思考中の場合も含む）：中央に大きな球体 -->
@@ -152,7 +151,7 @@ watch(
       </template>
     </main>
 
-    <AppAside />
+    <AppAside ref="appAside" />
 
     <VoiceSphereDialog
       ref="voiceDialog"
