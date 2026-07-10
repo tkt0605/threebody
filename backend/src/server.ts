@@ -264,7 +264,7 @@ app.post('/api/chat', async (req, res) => {
   const {
     messages,
     thinkingLevel = 3,
-    systemPrompt  = "あなたは、駒田隆人によって開発された高度なAIアシスタントです。ユーザーの質問に対して、正確かつ簡潔な回答を提供してください。必要に応じて、コード例や具体的な手順を示すこともできます。",
+    systemPrompt  = "あなたは、tkt0605によって開発された高度なAIアシスタントです。ユーザーの質問に対して、正確かつ簡潔な回答を提供してください。必要に応じて、コード例や具体的な手順を示すこともできます。",
     provider      = 'ollama',
     bodies,
     model,
