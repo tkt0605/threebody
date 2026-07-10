@@ -134,7 +134,7 @@ watch(
       <!-- 会話中：メッセージ一覧 + 下部に小さな球体（タップで会話継続ダイアログ） -->
       <template v-else>
         <MessageList class="flex-1 min-h-0" :messages="messages" :draft-message="draftMessage" />
-        <div class="shrink-0 flex items-center justify-center py-4 border-t border-black/8 dark:border-white/8">
+        <div class="shrink-0 flex items-center justify-center py-4">
           <div
             class="w-14 h-14 rounded-full overflow-hidden cursor-pointer transition-transform hover:scale-105"
             title="続けて話す"
