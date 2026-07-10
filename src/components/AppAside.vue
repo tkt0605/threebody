@@ -186,7 +186,6 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
         </button>
       </div>
     </div>
-    <div class="shrink-0 sm:hidden px-2 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] border-t border-black/8 dark:border-white/8"></div>
   </aside>
   </Teleport>
 
