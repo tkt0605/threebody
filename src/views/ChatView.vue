@@ -110,7 +110,7 @@ watch(
 </script>
 
 <template>
-  <div class="flex flex-col h-screen bg-gray-50 dark:bg-gray-950 overflow-hidden">
+  <div class="flex flex-col h-dvh bg-gray-50 dark:bg-gray-950 overflow-hidden">
     <AppHeader />
 
     <main class="flex-1 min-h-0 flex flex-col overflow-hidden">
