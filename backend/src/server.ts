@@ -84,6 +84,8 @@ function createBodyClient(body: BodyConfig): { client: OpenAI | Anthropic; isAnt
 }
 
 function resolveBodyModel(body: BodyConfig): string {
+  // Ollamaはモデル未指定でもサーバー既定モデルで動く（キー無しの一体モードを最短で成立させる）
+  if (body.provider === 'ollama' && !body.model?.trim()) return M.ollama.default
   return body.model
 }
 
@@ -290,9 +292,12 @@ app.post('/api/chat', async (req, res) => {
   try {
     // ── 三体モード ─────────────────────────────────────────────────────────────
     if (bodies && Array.isArray(bodies) && bodies.length > 0) {
+      // Ollamaはキー・モデル未指定でも既定モデルで利用可能（任意のアップグレードとしてクラウドを足す）。
+      // クラウド系はAPIキーとモデルの両方が揃って初めて利用可能とみなす。
       const available = bodies.filter(b =>
-        b.model?.trim().length > 0 &&
-        (b.provider === 'ollama' || b.apiKey?.trim().length > 0)
+        b.provider === 'ollama'
+          ? true
+          : b.apiKey?.trim().length > 0 && b.model?.trim().length > 0
       )
 
       if (available.length > 1) {
@@ -355,7 +360,7 @@ app.post('/api/chat', async (req, res) => {
       const client = new OpenAI({ apiKey, baseURL: 'https://api.deepseek.com' })
       await streamOpenAICompat(client, model ?? '', res, oaiMessages, config.maxTokens, systemPrompt)
     } else {
-      await streamOpenAICompat(ollama, model ?? '', res, oaiMessages, config.maxTokens, systemPrompt)
+      await streamOpenAICompat(ollama, model?.trim() || M.ollama.default, res, oaiMessages, config.maxTokens, systemPrompt)
     }
     res.write('data: [DONE]\n\n')
   } catch (err) {

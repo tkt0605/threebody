@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
-import { useSettings, type Language, type ThinkingLevel, type Provider, type VoiceStyle, type Preset, type BodyProvider, type BodyConfig } from '../composables/useSettings'
+import { useSettings, isBodyUsable, type Language, type ThinkingLevel, type Provider, type VoiceStyle, type Preset, type BodyProvider, type BodyConfig } from '../composables/useSettings'
 import { VOICE_STYLE_OPTIONS, PRESET_OPTIONS } from '../composables/useSettingsOptions'
 import { useTheme } from '../composables/useTheme'
 import { BODY_PROVIDER_COLORS } from '../constants/bodyProviders'
@@ -24,7 +24,7 @@ const BODY_PROVIDERS: { value: BodyProvider; label: string; color: string }[] = 
 ]
 
 const MODEL_PLACEHOLDERS: Record<BodyProvider, string> = {
-  ollama:    'モデル名（例: qwen2.5:7b）',
+  ollama:    '空欄で既定モデル（例: qwen2.5:7b）',
   openai:    'モデル名（例: gpt-4o）',
   anthropic: 'モデル名（例: claude-sonnet-4-6）',
   deepseek:  'モデル名（例: deepseek-chat）',
@@ -62,10 +62,7 @@ function cloneBody(b: BodyConfig): BodyConfig {
   return { role: b.role, provider: b.provider, apiKey: b.apiKey, model: b.model }
 }
 
-function isBodyActive(b: BodyConfig): boolean {
-  if (b.provider === 'ollama') return b.model.trim().length > 0
-  return b.apiKey.trim().length > 0
-}
+const isBodyActive = isBodyUsable
 
 const draft = reactive({
   language:      settings.language,

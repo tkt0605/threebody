@@ -109,6 +109,14 @@ async function persist(val: Settings, version: number): Promise<void> {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...rest, bodies }))
 }
 
+// 会話可能（＝有効）な体かどうかの共通判定。
+// Ollamaはキー無し・モデル未指定でもサーバー既定モデルで動くため常に利用可能。
+// クラウド系（GPT/Claude/DeepSeek）はAPIキーとモデルの両方が揃って初めて利用可能。
+export function isBodyUsable(b: Pick<BodyConfig, 'provider' | 'apiKey' | 'model'>): boolean {
+  if (b.provider === 'ollama') return true
+  return b.apiKey.trim().length > 0 && b.model.trim().length > 0
+}
+
 export function useSettings() {
   return { settings }
 }

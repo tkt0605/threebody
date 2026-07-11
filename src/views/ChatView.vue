@@ -10,7 +10,7 @@ import { useChat } from '../composables/useChat'
 import { useVoiceInput } from '../composables/useVoiceInput'
 import { useWakeWord } from '../composables/useWakeWord'
 import { useTTS } from '../composables/useTTS'
-import { useSettings } from '../composables/useSettings'
+import { useSettings, isBodyUsable } from '../composables/useSettings'
 import type { Message } from '../types/message'
 
 const { messages, sendMessage, loadHistory, aiState } = useChat()
@@ -30,12 +30,8 @@ const appAside = ref<InstanceType<typeof AppAside> | null>(null)
 // 一体に収束するまではチャットログへ画面遷移させず、中央の球体画面のままにする
 const firstExchangeInFlight = ref(false)
 
-// APIキー・モデルが設定済み（≒会話可能）な体が1つ以上あるか
-const hasActiveBody = computed(() =>
-  settings.bodies.some(b =>
-    b.model.trim().length > 0 && (b.provider === 'ollama' || b.apiKey.trim().length > 0)
-  )
-)
+// 会話可能な体が1つ以上あるか（Ollamaはキー無しでも既定モデルで動くため常に成立）
+const hasActiveBody = computed(() => settings.bodies.some(isBodyUsable))
 
 // 音声認識完了 → 自動送信
 const { recording, finalText, interimText, bars, start, stop } =
