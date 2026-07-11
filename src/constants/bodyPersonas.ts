@@ -1,13 +1,5 @@
 import type { BodyPersona } from '../composables/useSettings'
 
-// bodyIndex（配列位置）ではなく、role（persona）単位でのカラー定義。
-// 位置ベースの色分けは constants/bodyProviders.ts の BODY_ROLE_COLORS を使う。
-export const BODY_PERSONA_COLORS: Record<BodyPersona, string> = {
-  optimist: '#f87171',
-  skeptic:  '#60a5fa',
-  realist:  '#4ade80',
-}
-
 export interface PersonaInfo {
   name: string
   personaPrompt: string

@@ -106,7 +106,6 @@ Composables はモジュールレベルのシングルトンとして設計さ�
 - `AppRightSidebar.vue` — 右サイドバー（テキスト入力・音声UI）
 - `NodeCanvas.vue` — 三角形のドラッグ配置キャンバス
 - `SettingsDialog.vue` — 設定（プロバイダー・モデル・三体設定）
-- `ContextDialog.vue` — コンテキスト管理
 - `McpDialog.vue` / `McpPanel.vue` — MCPサーバー管理（現状UIのみ、バックエンド未連携）
 - `ArchiveViewerDialog.vue` — アーカイブ済みセッションの読み取り専用表示
 
