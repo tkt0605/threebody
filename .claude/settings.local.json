@@ -5,7 +5,22 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git push *)",
-      "Read(//Users/komadatakato/.claude/**)"
+      "Read(//Users/komadatakato/.claude/**)",
+      "Bash(command -v ffmpeg)",
+      "Bash(ffmpeg -version)",
+      "Bash(command -v gifsicle)",
+      "Bash(gifsicle --version)",
+      "Bash(ffmpeg -y -i threebody_demo_withAPI2.mov -ss 00:00:02 -t 8 -vf 'fps=12,scale=640:-1:flags=lanczos,split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3' -loop 0 threebody_demo_short.gif)",
+      "Read(//Users/komadatakato/**)",
+      "Read(//Users/komadatakato/Downloads/**)",
+      "Bash(ffprobe -v error -select_streams v:0 -show_entries stream=width,height,avg_frame_rate,duration -of default=noprint_wrappers=1 \"2026_07_29Threebodyデモ動画.mov\")",
+      "Bash(mkdir -p /private/tmp/claude-501/-Users-komadatakato-Projects-threebody/1b4ba439-952c-4b23-8532-de8e7c9f9092/scratchpad/frames)",
+      "Bash(ffmpeg -y -i \"2026_07_29Threebodyデモ動画.mov\" -vf \"fps=1/5,scale=480:-1\" /private/tmp/claude-501/-Users-komadatakato-Projects-threebody/1b4ba439-952c-4b23-8532-de8e7c9f9092/scratchpad/frames/f%02d.jpg)",
+      "Bash(ffmpeg -y -sseof -2 -i threebody_demo_20260729.gif -frames:v 1 /private/tmp/claude-501/-Users-komadatakato-Projects-threebody/1b4ba439-952c-4b23-8532-de8e7c9f9092/scratchpad/check_end.jpg)",
+      "Bash(rm -rf /private/tmp/claude-501/-Users-komadatakato-Projects-threebody/1b4ba439-952c-4b23-8532-de8e7c9f9092/scratchpad/frames)",
+      "Bash(git check-ignore *)",
+      "Bash(echo \"exit code: $?\")",
+      "Bash(echo \"---exit: $?---\")"
     ]
   }
 }

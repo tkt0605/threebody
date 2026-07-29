@@ -10,6 +10,7 @@ build/
 coverage/
 logs/
 threebody_demo.gif
+*.mov
 *.png
 .DS_Store
 .claude/feature/
