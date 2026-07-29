@@ -31,7 +31,11 @@
       "Bash(curl *)",
       "Bash(xargs -r kill -9)",
       "Bash(disown)",
-      "Bash(grep -iE \"api[_-]?key\\\\s*[:=]\\\\s*['\\\\\"][a-zA-Z0-9]|sk-[a-zA-Z0-9]{10,}|DEBUG streamOllamaNative\")"
+      "Bash(grep -iE \"api[_-]?key\\\\s*[:=]\\\\s*['\\\\\"][a-zA-Z0-9]|sk-[a-zA-Z0-9]{10,}|DEBUG streamOllamaNative\")",
+      "Bash(host api.anthropic.com)",
+      "Bash(nslookup api.anthropic.com)",
+      "Bash(host threebody.onrender.com)",
+      "Bash(nslookup threebody.onrender.com)"
     ]
   }
 }

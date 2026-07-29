@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:server": "tsx backend/src/server.ts",
+    "start": "tsx backend/src/server.ts",
     "dev:all": "concurrently -n \"vite,express\" -c \"cyan,green\" \"npm run dev\" \"npm run dev:server\"",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
@@ -28,6 +29,7 @@
     "express": "^5.2.1",
     "marked": "^18.0.4",
     "openai": "^6.37.0",
+    "tsx": "^4.21.0",
     "vue": "^3.5.33",
     "vue-router": "^5.0.6"
   },
@@ -40,7 +42,6 @@
     "concurrently": "^9.1.2",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.2.4",
-    "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "vite": "^8.0.10",
     "vitest": "^4.1.8",
