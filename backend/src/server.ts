@@ -10,13 +10,12 @@ const app = express()
 app.use(cors({ origin: process.env.VITE_ORIGIN_BASE_URL }))
 app.use(express.json())
 
-const OLLAMA_BASE_URL = `${process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434'}/v1`
+// OpenAI互換の /v1/chat/completions は think:false を無視し、reasoning搭載モデルは
+// 内部思考をそのまま流し続ける（content は空のまま）。ネイティブ /api/chat だけが
+// think:false を尊重するため、Ollamaはこちらを直接叩く。
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-const ollama    = new OpenAI({
-  apiKey:  'ollama',
-  baseURL: OLLAMA_BASE_URL,
-})
 
 type LevelConfig = {
   anthropicModel:    string
@@ -68,25 +67,72 @@ interface BodyConfig {
   personaPrompt?: string
 }
 
-function createBodyClient(body: BodyConfig): { client: OpenAI | Anthropic; isAnthropic: boolean } {
-  if (body.provider === 'anthropic') {
-    return { client: new Anthropic({ apiKey: body.apiKey }), isAnthropic: true }
-  }
+// openai/deepseek専用。Ollamaはネイティブ /api/chat を直接叩くためここは通らない
+function createOpenAICompatClient(body: BodyConfig): OpenAI {
   const baseURLs: Record<string, string | undefined> = {
-    ollama:   OLLAMA_BASE_URL,
     deepseek: 'https://api.deepseek.com',
   }
-  const client = new OpenAI({
-    apiKey:  body.provider === 'ollama' ? 'ollama' : body.apiKey,
-    baseURL: baseURLs[body.provider],
-  })
-  return { client, isAnthropic: false }
+  return new OpenAI({ apiKey: body.apiKey, baseURL: baseURLs[body.provider] })
 }
 
 function resolveBodyModel(body: BodyConfig): string {
   // Ollamaはモデル未指定でもサーバー既定モデルで動く（キー無しの一体モードを最短で成立させる）
   if (body.provider === 'ollama' && !body.model?.trim()) return M.ollama.default
   return body.model
+}
+
+// Ollamaのreasoning搭載モデル（gemma4のthinking版等）はOpenAI互換エンドポイントだと
+// think:false が効かず、内部思考を reasoning フィールドに流し続け content が空になる。
+// ネイティブ /api/chat なら think:false が効き、内部思考を生成させずに済む。
+// 一部モデル・量子化ではstopトークンとして正しく扱われず、素のテキストとして
+// 出力に混じることがある（例: sarashina2.2系が末尾に </s> を出す）
+const OLLAMA_SPECIAL_TOKENS = new Set(['</s>', '<|endoftext|>', '<|im_end|>', '<|eot_id|>', '<end_of_turn>'])
+
+async function streamOllamaNative(
+  model: string,
+  messages: { role: string; content: string }[],
+  maxTokens: number,
+  onContent: (text: string) => void,
+): Promise<void> {
+  const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      messages,
+      think:   false,
+      stream:  true,
+      options: { num_predict: maxTokens },
+    }),
+  })
+  if (!response.ok || !response.body) {
+    throw new Error(`Ollama request failed: ${response.status} ${response.statusText}`)
+  }
+
+  const reader  = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+    for (const line of lines) {
+      if (!line.trim()) continue
+      const chunk = JSON.parse(line) as { message?: { content?: string } }
+      const content = chunk.message?.content
+      if (content && !OLLAMA_SPECIAL_TOKENS.has(content.trim())) onContent(content)
+    }
+  }
+}
+
+function toOllamaMessages(
+  messages: OpenAI.Chat.ChatCompletionMessageParam[],
+  systemPrompt: string,
+): { role: string; content: string }[] {
+  const base = messages.map(m => ({ role: m.role, content: extractTextContent(m.content) }))
+  return systemPrompt ? [{ role: 'system', content: systemPrompt }, ...base] : base
 }
 
 function toAnthropicMessages(
@@ -132,7 +178,6 @@ async function streamSecondaryBody(
   res: express.Response,
 ): Promise<string> {
   const model = resolveBodyModel(body)
-  const { client, isAnthropic } = createBodyClient(body)
   let full = ''
 
   const emit = (text: string) => {
@@ -140,8 +185,8 @@ async function streamSecondaryBody(
     res.write(`data: ${JSON.stringify({ type: 'body_text', bodyIndex, content: text })}\n\n`)
   }
 
-  if (isAnthropic) {
-    const anthropicClient = client as Anthropic
+  if (body.provider === 'anthropic') {
+    const anthropicClient = new Anthropic({ apiKey: body.apiKey })
     const anthropicMsgs = toAnthropicMessages(messages)
     const stream = anthropicClient.messages.stream({
       model,
@@ -154,7 +199,12 @@ async function streamSecondaryBody(
     return full
   }
 
-  const oaiClient = client as OpenAI
+  if (body.provider === 'ollama') {
+    await streamOllamaNative(model, toOllamaMessages(messages, systemPrompt), Math.min(config.maxTokens, 2048), emit)
+    return full
+  }
+
+  const oaiClient = createOpenAICompatClient(body)
   const systemMessages: OpenAI.Chat.ChatCompletionMessageParam[] = systemPrompt
     ? [{ role: 'system', content: systemPrompt }]
     : []
@@ -165,10 +215,7 @@ async function streamSecondaryBody(
     stream: true,
   })
   for await (const chunk of stream) {
-    // Ollamaのreasoningモデル（deepseek-r1等）は思考内容を content ではなく
-    // reasoning フィールドに入れて返すため、フォールバックとして拾う
-    const delta = chunk.choices[0]?.delta as { content?: string; reasoning?: string } | undefined
-    const content = delta?.content || delta?.reasoning
+    const content = chunk.choices[0]?.delta?.content
     if (content) emit(content)
   }
   return full
@@ -182,22 +229,28 @@ async function streamBodyOAI(
   res: express.Response,
 ): Promise<void> {
   const model = resolveBodyModel(body)
-  const { client, isAnthropic } = createBodyClient(body)
 
-  if (isAnthropic) {
-    const anthropicClient = client as Anthropic
+  if (body.provider === 'anthropic') {
+    const anthropicClient = new Anthropic({ apiKey: body.apiKey })
     const anthropicMsgs = toAnthropicMessages(messages)
     await streamAnthropic(
       res,
-      anthropicMsgs, 
-      { ...config, anthropicModel: model }, 
+      anthropicMsgs,
+      { ...config, anthropicModel: model },
       systemPrompt,
       anthropicClient
     )
     return
   }
 
-  const oaiClient = client as OpenAI
+  if (body.provider === 'ollama') {
+    await streamOllamaNative(model, toOllamaMessages(messages, systemPrompt), config.maxTokens, (content) => {
+      res.write(`data: ${JSON.stringify({ type: 'text', content })}\n\n`)
+    })
+    return
+  }
+
+  const oaiClient = createOpenAICompatClient(body)
   await streamOpenAICompat(oaiClient, model, res, messages, config.maxTokens, systemPrompt)
 }
 
@@ -252,10 +305,7 @@ async function streamOpenAICompat(
   })
 
   for await (const chunk of stream) {
-    // Ollamaのreasoningモデル（deepseek-r1等）は思考内容を content ではなく
-    // reasoning フィールドに入れて返すため、フォールバックとして拾う
-    const delta = chunk.choices[0]?.delta as { content?: string; reasoning?: string } | undefined
-    const content = delta?.content || delta?.reasoning
+    const content = chunk.choices[0]?.delta?.content
     if (content) {
       res.write(`data: ${JSON.stringify({ type: 'text', content })}\n\n`)
     }
@@ -360,7 +410,10 @@ app.post('/api/chat', async (req, res) => {
       const client = new OpenAI({ apiKey, baseURL: 'https://api.deepseek.com' })
       await streamOpenAICompat(client, model ?? '', res, oaiMessages, config.maxTokens, systemPrompt)
     } else {
-      await streamOpenAICompat(ollama, model?.trim() || M.ollama.default, res, oaiMessages, config.maxTokens, systemPrompt)
+      const ollamaModel = model?.trim() || M.ollama.default
+      await streamOllamaNative(ollamaModel, toOllamaMessages(oaiMessages, systemPrompt), config.maxTokens, (content) => {
+        res.write(`data: ${JSON.stringify({ type: 'text', content })}\n\n`)
+      })
     }
     res.write('data: [DONE]\n\n')
   } catch (err) {
