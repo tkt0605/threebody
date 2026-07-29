@@ -33,8 +33,8 @@ const firstExchangeInFlight = ref(false)
 // 会話可能な体が1つ以上あるか（Ollamaはキー無しでも既定モデルで動くため常に成立）
 const hasActiveBody = computed(() => settings.bodies.some(isBodyUsable))
 
-// 音声認識完了 → 自動送信
-const { recording, finalText, interimText, bars, start, stop } =
+// 音声認識完了 → 確認を経て送信
+const { recording, finalText, interimText, bars, confirming, confirmText, start, stop, confirmSend, redo, cancelConfirm } =
   useVoiceInput((text) => {
     voiceActive.value = true
     sendMessage(text)
@@ -116,7 +116,7 @@ watch(
       </div>
 
       <!-- 設定済み・会話なし（最初の発話が思考中の場合も含む）：中央に大きな球体 -->
-      <div v-else-if="messages.length === 0 || firstExchangeInFlight" class="flex-1 flex items-center justify-center px-6">
+      <div v-else-if="messages.length === 0 || firstExchangeInFlight" class="flex-1 flex flex-col items-center justify-center px-6 gap-5">
         <div class="w-56 h-56 sm:w-72 sm:h-72">
           <VoiceSphere
             :recording="recording"
@@ -124,6 +124,22 @@ watch(
             :wake-listening="wakeListening"
             @click="recording ? stop() : start()"
           />
+        </div>
+
+        <!-- 認識結果の確認：誤認識のまま送らないよう、送信前に一度確認を挟む -->
+        <div v-if="confirming" class="flex flex-col items-center gap-3 max-w-sm text-center">
+          <p class="text-sm text-gray-700 dark:text-white/80">『{{ confirmText }}』でいいですか？</p>
+          <div class="flex gap-3">
+            <button
+              class="px-4 py-2 rounded-full text-sm font-medium bg-cyan-500 text-white hover:bg-cyan-400 transition-colors cursor-pointer"
+              @click="confirmSend"
+            >送信</button>
+            <button
+              class="px-4 py-2 rounded-full text-sm font-medium border border-black/10 text-gray-600 hover:bg-gray-200/60
+                     dark:border-white/15 dark:text-white/70 dark:hover:bg-white/8 transition-colors cursor-pointer"
+              @click="redo"
+            >もう一度話す</button>
+          </div>
         </div>
       </div>
 
@@ -154,7 +170,12 @@ watch(
       :recording="recording"
       :bars="bars"
       :wake-listening="wakeListening"
+      :confirming="confirming"
+      :confirm-text="confirmText"
       @toggle-mic="recording ? stop() : start()"
+      @confirm-send="confirmSend"
+      @redo="redo"
+      @closed="cancelConfirm"
     />
   </div>
 </template>

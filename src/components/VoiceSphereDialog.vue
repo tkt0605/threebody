@@ -6,14 +6,17 @@ defineProps<{
   recording:     boolean
   bars:          number[]
   wakeListening: boolean
+  confirming:    boolean
+  confirmText:   string
 }>()
 
-const emit = defineEmits<{ 'toggle-mic': [] }>()
+const emit = defineEmits<{ 'toggle-mic': []; 'confirm-send': []; redo: []; closed: [] }>()
 
 const dialogRef = ref<HTMLDialogElement | null>(null)
 
 function open() { dialogRef.value?.showModal() }
 function close() { dialogRef.value?.close() }
+function handleClose() { close(); emit('closed') }
 
 defineExpose({ open, close })
 </script>
@@ -26,7 +29,7 @@ defineExpose({ open, close })
              bg-gray-50 text-gray-900
              dark:bg-gray-950 dark:text-white
              backdrop:bg-black/60 backdrop:backdrop-blur-sm"
-      @close="close"
+      @close="handleClose"
     >
       <div class="flex flex-col items-center h-full w-full px-6 py-8">
         <!-- 大きな球体 -->
@@ -40,7 +43,22 @@ defineExpose({ open, close })
               @click="emit('toggle-mic')"
             />
           </div>
-          <p class="text-xs text-gray-400 dark:text-white/35 tracking-wide">球体をタップして話しかけてください</p>
+          <!-- 認識結果の確認：誤認識のまま送らないよう、送信前に一度確認を挟む -->
+          <div v-if="confirming" class="flex flex-col items-center gap-3 max-w-sm text-center">
+            <p class="text-sm text-gray-700 dark:text-white/80">『{{ confirmText }}』でいいですか？</p>
+            <div class="flex gap-3">
+              <button
+                class="px-4 py-2 rounded-full text-sm font-medium bg-cyan-500 text-white hover:bg-cyan-400 transition-colors cursor-pointer"
+                @click="emit('confirm-send')"
+              >送信</button>
+              <button
+                class="px-4 py-2 rounded-full text-sm font-medium border border-black/10 text-gray-600 hover:bg-gray-200/60
+                       dark:border-white/15 dark:text-white/70 dark:hover:bg-white/8 transition-colors cursor-pointer"
+                @click="emit('redo')"
+              >もう一度話す</button>
+            </div>
+          </div>
+          <p v-else class="text-xs text-gray-400 dark:text-white/35 tracking-wide">球体をタップして話しかけてください</p>
         </div>
 
         <!-- 閉じるボタン：球体の真下・画面最下部中央 -->

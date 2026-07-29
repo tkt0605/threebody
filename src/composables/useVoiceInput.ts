@@ -46,6 +46,10 @@ export function useVoiceInput(onFinish: (text: string) => void) {
   const bars       = ref<number[]>(Array(BAR_COUNT).fill(0))
   const errorMsg   = ref<string | null>(null)
 
+  // 認識確定後、即送信せず「この内容でいいか」を確認させる状態
+  const confirming  = ref(false)
+  const confirmText = ref('')
+
   let recognition:   SpeechRecognitionAPI | null = null
   let audioCtx:      AudioContext         | null = null
   let analyser:      AnalyserNode         | null = null
@@ -153,13 +157,38 @@ export function useVoiceInput(onFinish: (text: string) => void) {
     bars.value = Array(BAR_COUNT).fill(0)
   }
 
+  // 認識確定 → 即送信ではなく確認状態に入る（誤認識をそのまま送ってしまうのを防ぐ）
   function stop() {
     errorMsg.value = null
     const text = (finalText.value + interimText.value).trim()
     finalText.value = ''
     interimText.value = ''
     cleanup()
+    if (text) {
+      confirmText.value = text
+      confirming.value = true
+    }
+  }
+
+  // 確認内容でよければ送信する
+  function confirmSend() {
+    const text = confirmText.value
+    confirming.value = false
+    confirmText.value = ''
     if (text) onFinish(text)
+  }
+
+  // 確認を破棄してもう一度話し直す
+  function redo() {
+    confirming.value = false
+    confirmText.value = ''
+    start()
+  }
+
+  // 確認状態を破棄するだけ（ダイアログを閉じた場合など）
+  function cancelConfirm() {
+    confirming.value = false
+    confirmText.value = ''
   }
 
   // onFinish を呼ばずに録音だけ終了する（手動送信時など）
@@ -172,5 +201,9 @@ export function useVoiceInput(onFinish: (text: string) => void) {
 
   onUnmounted(() => { if (recording.value) cancel() })
 
-  return { recording, finalText, interimText, bars, errorMsg, BAR_COUNT, start, stop, cancel }
+  return {
+    recording, finalText, interimText, bars, errorMsg, BAR_COUNT,
+    confirming, confirmText,
+    start, stop, cancel, confirmSend, redo, cancelConfirm,
+  }
 }
