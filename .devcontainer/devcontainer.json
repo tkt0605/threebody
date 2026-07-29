@@ -6,9 +6,9 @@
 
   "remoteUser": "node",
 
-  // Vite dev server (5173) + Express API server (3000)
+  // Vite dev server (5174) + Express API server (3000)
   "forwardPorts": [
-    5173,
+    5174,
     3000
   ],
 

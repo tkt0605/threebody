@@ -365,6 +365,7 @@ app.post('/api/chat', async (req, res) => {
     res.write('data: [DONE]\n\n')
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
+    console.error('[/api/chat]', err)
     res.write(`data: ${JSON.stringify({ type: 'error', message })}\n\n`)
   } finally {
     res.end()
