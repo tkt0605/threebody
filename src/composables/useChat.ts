@@ -128,7 +128,9 @@ async function createConversation(): Promise<string> {
   const id = created.id as string
   conversations.value = [{ id, title: null, createdAt: now, updatedAt: now }, ...conversations.value]
   currentConversationId.value = id
-  messages.value = []
+  // messages.value はここでは触らない。送信フロー（ensureConversation経由）の途中でここが呼ばれる場合、
+  // 既にsendMessageがpush済みのuser/assistantメッセージを消してしまうため。
+  // 画面をまっさらにする役目は呼び出し元のstartNewConversation()が既に担っている
   return id
 }
 
