@@ -3,7 +3,6 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import ThreeBodyLogo from './ThreeBodyLogo.vue'
 import SettingsDialog from './SettingsDialog.vue'
-import ArchiveViewerDialog from './ArchiveViewerDialog.vue'
 import { useAuth } from '../composables/useAuth'
 import { useChat } from '../composables/useChat'
 import { useAsideDrawer } from '../composables/useAsideDrawer'
@@ -11,18 +10,19 @@ import { useAsideDrawer } from '../composables/useAsideDrawer'
 const router = useRouter()
 const route  = useRoute()
 const { user, logout } = useAuth()
-const { archivedSessions, deleteArchive } = useChat()
+const { conversations, currentConversationId, startNewConversation, deleteConversation } = useChat()
 const { asideOpen, closeAside } = useAsideDrawer()
 
 const settingsDialog = ref<InstanceType<typeof SettingsDialog> | null>(null)
-const archiveViewer  = ref<InstanceType<typeof ArchiveViewerDialog> | null>(null)
 
 const displayName = computed(() =>
   user.value?.user_metadata?.full_name ?? user.value?.user_metadata?.name ?? user.value?.email ?? 'ゲスト'
 )
 
-function formatArchiveLabel(d: Date): string {
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
+function formatConversationLabel(conv: { title: string | null; createdAt: Date }): string {
+  if (conv.title) return conv.title
+  const d = conv.createdAt
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} の会話`
 }
 
 async function handleLogout() {
@@ -34,7 +34,7 @@ async function handleLogout() {
 }
 
 function goChat() {
-  router.push('/')
+  router.push(currentConversationId.value ? `/c/${currentConversationId.value}` : '/')
   closeAside()
 }
 
@@ -43,9 +43,21 @@ function openSettings() {
   closeAside()
 }
 
-function openArchive(sessionId: string) {
-  archiveViewer.value?.open(sessionId)
+function selectConversation(id: string) {
+  router.push(`/c/${id}`)
   closeAside()
+}
+
+function handleNewConversation() {
+  startNewConversation()
+  router.push('/')
+  closeAside()
+}
+
+async function handleDeleteConversation(id: string) {
+  const wasCurrent = id === currentConversationId.value
+  await deleteConversation(id)
+  if (wasCurrent) router.push('/')
 }
 
 function onKeydown(e: KeyboardEvent) {
@@ -93,13 +105,9 @@ defineExpose({ openSettings })
         </svg>
         設定
       </button>
-    </div>
-
-    <!-- ナビゲーション -->
-    <nav class="flex-1 min-h-0 shrink-0 overflow-y-auto px-2 py-2 space-y-0.5">
-      <button
+            <button
         class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer"
-        :class="route.path === '/'
+        :class="route.path === '/' || route.path.startsWith('/c/')
           ? 'bg-indigo-600/12 text-indigo-600 dark:text-indigo-400'
           : 'text-gray-600 hover:text-gray-900 hover:bg-black/5 dark:text-white/55 dark:hover:text-white/90 dark:hover:bg-white/6'"
         @click="goChat"
@@ -109,23 +117,39 @@ defineExpose({ openSettings })
         </svg>
         チャット
       </button>
-          <!-- アーカイブ一覧 -->
-    <div v-if="archivedSessions.length > 0" class="px-2 py-2 shrink-0 space-y-0.5 min-h-0 overflow-y-auto">
-      <p class="px-3 pb-1 text-[10px] uppercase tracking-widest text-gray-400 dark:text-white/30">アーカイブ</p>
+    </div>
+
+    <!-- ナビゲーション -->
+    <nav class="flex-1 min-h-0 shrink-0 overflow-y-auto px-2 py-2 space-y-0.5">
+    <!-- 会話一覧 -->
+    <div class="px-2 py-2 shrink-0 space-y-0.5 min-h-0 overflow-y-auto">
+      <div class="flex items-center justify-between px-3 pb-1">
+        <p class="text-[10px] uppercase tracking-widest text-gray-400 dark:text-white/30">会話</p>
+        <button
+          class="text-gray-400 hover:text-indigo-500 dark:text-white/30 dark:hover:text-indigo-400 cursor-pointer"
+          title="新規会話"
+          @click="handleNewConversation"
+        >
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M12 5v14M5 12h14" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
       <button
-        v-for="session in archivedSessions"
-        :key="session.id"
-        class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-colors cursor-pointer
-               text-gray-500 hover:text-gray-800 hover:bg-gray-200/70
-               dark:text-white/45 dark:hover:text-white/80 dark:hover:bg-white/6"
-        @click="openArchive(session.id)"
+        v-for="conv in conversations"
+        :key="conv.id"
+        class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-colors cursor-pointer"
+        :class="conv.id === currentConversationId
+          ? 'bg-indigo-600/12 text-indigo-600 dark:text-indigo-400'
+          : 'text-gray-500 hover:text-gray-800 hover:bg-gray-200/70 dark:text-white/45 dark:hover:text-white/80 dark:hover:bg-white/6'"
+        @click="selectConversation(conv.id)"
       >
         <svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-          <path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
-        <span class="truncate">{{ formatArchiveLabel(session.startedAt) }} の会話</span>
-        <!-- アーカイブの削除 -->
-        <span class="ml-auto text-gray-400 dark:text-white/30 hover:text-rose-500 dark:hover:text-rose-400" @click.stop="deleteArchive(session.id)">
+        <span class="truncate">{{ formatConversationLabel(conv) }}</span>
+        <!-- 会話の削除 -->
+        <span class="ml-auto text-gray-400 dark:text-white/30 hover:text-rose-500 dark:hover:text-rose-400" @click.stop="handleDeleteConversation(conv.id)">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16">
             <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
             <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
@@ -159,7 +183,6 @@ defineExpose({ openSettings })
   </Teleport>
 
   <SettingsDialog ref="settingsDialog" />
-  <ArchiveViewerDialog ref="archiveViewer" />
 </template>
 
 <style scoped>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import AppAside from '../components/AppAside.vue'
 import AppHeader from '../components/AppHeader.vue'
 import EmptyBrainState from '../components/EmptyBrainState.vue'
@@ -13,12 +14,28 @@ import { useTTS } from '../composables/useTTS'
 import { useSettings, isBodyUsable } from '../composables/useSettings'
 import type { Message } from '../types/message'
 
-const { messages, sendMessage, loadHistory, aiState } = useChat()
+const { messages, sendMessage, openConversation, aiState, currentConversationId } = useChat()
 const { speak } = useTTS()
 const { settings } = useSettings()
 
-onMounted(() => {
-  loadHistory()
+const route  = useRoute()
+const router = useRouter()
+
+// /c/:id があればその会話を開く。無ければensure/新規会話待ちの結果をcurrentConversationIdへ反映するだけで、
+// URLへの反映はしない（下のwatch(currentConversationId, ...)に一本化し、二重ナビゲーションを避ける）
+async function syncRouteConversation() {
+  const routeId = typeof route.params.id === 'string' ? route.params.id : undefined
+  await openConversation(routeId)
+}
+
+onMounted(syncRouteConversation)
+watch(() => route.params.id, syncRouteConversation)
+
+// currentConversationIdが確定した瞬間（ページ読み込み時のensure、または「新規会話」からの
+// 最初のメッセージ送信でconversationsに行が作られた瞬間）に、"/" のままだったURLを /c/<id> に反映する。
+// URL同期はここ1箇所だけで行う
+watch(currentConversationId, (id) => {
+  if (id && route.path === '/') router.replace(`/c/${id}`)
 })
 
 const voiceActive = ref(false)

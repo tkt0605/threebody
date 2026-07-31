@@ -1,4 +1,4 @@
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import type { Message, TextBlock, PerspectiveBlock } from '../types/message'
 import { useSettings, type BodyProvider } from './useSettings'
 import { buildSystemPrompt, buildBodyPersonaPrompt } from './useSystemPrompt'
@@ -28,18 +28,20 @@ export interface PendingBody { bodyIndex: number; name: string; provider: BodyPr
 // 三体モードで現在応答待ちの副体一覧（body_start〜body_doneの間だけ存在）
 const pendingBodies = ref<PendingBody[]>([])
 
-// 1ユーザー1セッションを継続する前提（会話切り替えUIがまだ無いため）
-let sessionId: string | null = null
-// ヘッダーのタイトル表示用（現在のセッションがいつ始まったか）
-const currentSessionStartedAt = ref<Date | null>(null)
+export interface Conversation { id: string; title: string | null; createdAt: Date; updatedAt: Date }
+// ユーザーの全会話一覧（updated_at降順）。サイドバーの会話切り替えに使う
+const conversations = ref<Conversation[]>([])
+// 現在チャット画面に表示中の会話
+const currentConversationId = ref<string | null>(null)
+const currentConversation = computed(() =>
+  conversations.value.find(c => c.id === currentConversationId.value) ?? null
+)
 
-export interface ArchivedSession { id: string; startedAt: Date; endedAt: Date }
-const archivedSessions = ref<ArchivedSession[]>([])
-
-// ログアウト後に別アカウントでログインした場合、前ユーザーのセッション/履歴を引き継がないようにする
+// ログアウト後に別アカウントでログインした場合、前ユーザーの会話/履歴を引き継がないようにする
 watch(useAuth().user, (newUser, oldUser) => {
   if (newUser?.id !== oldUser?.id) {
-    sessionId = null
+    currentConversationId.value = null
+    conversations.value = []
     messages.value = []
   }
 })
@@ -62,7 +64,7 @@ function toApiMessages(msgs: Message[]) {
   }))
 }
 
-// sessions.user_id は user_setting.id への外部キーのため、先にプロフィール行を用意しておく必要がある
+// conversations.user_id は user_setting.id への外部キーのため、先にプロフィール行を用意しておく必要がある
 async function ensureUserProfile(userId: string): Promise<void> {
   const { error } = await supabase
     .from('user_setting')
@@ -70,123 +72,11 @@ async function ensureUserProfile(userId: string): Promise<void> {
   if (error) throw error
 }
 
-// 最後のメッセージからこの時間以上経っていたら、画面は空から始める（裏の履歴は残す）
-const SESSION_IDLE_MS = 6 * 60 * 60 * 1000
-
-async function ensureSession(userId: string): Promise<string> {
-  if (sessionId) return sessionId
-
-  await ensureUserProfile(userId)
-
-  // ended_at が付いた（＝期限切れで区切られた）セッションは再利用しない
-  const { data: existing, error: selectErr } = await supabase
-    .from('sessions')
-    .select('id')
-    .eq('user_id', userId)
-    .is('ended_at', null)
-    .order('started_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  if (selectErr) throw selectErr
-
-  if (existing) {
-    sessionId = existing.id as string
-    const { data: sessionRow } = await supabase
-      .from('sessions')
-      .select('started_at')
-      .eq('id', sessionId)
-      .single()
-    currentSessionStartedAt.value = sessionRow ? new Date(sessionRow.started_at as string) : new Date()
-    return sessionId
-  }
-
-  const startedAt = new Date()
-  const { data: created, error: insertErr } = await supabase
-    .from('sessions')
-    .insert({ user_id: userId, started_at: startedAt.toISOString() })
-    .select('id')
-    .single()
-  if (insertErr) throw insertErr
-
-  sessionId = created.id as string
-  currentSessionStartedAt.value = startedAt
-  return sessionId
-}
-
-// 現在のセッションを終了させ（裏に残す）、画面は空の新しいセッションから始める
-async function archiveCurrentSession(): Promise<void> {
-  const { user } = useAuth()
-  if (!user.value || !sessionId) return
-
-  try {
-    const { error } = await supabase
-      .from('sessions')
-      .update({ ended_at: new Date().toISOString() })
-      .eq('id', sessionId)
-    if (error) throw error
-  } catch (err) {
-    console.error('アーカイブに失敗しました', err)
-    return
-  }
-
-  sessionId = null
-  messages.value = []
-  await ensureSession(user.value.id)
-  await loadArchivedSessions()
-}
-
-// サイドバーに表示する、アーカイブ済み（終了済み）セッションの一覧を読み込む
-async function loadArchivedSessions(): Promise<void> {
-  const { user } = useAuth()
-  if (!user.value) return
-
-  const { data, error } = await supabase
-    .from('sessions')
-    .select('id, started_at, ended_at')
-    .eq('user_id', user.value.id)
-    .not('ended_at', 'is', null)
-    .order('started_at', { ascending: false })
-  if (error) { console.error(error); return }
-
-  archivedSessions.value = (data ?? []).map(row => ({
-    id:       row.id as string,
-    startedAt: new Date(row.started_at as string),
-    endedAt:   new Date(row.ended_at as string),
-  }))
-}
-
-// アーカイブされたセッションを、中身（content_blocks/messages）ごと完全に削除する
-async function deleteArchive(sessionId: string): Promise<void> {
-  archivedSessions.value = archivedSessions.value.filter(s => s.id !== sessionId)
-  try {
-    const { data: msgRows, error: selErr } = await supabase
-      .from('messages')
-      .select('id')
-      .eq('session_id', sessionId)
-    if (selErr) throw selErr
-
-    const ids = (msgRows ?? []).map(r => r.id as string)
-    if (ids.length > 0) {
-      const { error: cbErr } = await supabase.from('content_blocks').delete().in('message_id', ids)
-      if (cbErr) throw cbErr
-    }
-
-    const { error: msgErr } = await supabase.from('messages').delete().eq('session_id', sessionId)
-    if (msgErr) throw msgErr
-
-    const { error: sessErr } = await supabase.from('sessions').delete().eq('id', sessionId)
-    if (sessErr) throw sessErr
-  } catch (err) {
-    console.error('アーカイブの削除に失敗しました', err)
-  }
-}
-
-// アーカイブされたセッションの中身を読み取り専用で取得する（現在の会話状態には影響しない）
-async function loadArchivedMessages(sessionId: string): Promise<Message[]> {
+async function fetchMessages(conversationId: string): Promise<Message[]> {
   const { data, error } = await supabase
     .from('messages')
     .select('id, role, timestamp, content_blocks(type, payload, sort_order)')
-    .eq('session_id', sessionId)
+    .eq('conversation_id', conversationId)
     .order('timestamp', { ascending: true })
   if (error) { console.error(error); return [] }
 
@@ -200,57 +90,159 @@ async function loadArchivedMessages(sessionId: string): Promise<Message[]> {
   }))
 }
 
-// 会話履歴をDBから読み込み、ページ再読み込み後も続きから会話できるようにする
-async function loadHistory(): Promise<void> {
+// サイドバーに表示する会話一覧を読み込む（最終更新が新しい順）
+async function loadConversations(): Promise<void> {
   const { user } = useAuth()
   if (!user.value) return
 
-  loadArchivedSessions()
-
-  let sid: string
-  try {
-    sid = await ensureSession(user.value.id)
-  } catch (err) {
-    console.error('セッションの取得に失敗しました', err)
-    return
-  }
-
   const { data, error } = await supabase
-    .from('messages')
-    .select('id, role, timestamp, content_blocks(type, payload, sort_order)')
-    .eq('session_id', sid)
-    .order('timestamp', { ascending: true })
+    .from('conversations')
+    .select('id, title, created_at, updated_at')
+    .eq('user_id', user.value.id)
+    .order('updated_at', { ascending: false })
   if (error) { console.error(error); return }
 
-  const rows = data ?? []
-  const lastRow = rows[rows.length - 1]
-  const idleTooLong = lastRow != null && Date.now() - new Date(lastRow.timestamp as string).getTime() > SESSION_IDLE_MS
+  conversations.value = (data ?? []).map(row => ({
+    id:        row.id as string,
+    title:     row.title as string | null,
+    createdAt: new Date(row.created_at as string),
+    updatedAt: new Date(row.updated_at as string),
+  }))
+}
 
-  if (idleTooLong) {
-    try {
-      const { error: endErr } = await supabase
-        .from('sessions')
-        .update({ ended_at: new Date().toISOString() })
-        .eq('id', sid)
-      if (endErr) throw endErr
-      sessionId = null
-      await ensureSession(user.value.id)
-      loadArchivedSessions()
-    } catch (err) {
-      console.error('セッションの切り替えに失敗しました', err)
-    }
-    messages.value = []
-    return
+// 新規会話を作成し、現在表示中の会話として切り替える
+async function createConversation(): Promise<string> {
+  const { user } = useAuth()
+  if (!user.value) throw new Error('ログインしていません')
+
+  await ensureUserProfile(user.value.id)
+
+  const now = new Date()
+  const { data: created, error } = await supabase
+    .from('conversations')
+    .insert({ user_id: user.value.id, created_at: now.toISOString(), updated_at: now.toISOString() })
+    .select('id')
+    .single()
+  if (error) throw error
+
+  const id = created.id as string
+  conversations.value = [{ id, title: null, createdAt: now, updatedAt: now }, ...conversations.value]
+  currentConversationId.value = id
+  messages.value = []
+  return id
+}
+
+// 指定した会話に切り替え、その履歴を読み込む（読み取り専用ではなく、そのまま続きから会話できる）
+async function switchConversation(id: string): Promise<void> {
+  currentConversationId.value = id
+  messages.value = await fetchMessages(id)
+}
+
+// 「新規会話」ボタン用のフラグ。trueの間は、次にensureConversationが呼ばれても
+// 既存の会話を再利用せず、新しい会話を作る（＝最初のメッセージが送られるまでDBには何も書き込まない）
+let pendingNewConversation = false
+
+// 画面をまっさらな状態に戻すだけで、conversationsテーブルへの書き込みは行わない。
+// 実際に会話が作られるのは、ここから最初のメッセージが送信されたタイミング（persistMessage経由）
+function startNewConversation(): void {
+  currentConversationId.value = null
+  messages.value = []
+  pendingNewConversation = true
+}
+
+// 現在の会話が無ければ、最終更新が最も新しい会話（無ければ新規作成した会話）を現在の会話にする
+async function ensureConversation(userId: string): Promise<string> {
+  if (currentConversationId.value) return currentConversationId.value
+
+  await ensureUserProfile(userId)
+
+  if (pendingNewConversation) {
+    pendingNewConversation = false
+    return createConversation()
   }
 
-  messages.value = rows.map((row): Message => ({
-    id: row.id as string,
-    role: row.role as Message['role'],
-    timestamp: new Date(row.timestamp as string),
-    blocks: (row.content_blocks as { type: string; payload: { content: string }; sort_order: number }[])
-      .sort((a, b) => a.sort_order - b.sort_order)
-      .map((b) => ({ type: 'text', content: b.payload.content })),
-  }))
+  if (conversations.value.length > 0) {
+    currentConversationId.value = conversations.value[0]!.id
+    return currentConversationId.value
+  }
+
+  return createConversation()
+}
+
+// 会話のタイトルを変更する（空文字なら未設定=nullに戻す）
+async function renameConversation(id: string, title: string): Promise<void> {
+  const trimmed = title.trim() || null
+  const { error } = await supabase.from('conversations').update({ title: trimmed }).eq('id', id)
+  if (error) { console.error('タイトルの更新に失敗しました', error); return }
+
+  const conv = conversations.value.find(c => c.id === id)
+  if (conv) conv.title = trimmed
+}
+
+// 会話とその中身（messages/content_blocks）をまとめて削除する
+async function deleteConversation(id: string): Promise<void> {
+  conversations.value = conversations.value.filter(c => c.id !== id)
+  if (currentConversationId.value === id) {
+    currentConversationId.value = null
+    messages.value = []
+  }
+
+  try {
+    const { data: msgRows, error: selErr } = await supabase
+      .from('messages')
+      .select('id')
+      .eq('conversation_id', id)
+    if (selErr) throw selErr
+
+    const ids = (msgRows ?? []).map(r => r.id as string)
+    if (ids.length > 0) {
+      const { error: cbErr } = await supabase.from('content_blocks').delete().in('message_id', ids)
+      if (cbErr) throw cbErr
+    }
+
+    const { error: msgErr } = await supabase.from('messages').delete().eq('conversation_id', id)
+    if (msgErr) throw msgErr
+
+    const { error: convErr } = await supabase.from('conversations').delete().eq('id', id)
+    if (convErr) throw convErr
+  } catch (err) {
+    console.error('会話の削除に失敗しました', err)
+  }
+}
+
+// URLの /c/:id からの遷移・ページ再読み込み時に呼ぶ。idを渡せばその会話に切り替え、
+// 渡さなければ最後に開いていた（無ければ新規作成した）会話を開く。開いた会話のidを返す
+async function openConversation(id?: string): Promise<string | null> {
+  const { user } = useAuth()
+  if (!user.value) return null
+
+  await loadConversations()
+
+  if (id) {
+    pendingNewConversation = false
+    if (id !== currentConversationId.value) await switchConversation(id)
+    return id
+  }
+
+  // 上のawait中に、別経路（sendMessage→persistMessage→ensureConversation）で
+  // 既に会話が確定していることがある。その場合は作った本人に任せ、ここではmessagesに触れない
+  if (currentConversationId.value) return currentConversationId.value
+
+  // 「新規会話」直後はDBにまだ何も無いので、ここでは何も作らない。
+  // すでにstartNewConversation()でmessages/currentConversationIdは空にしてあるので、
+  // ここで触ると「待っている間に最初のメッセージが送信済み」だった場合に消してしまうため何もしない
+  if (pendingNewConversation) {
+    return null
+  }
+
+  try {
+    const convId = await ensureConversation(user.value.id)
+    messages.value = await fetchMessages(convId)
+    return convId
+  } catch (err) {
+    console.error('会話の取得に失敗しました', err)
+    return null
+  }
 }
 
 // エラーブロックは一時的な表示のみ。DBのblock_type enumに'error'が無いため永続化しない
@@ -261,12 +253,12 @@ async function persistMessage(message: Message): Promise<void> {
   const textBlocks = message.blocks.filter((b): b is TextBlock => b.type === 'text')
   if (textBlocks.length === 0) return
 
-  const sid = await ensureSession(user.value.id)
+  const convId = await ensureConversation(user.value.id)
 
   const { data: inserted, error: msgErr } = await supabase
     .from('messages')
     .insert({
-      session_id: sid,
+      conversation_id: convId,
       role:       message.role,
       content:    flattenText(message.blocks),
       timestamp:  message.timestamp.toISOString(),
@@ -284,6 +276,12 @@ async function persistMessage(message: Message): Promise<void> {
 
   const { error: blocksErr } = await supabase.from('content_blocks').insert(blockRows)
   if (blocksErr) throw blocksErr
+
+  // 会話一覧を最終更新順に保つため、conversations.updated_at も更新する
+  const updatedAt = new Date()
+  await supabase.from('conversations').update({ updated_at: updatedAt.toISOString() }).eq('id', convId)
+  const conv = conversations.value.find(c => c.id === convId)
+  if (conv) conv.updatedAt = updatedAt
 }
 
 // AIの返答が保存される前に中断された等で、応答が欠けたまま宙ぶらりんになったメッセージを削除する
@@ -435,7 +433,8 @@ export function useChat() {
   }
 
   return {
-    messages, sendMessage, aiState, pendingBodies, loadHistory, deleteMessage, retryMessage,
-    currentSessionStartedAt, archiveCurrentSession, archivedSessions, loadArchivedMessages, deleteArchive,
+    messages, sendMessage, aiState, pendingBodies, openConversation, deleteMessage, retryMessage,
+    conversations, currentConversationId, currentConversation,
+    startNewConversation, deleteConversation, renameConversation,
   }
 }

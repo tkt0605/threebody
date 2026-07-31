@@ -8,6 +8,8 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/',             component: ChatView,     meta: { requiresAuth: true } },
+    // 会話ごとにURLを分けて識別できるようにする（/ はensure後にここへ置換される）
+    { path: '/c/:id',        component: ChatView,     meta: { requiresAuth: true } },
     { path: '/login',        component: LoginView    },
     // Google 認証ではサインアップ/ログインの区別がないため /login に集約
     { path: '/signup',       redirect: '/login'      },

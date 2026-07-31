@@ -1,26 +1,55 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useTheme } from '../composables/useTheme'
 import { useChat } from '../composables/useChat'
 import { useAsideDrawer } from '../composables/useAsideDrawer'
 
+const router = useRouter()
 const { isDark, toggle } = useTheme()
-const { currentSessionStartedAt, archiveCurrentSession } = useChat()
+const { currentConversation, startNewConversation, renameConversation } = useChat()
 const { toggleAside } = useAsideDrawer()
 
 const menuOpen = ref(false)
 
 const title = computed(() => {
-  const d = currentSessionStartedAt.value
-  if (!d) return '新しい会話'
+  const conv = currentConversation.value
+  if (!conv) return '新しい会話'
+  if (conv.title) return conv.title
+  const d = conv.createdAt
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} の会話`
 })
 
 function closeMenu() { menuOpen.value = false }
 
-async function handleArchive() {
+function handleNewConversation() {
   menuOpen.value = false
-  await archiveCurrentSession()
+  startNewConversation()
+  router.push('/')
+}
+
+const editingTitle = ref(false)
+const editTitleValue = ref('')
+const titleInput = ref<HTMLInputElement | null>(null)
+
+async function startEditTitle() {
+  menuOpen.value = false
+  editTitleValue.value = currentConversation.value?.title ?? ''
+  editingTitle.value = true
+  await nextTick()
+  titleInput.value?.focus()
+  titleInput.value?.select()
+}
+
+async function saveTitle() {
+  if (!editingTitle.value) return
+  editingTitle.value = false
+  const id = currentConversation.value?.id
+  if (id) await renameConversation(id, editTitleValue.value)
+}
+
+function cancelEditTitle() {
+  editingTitle.value = false
 }
 
 onUnmounted(() => document.removeEventListener('click', closeMenu))
@@ -43,14 +72,36 @@ document.addEventListener('click', closeMenu)
       </svg>
     </button>
 
-    <div class="relative">
+    <div class="relative flex items-center gap-1">
       <button
+        v-if="!editingTitle"
         class="flex items-center gap-1.5 text-gray-500 dark:text-white/50 text-sm cursor-pointer hover:text-gray-700 dark:hover:text-white/70 transition-colors"
         @click.stop="menuOpen = !menuOpen"
       >
         <h2>{{ title }}</h2>
         <svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <input
+        v-else
+        ref="titleInput"
+        v-model="editTitleValue"
+        class="text-sm bg-transparent border-b border-indigo-400 outline-none text-gray-800 dark:text-white/90 w-40"
+        @click.stop
+        @keyup.enter="saveTitle"
+        @keyup.escape="cancelEditTitle"
+        @blur="saveTitle"
+      />
+      <button
+        v-if="!editingTitle && currentConversation"
+        class="shrink-0 text-gray-300 hover:text-indigo-500 dark:text-white/25 dark:hover:text-indigo-400 cursor-pointer"
+        title="タイトルを編集"
+        aria-label="タイトルを編集"
+        @click.stop="startEditTitle"
+      >
+        <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </button>
       <div
@@ -61,12 +112,12 @@ document.addEventListener('click', closeMenu)
       >
         <button
           class="flex items-center gap-1 w-full text-left px-3 py-2 rounded-lg text-xs text-gray-600 hover:bg-gray-100 dark:text-white/70 dark:hover:bg-white/6 cursor-pointer"
-          @click="handleArchive"
+          @click="handleNewConversation"
         >
           <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M12 5v14M5 12h14" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
-          アーカイブする
+          新規会話
         </button>
       </div>
     </div>
