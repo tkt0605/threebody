@@ -106,7 +106,8 @@ async function streamOllamaNative(
     }),
   })
   if (!response.ok || !response.body) {
-    throw new Error(`Ollama request failed: ${response.status} ${response.statusText}`)
+    const detail = await response.text().catch(() => '')
+    throw new Error(`Ollama request failed: ${response.status} ${response.statusText}${detail ? ` - ${detail}` : ''}`)
   }
 
   const reader  = response.body.getReader()
