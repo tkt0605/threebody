@@ -1,7 +1,20 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
-import { useSettings, isBodyUsable, type Language, type ThinkingLevel, type Provider, type VoiceStyle, type Preset, type BodyProvider, type BodyConfig } from '../composables/useSettings'
-import { VOICE_STYLE_OPTIONS, PRESET_OPTIONS } from '../composables/useSettingsOptions'
+import { 
+  useSettings, 
+  isBodyUsable, 
+  type Language,
+  type ThinkingLevel,
+  type Provider,
+  type VoiceStyle,
+  type Preset,
+  type BodyProvider,
+  type BodyConfig 
+} from '../composables/useSettings'
+import { 
+  VOICE_STYLE_OPTIONS,
+  PRESET_OPTIONS
+} from '../composables/useSettingsOptions'
 import { useTheme } from '../composables/useTheme'
 import { BODY_PROVIDER_COLORS } from '../constants/bodyProviders'
 
