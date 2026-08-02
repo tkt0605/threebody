@@ -3,6 +3,7 @@ import cors from 'cors'
 import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 import dotenv from 'dotenv'
+import { collectSecrets, sanitizeErrorMessage } from './errorSanitize'
 
 dotenv.config({ path: new URL('../../.env', import.meta.url).pathname })
 
@@ -423,8 +424,12 @@ app.post('/api/chat', async (req, res) => {
     }
     res.write('data: [DONE]\n\n')
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[/api/chat]', err)
+    // プロバイダーは認証エラー時に受け取ったキーをエラー本文へ echo back することがある。
+    // ここを素通しにすると、共有キーがそのまま全ユーザーのブラウザに届く
+    const message = sanitizeErrorMessage(err, collectSecrets({ bodies, apiKey }))
+    // err をオブジェクトごと出すと、SDKの例外が保持するリクエストヘッダ（x-api-key 等）まで
+    // Renderのログに残る。伏せ字化済みのメッセージだけを出す
+    console.error('[/api/chat]', message)
     res.write(`data: ${JSON.stringify({ type: 'error', message })}\n\n`)
   } finally {
     res.end()
@@ -583,7 +588,9 @@ app.post('/api/scenes', async (req, res) => {
     }
     res.json(result)
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
+    // このハンドラはモジュール直下の anthropic クライアント（= 運営のキー）を使うため、
+    // /api/chat と同じくエラー本文にキーが混ざりうる
+    const message = sanitizeErrorMessage(err, collectSecrets())
     res.status(500).json({ error: message })
   }
 })
