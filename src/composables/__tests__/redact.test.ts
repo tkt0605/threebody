@@ -40,3 +40,30 @@ describe('redactText', () => {
         expect(containsSecret(redactText(`${long} / ${short}`, [short, long]), [short, long])).toBe(false)
     })
 })
+
+// 二段目（パターン照合）。一段目は実値との完全一致しか見ないため、以下は素通りしてしまう
+describe('redactText（パターン照合）', () => {
+    it('プロバイダー側でマスクされて変形したキーも伏せ字にする', () => {
+        // OpenAIが返す実際の形。実値 sk-dummy-1234567890abcdef とは別物なので一段目では消せない
+        const raw = '401 Incorrect API key provided: sk-dummy*************cdef. You can find your API key at https://platform.openai.com/account/api-keys.'
+        const out = redactText(raw, ['sk-dummy-1234567890abcdef'])
+
+        expect(out).not.toContain('sk-dummy')
+        expect(out).toContain('[APP_REDACTED]')
+        expect(out).toContain('401 Incorrect API key provided')
+    })
+
+    it('秘匿値が手元に無くてもキーらしき文字列を伏せ字にする', () => {
+        // バックエンドの環境変数のキーや、報告前に設定から消されたキーがこれに当たる
+        expect(redactText('invalid key: sk-ant-api03-XXXXXXXXXXXX')).toContain('[APP_REDACTED]')
+        expect(redactText('Authorization: Bearer abcdef0123456789')).not.toContain('abcdef0123456789')
+        expect(containsSecret({ error_raw: 'key sk-proj-ABCDEFGHIJKL' })).toBe(true)
+    })
+
+    it('キーを含まない通常のエラー文は壊さない', () => {
+        const normal = 'ネットワークに接続できません。バックエンドが起動しているか確認してください。'
+        expect(redactText(normal, [])).toBe(normal)
+        expect(redactText('サーバーエラーが発生しました (HTTP 500)。')).toBe('サーバーエラーが発生しました (HTTP 500)。')
+        expect(containsSecret({ providers: ['openai', 'ollama'], thinkingLevel: 3 })).toBe(false)
+    })
+})
