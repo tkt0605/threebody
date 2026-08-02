@@ -7,7 +7,26 @@ export type TextBlock = {
   bodyIndex?: number
 }
 
-export type ErrorBlock = { type: 'error'; message: string }
+// エラー報告に添える実行時コンテキスト。
+// providers はプロバイダー名のみ。BodyConfig には apiKey が含まれるため丸ごと入れない
+export type ErrorReportContext = {
+  raw: string
+  display: string
+  thinkingLevel: number
+  providers: string[]
+  conversationId: string | null
+  userAgent: string
+  occurredAt: string
+}
+
+// context はDB非永続化のエラーブロックにのみ載る一時データ。
+// 判別子 type:'error' を持つブロックはこの1種類だけにする（同じ判別子の型を複数作ると
+// block.type === 'error' で絞り込んでも context に到達できなくなるため）
+export type ErrorBlock = {
+  type: 'error'
+  message: string
+  context?: ErrorReportContext
+}
 
 // 三体モード: 副体（二体・三体）の見解をリアルタイムに表示するための一時的なブロック（DBには保存しない）
 export type BodyPerspective = {
