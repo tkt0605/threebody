@@ -221,7 +221,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="relative w-full h-full rounded-full overflow-hidden bg-gray-50 dark:bg-gray-950" style="aspect-ratio: 1">
+  <div class="relative w-full h-full rounded-full overflow-hidden bg-gray-100 dark:bg-gray-950" style="aspect-ratio: 1">
     <canvas
       ref="canvasRef"
       class="block w-full h-full cursor-pointer"
