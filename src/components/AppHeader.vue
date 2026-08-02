@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { useTheme } from '../composables/useTheme'
 import { useChat } from '../composables/useChat'
 import { useAsideDrawer } from '../composables/useAsideDrawer'
-
+defineProps<{ size?: number | string }>()
 const router = useRouter()
 const { isDark, toggle } = useTheme()
 const { currentConversation, startNewConversation, renameConversation } = useChat()
@@ -95,7 +95,7 @@ document.addEventListener('click', closeMenu)
       />
       <button
         v-if="!editingTitle && currentConversation"
-        class="shrink-0 text-gray-300 hover:text-indigo-500 dark:text-white/25 dark:hover:text-indigo-400 cursor-pointer"
+        class="shrink-0 text-gray-400 hover:text-indigo-500 dark:text-white/25 dark:hover:text-indigo-400 cursor-pointer p-2 hover:bg-gray-200 rounded-lg"
         title="タイトルを編集"
         aria-label="タイトルを編集"
         @click.stop="startEditTitle"
@@ -114,9 +114,11 @@ document.addEventListener('click', closeMenu)
           class="flex items-center gap-1 w-full text-left px-3 py-2 rounded-lg text-xs text-gray-600 hover:bg-gray-100 dark:text-white/70 dark:hover:bg-white/6 cursor-pointer"
           @click="handleNewConversation"
         >
-          <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <path d="M12 5v14M5 12h14" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 7V5a3 3 0 0 1 3-3h7a3 3 0 0 1 3 3v5a3 3 0 0 1-3 3h-1" />
+          <path d="M6 7h8a3 3 0 0 1 3 3v5a3 3 0 0 1-3 3h-4l-4 3.5V18a3 3 0 0 1-3-3v-5a3 3 0 0 1 3-3z" />
+          <path d="M10 10v5M7.5 12.5h5" />
+        </svg>
           新規会話
         </button>
       </div>

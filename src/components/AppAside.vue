@@ -6,7 +6,7 @@ import SettingsDialog from './SettingsDialog.vue'
 import { useAuth } from '../composables/useAuth'
 import { useChat } from '../composables/useChat'
 import { useAsideDrawer } from '../composables/useAsideDrawer'
-
+defineProps<{ size?: number | string }>()
 const router = useRouter()
 const route  = useRoute()
 const { user, logout } = useAuth()
@@ -112,9 +112,11 @@ defineExpose({ openSettings })
           : 'text-gray-600 hover:text-gray-900 hover:bg-black/5 dark:text-white/55 dark:hover:text-white/90 dark:hover:bg-white/6'"
         @click="goChat"
       >
-        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-          <path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M8 7V5a3 3 0 0 1 3-3h7a3 3 0 0 1 3 3v5a3 3 0 0 1-3 3h-1" />
+        <path d="M6 7h8a3 3 0 0 1 3 3v5a3 3 0 0 1-3 3h-4l-4 3.5V18a3 3 0 0 1-3-3v-5a3 3 0 0 1 3-3z" />
+        <path d="M10 10v5M7.5 12.5h5" />
+      </svg>
         チャット
       </button>
     </div>
@@ -144,9 +146,6 @@ defineExpose({ openSettings })
           : 'text-gray-500 hover:text-gray-800 hover:bg-gray-200/70 dark:text-white/45 dark:hover:text-white/80 dark:hover:bg-white/6'"
         @click="selectConversation(conv.id)"
       >
-        <svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-          <path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
         <span class="truncate">{{ formatConversationLabel(conv) }}</span>
         <!-- 会話の削除 -->
         <span class="ml-auto text-gray-400 dark:text-white/30 hover:text-rose-500 dark:hover:text-rose-400" @click.stop="handleDeleteConversation(conv.id)">

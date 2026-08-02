@@ -1,16 +1,6 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
-import { 
-  useSettings, 
-  isBodyUsable, 
-  type Language,
-  type ThinkingLevel,
-  type Provider,
-  type VoiceStyle,
-  type Preset,
-  type BodyProvider,
-  type BodyConfig 
-} from '../composables/useSettings'
+import { ref, reactive, computed, watch } from 'vue'
+import {  useSettings,  isBodyUsable,  type Language, type ThinkingLevel, type Provider, type VoiceStyle, type Preset, type BodyProvider, type BodyConfig } from '../composables/useSettings'
 import { 
   VOICE_STYLE_OPTIONS,
   PRESET_OPTIONS
@@ -55,18 +45,14 @@ const LANGUAGES: { value: Language; label: string }[] = [
   { value: 'de', label: 'Deutsch' },
 ]
 
+// 思考レベルは1〜5の5段階。バックエンドの LEVEL_CONFIG がモデル階層・maxTokens・
+// thinking パラメータをこの値から決めるため、UIの選択肢と値は1対1で対応させる
 const THINKING_LEVELS: { value: ThinkingLevel; label: string; desc: string; color: string }[] = [
   { value: 1, label: '速答', desc: '考えずに即答',     color: '#64748b' },
   { value: 2, label: '概略', desc: '軽く推論',         color: '#0ea5e9' },
   { value: 3, label: '標準', desc: 'バランス思考',     color: '#6366f1' },
   { value: 4, label: '深考', desc: '複雑な問題向け',   color: '#8b5cf6' },
   { value: 5, label: '限界', desc: '最大思考リソース', color: '#f43f5e' },
-]
-
-// 普段は「浅く/深く」の1ダイヤルだけを見せる。プロバイダー/モデル/思考レベルの詳細は「詳細設定」の奥へ
-const SIMPLE_LEVELS: { value: ThinkingLevel; label: string; desc: string; color: string }[] = [
-  { value: 2, label: '浅く', desc: '速く簡潔に答える',   color: '#0ea5e9' },
-  { value: 4, label: '深く', desc: 'じっくり考えて答える', color: '#8b5cf6' },
 ]
 
 const showAdvanced = ref(false)
@@ -76,6 +62,7 @@ function cloneBody(b: BodyConfig): BodyConfig {
 }
 
 const isBodyActive = isBodyUsable
+
 
 const draft = reactive({
   language:      settings.language,
@@ -146,27 +133,6 @@ defineExpose({ open })
         <!-- Body -->
         <div class="px-6 py-5 space-y-6 overflow-y-auto [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-gray-600 [&::-webkit-scrollbar-thumb]:rounded-full">
 
-          <!-- 浅く/深く（普段はこれだけ） -->
-          <div class="space-y-3">
-            <div class="flex items-baseline justify-between">
-              <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">考える深さ</label>
-              <span class="text-xs" :style="{ color: (SIMPLE_LEVELS.find(l => l.value === draft.thinkingLevel) ?? THINKING_LEVELS[draft.thinkingLevel - 1])!.color }">
-                {{ (SIMPLE_LEVELS.find(l => l.value === draft.thinkingLevel) ?? THINKING_LEVELS[draft.thinkingLevel - 1])!.desc }}
-              </span>
-            </div>
-            <div class="flex gap-1.5">
-              <button
-                v-for="lvl in SIMPLE_LEVELS"
-                :key="lvl.value"
-                class="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border"
-                :style="draft.thinkingLevel === lvl.value
-                  ? { background: lvl.color + '22', borderColor: lvl.color + '99', color: lvl.color }
-                  : inactiveBtnStyle"
-                @click="draft.thinkingLevel = lvl.value"
-              >{{ lvl.label }}</button>
-            </div>
-          </div>
-
           <!-- 言語 -->
           <div class="space-y-2">
             <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">言語</label>
@@ -193,6 +159,7 @@ defineExpose({ open })
               </div>
             </div>
           </div>
+
           <!-- 話し方 -->
           <div class="space-y-3">
             <div class="flex items-baseline justify-between">
@@ -348,7 +315,7 @@ defineExpose({ open })
               </div>
 
               <!-- 思考レベル（詳細: 1〜5） -->
-              <div class="space-y-3">
+              <!-- <div class="space-y-3">
                 <div class="flex items-baseline justify-between">
                   <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">思考レベル（詳細）</label>
                   <span class="text-xs" :style="{ color: THINKING_LEVELS[draft.thinkingLevel - 1]!.color }">
@@ -369,7 +336,7 @@ defineExpose({ open })
                     <span class="tracking-wide">{{ lvl.label }}</span>
                   </button>
                 </div>
-              </div>
+              </div> -->
             </div>
           </div>
         </div>

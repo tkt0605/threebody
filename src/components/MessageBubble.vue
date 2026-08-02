@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+import { useFeedback } from '../composables/useFeedback'
+import type { ErrorBlock } from '../types/message'
 import { marked } from 'marked'
 import type { Message } from '../types/message'
 import DOMPurify from 'dompurify'
@@ -7,7 +10,22 @@ import { useChat } from '../composables/useChat'
 defineProps<{ message: Message; orphaned?: boolean; readonly?: boolean }>()
 
 const { retryMessage, deleteMessage } = useChat()
+const { reportError } = useFeedback()
+type ReportState = 'idle' | 'sending' | 'done' | 'failed'
+const reportStates = ref<Record<number, ReportState>>({})
 
+async function report(block: ErrorBlock, i: number): Promise<void>{
+  const state = reportStates.value[i]
+  if (!block.context || state === 'sending' || state === "done")return
+  reportStates.value[i] = 'sending'
+  try {
+    await reportError(block.context)
+    reportStates.value[i] = 'done'
+  } catch (error) {
+    console.error('報告の送信失敗：', error);
+    reportStates.value[i] = 'failed'
+  }
+}
 function roleColor(bodyIndex: number): string {
   return BODY_ROLE_COLORS[bodyIndex] ?? '#8b8b8b'
 }
@@ -131,7 +149,22 @@ function handleCopyClick(event: MouseEvent) {
           <svg class="w-3.5 h-3.5 mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
-          <span>{{ block.message }}</span>
+          <div class="flex-1 space-y-1.5">
+            <span class="block">{{ block.message }}</span>
+            <!-- エラー時の報告はワンクリックで完結させる。入力欄は出さない（この時点のユーザーは既に躓いている） -->
+            <button
+              v-if="block.context && !readonly"
+              class="text-[11px] underline underline-offset-2 transition-opacity cursor-pointer
+                     disabled:cursor-default disabled:no-underline disabled:opacity-60"
+              :disabled="reportStates[i] === 'sending' || reportStates[i] === 'done'"
+              @click="report(block, i)"
+            >{{
+              reportStates[i] === 'done'      ? '報告しました。ありがとうございます'
+              : reportStates[i] === 'sending' ? '送信中…'
+              : reportStates[i] === 'failed'  ? '送信できませんでした。もう一度試す'
+              : 'この問題を報告する'
+            }}</button>
+          </div>
         </div>
       </template>
       <div v-if="orphaned && !readonly" class="flex gap-2 pt-1">
