@@ -105,8 +105,13 @@ async function streamOllamaNative(
       options: { num_predict: maxTokens },
     }),
   })
+  // if (!response.ok || !response.body) {
+  //   const detail = await response.text().catch(() => '')
+  //   throw new Error(`Ollama request failed: ${response.status} ${response.statusText}${detail ? ` - ${detail}` : ''}`)
+  // }
   if (!response.ok || !response.body) {
-    const detail = await response.text().catch(() => '')
+    // 本文はプロバイダーが何を返すか制御できない。診断に足りる長さだけ残して切り詰める
+    const detail = (await response.text().catch(() => '')).slice(0, 300)
     throw new Error(`Ollama request failed: ${response.status} ${response.statusText}${detail ? ` - ${detail}` : ''}`)
   }
 
