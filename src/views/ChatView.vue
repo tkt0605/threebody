@@ -123,10 +123,10 @@ watch(
 </script>
 
 <template>
-  <div class="flex flex-col h-dvh bg-gray-50 dark:bg-gray-950 overflow-hidden">
+  <div class="flex flex-col h-dvh overflow-hidden">
     <AppHeader />
 
-    <main class="flex-1 min-h-0 flex flex-col overflow-hidden">
+    <main class="flex-1 min-h-0 flex flex-col overflow-hidden bg-gray-100 dark:bg-gray-950">
       <!-- APIキー・モデル未設定：脳みそがまだない -->
       <div v-if="!hasActiveBody" class="flex-1 flex items-center justify-center">
         <EmptyBrainState @open-settings="appAside?.openSettings()" />
