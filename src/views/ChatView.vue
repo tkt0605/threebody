@@ -126,14 +126,14 @@ watch(
   <div class="flex flex-col h-dvh overflow-hidden">
     <AppHeader />
 
-    <main class="flex-1 min-h-0 flex flex-col overflow-hidden bg-gray-100 dark:bg-gray-950">
+    <main class="flex-1 min-h-0 flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950 ">
       <!-- APIキー・モデル未設定：脳みそがまだない -->
       <div v-if="!hasActiveBody" class="flex-1 flex items-center justify-center">
         <EmptyBrainState @open-settings="appAside?.openSettings()" />
       </div>
 
       <!-- 設定済み・会話なし（最初の発話が思考中の場合も含む）：中央に大きな球体 -->
-      <div v-else-if="messages.length === 0 || firstExchangeInFlight" class="flex-1 flex flex-col items-center justify-center px-6 gap-5">
+      <div v-else-if="messages.length === 0 || firstExchangeInFlight" class="flex-1 flex flex-col items-center justify-center px-6 gap-5 bg-gray-550">
         <div class="w-56 h-56 sm:w-72 sm:h-72">
           <VoiceSphere
             :recording="recording"
