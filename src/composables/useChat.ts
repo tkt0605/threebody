@@ -1,26 +1,42 @@
 import { ref, computed, watch } from 'vue'
 import type { Message, TextBlock, PerspectiveBlock } from '../types/message'
-import { useSettings, type BodyProvider } from './useSettings'
+import { useSettings, type BodyProvider, isBodyUsable } from './useSettings'
 import { buildSystemPrompt, buildBodyPersonaPrompt } from './useSystemPrompt'
 import { BODY_PERSONA_INFO } from '../constants/bodyPersonas'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { redactText } from '../lib/redact'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:3000'
 
-function classifyError(err: unknown): string {
-  if (err instanceof TypeError && err.message.toLowerCase().includes('fetch')) {
+// 現在アプリが保持している秘匿値。BodyConfig.apiKey は復号済みの平文なのでここで集める
+function currentSecrets(): string[]{
+  const { settings } = useSettings()
+  return settings.bodies.map(b => b.apiKey)
+}
+
+// 加工前の生メッセージ。原因追跡に必要だが、秘匿値は必ず落としてから返す
+export function rawErrorMessage(err: unknown): string{
+  const raw = err instanceof Error ? err.message : String(err)
+  return redactText(raw, currentSecrets())
+}
+
+function classifyError(err: unknown): string{
+  return redactText(classifyErrorMessage(err), currentSecrets())
+}
+
+function classifyErrorMessage(err: unknown): string{
+  if (err instanceof TypeError && err.message.toLowerCase().includes('fetch')){
     return 'ネットワークに接続できません。バックエンドが起動しているか確認してください。'
   }
-  if (err instanceof Error) {
-    if (err.message.startsWith('HTTP 429')) return 'APIの利用制限に達しました。しばらく経ってから再試行してください。'
+  if (err instanceof Error){
+        if (err.message.startsWith('HTTP 429')) return 'APIの利用制限に達しました。しばらく経ってから再試行してください。'
     if (err.message.startsWith('HTTP 5'))   return `サーバーエラーが発生しました (${err.message})。`
     if (err.message.startsWith('HTTP '))    return `リクエストが失敗しました (${err.message})。`
     return err.message
   }
   return String(err)
 }
-
 const messages = ref<Message[]>([])
 const aiState = ref<'idle' | 'thinking' | 'synthesizing' | 'converging'>('idle');
 
@@ -418,7 +434,23 @@ export function useChat() {
       }
     } catch (err) {
       if (!block.content) reactiveMsg.blocks.splice(reactiveMsg.blocks.indexOf(block), 1)
-      reactiveMsg.blocks.push({ type: 'error', message: classifyError(err) })
+      const display = classifyError(err)      // 伏字化済み
+      const raw     = rawErrorMessage(err)    // 伏字化済み
+
+      reactiveMsg.blocks.push({
+          type: 'error',
+          message: display,
+          context: {
+            raw,
+            display,
+            thinkingLevel: settings.thinkingLevel,
+            // b ではなく b.provider。ここで b と書くと apiKey ごと持っていく
+            providers: settings.bodies.filter(isBodyUsable).map(b => b.provider),
+            conversationId: currentConversationId.value,
+            userAgent: navigator.userAgent,
+            occurredAt: new Date().toISOString(),
+         },
+      })
     } finally {
       reactiveMsg.streaming = false  // Proxy 経由で書くことで watch を発火させる
       aiState.value = 'idle';
