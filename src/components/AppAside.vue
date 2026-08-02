@@ -81,7 +81,7 @@ defineExpose({ openSettings })
     </Transition>
 
     <aside
-      class="fixed inset-y-0 left-0 z-50 flex flex-col w-64 max-w-[85vw] border-r border-black/8 dark:border-white/8 shrink-0 bg-white dark:bg-gray-900
+      class="fixed inset-y-0 left-0 z-50 flex flex-col w-64 max-w-[85vw] border-r border-black/8 dark:border-white/8 shrink-0 bg-gray-50 dark:bg-gray-950
              transition-transform duration-200 ease-out"
       :class="asideOpen ? 'translate-x-0' : '-translate-x-full'"
     >

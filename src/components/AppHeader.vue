@@ -57,7 +57,7 @@ document.addEventListener('click', closeMenu)
 </script>
 
 <template>
-  <header class="flex items-center gap-3 px-4 sm:px-6 py-4 border-b border-black/8 dark:border-white/8 shrink-0 bg-white dark:bg-gray-900">
+  <header class="flex items-center gap-3 px-4 sm:px-6 py-4 border-b border-black/8 dark:border-white/8 shrink-0 bg-gray-50 dark:bg-gray-950">
     <!-- ハンバーガーメニュー：Aside（ドロワー）の開閉 -->
     <button
       class="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg transition-colors cursor-pointer
