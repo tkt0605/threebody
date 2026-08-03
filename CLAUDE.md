@@ -87,7 +87,6 @@ Composables はモジュールレベルのシングルトンとして設計さ�
 |---|---|
 | `POST /api/chat` | SSEチャット（三体モード対応） |
 | `GET /api/health` | ヘルスチェック |
-| `POST /api/scenes` | 青空文庫テキスト（URLまたは直接テキスト）からシーン分割JSONを生成。`aozora.gr.jp` 以外のホストは拒否、5MB上限、Shift-JISデコード |
 
 ## 環境変数 (`.env`)
 
