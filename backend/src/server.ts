@@ -4,6 +4,11 @@ import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 import dotenv from 'dotenv'
 import { collectSecrets, sanitizeErrorMessage } from './errorSanitize'
+import { resolveUserId } from './auth'
+import {
+  SHARED_DAILY_LIMIT, SHARED_THINKING_LEVEL,
+  sharedApiKey, hasOwnCloudKey, checkSharedAllowance, consumeSharedQuota,
+} from './sharedKey'
 
 dotenv.config({ path: new URL('../../.env', import.meta.url).pathname })
 
@@ -16,6 +21,7 @@ app.use(express.json())
 // think:false を尊重するため、Ollamaはこちらを直接叩く。
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434'
 
+// 運営側のキーで動くクライアント。streamAnthropic の client 既定値として使う
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 type LevelConfig = {
@@ -343,10 +349,54 @@ app.post('/api/chat', async (req, res) => {
   res.setHeader('Connection', 'keep-alive')
   res.flushHeaders()
 
+  // 共有APIキーの割当判定にのみ使う。トークンが無い・検証に失敗した場合は null になり、
+  // 従来どおり（ユーザー自身のキーで）動く。認証は必須にしない
+  const userId = await resolveUserId(req.headers.authorization)
+
   const config      = (LEVEL_CONFIG[thinkingLevel] ?? LEVEL_CONFIG[3])!
   const oaiMessages = messages as unknown as OpenAI.Chat.ChatCompletionMessageParam[]
 
+  // 共有キーを使ったか / 応答が正常完了したか。
+  // カウントを増やしてよいのは両方 true のときだけ（判定は finally）
+  let sharedKeyUsed = false
+  let completed     = false
+
   try {
+    // ── 共有キーへのフォールバック ─────────────────────────────────────────────
+    // 自分のクラウド系キーを1つも設定していないユーザーだけがここに入る
+    if (!hasOwnCloudKey({ bodies, provider, apiKey, model })) {
+      const allowance = await checkSharedAllowance(userId)
+
+      if (allowance.allowed) {
+        // allowed を返した時点で共有キーは存在するが、型の上では null を排除できない
+        const key = sharedApiKey()
+        if (key) {
+          sharedKeyUsed = true
+          // 思考レベルはユーザーの指定ではなく固定値を使う。
+          // 他人のトークンを運営が負担するため、ここがコスト上限の主レバーになる
+          const sharedConfig = LEVEL_CONFIG[SHARED_THINKING_LEVEL]!
+          await streamBodyOAI(
+            { provider: 'anthropic', apiKey: key, model: sharedConfig.anthropicModel },
+            oaiMessages,
+            sharedConfig,
+            systemPrompt,
+            res,
+          )
+          completed = true
+          res.write('data: [DONE]\n\n')
+          return
+        }
+      } else if (allowance.reason === 'limit_reached') {
+        // 既存のerrorイベント形式に乗せる。フロントはこれをそのまま描画できる
+        res.write(`data: ${JSON.stringify({
+          type:    'error',
+          message: `今日の無料利用は${SHARED_DAILY_LIMIT}回までです。設定から自分のAPIキーを登録すると続けて使えます。`,
+        })}\n\n`)
+        return
+      }
+      // unavailable / not_signed_in / not_permitted は従来どおりの処理へ落ちる
+    }
+
     // ── 三体モード ─────────────────────────────────────────────────────────────
     if (bodies && Array.isArray(bodies) && bodies.length > 0) {
       // Ollamaはキー・モデル未指定でも既定モデルで利用可能（任意のアップグレードとしてクラウドを足す）。
@@ -395,12 +445,14 @@ app.post('/api/chat', async (req, res) => {
 
         res.write(`data: ${JSON.stringify({ type: 'synthesis_start', bodyIndex: bodies.indexOf(primary) })}\n\n`)
         await streamBodyOAI(primary, synthesisMessages, config, synthesisSystemPrompt, res)
+        completed = true
         res.write('data: [DONE]\n\n')
         return
       }
 
       if (available.length === 1) {
         await streamBodyOAI(available[0]!, oaiMessages, config, systemPrompt, res)
+        completed = true
         res.write('data: [DONE]\n\n')
         return
       }
@@ -422,6 +474,7 @@ app.post('/api/chat', async (req, res) => {
         res.write(`data: ${JSON.stringify({ type: 'text', content })}\n\n`)
       })
     }
+    completed = true
     res.write('data: [DONE]\n\n')
   } catch (err) {
     // プロバイダーは認証エラー時に受け取ったキーをエラー本文へ echo back することがある。
@@ -432,6 +485,12 @@ app.post('/api/chat', async (req, res) => {
     console.error('[/api/chat]', message)
     res.write(`data: ${JSON.stringify({ type: 'error', message })}\n\n`)
   } finally {
+    // finally で「無条件に」消費すると、catch を通ったエラー時にも加算されて要件と逆になる。
+    // 増やしてよいのは共有キーを使い、かつ [DONE] まで到達したときだけ。
+    // completed の判定が入っているため、この位置でも catch 経由では発火しない
+    if (sharedKeyUsed && completed && userId) {
+      await consumeSharedQuota(userId)
+    }
     res.end()
   }
 })

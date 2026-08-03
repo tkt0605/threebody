@@ -37,6 +37,14 @@ function classifyErrorMessage(err: unknown): string{
   }
   return String(err)
 }
+// バックエンドに「誰からのリクエストか」を伝えるヘッダ。共有APIキーの割当判定に使う。
+// 未ログインなら何も付けず、サーバー側は従来どおり（ユーザー自身のキーで）処理する
+async function authHeader(): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
 const messages = ref<Message[]>([])
 const aiState = ref<'idle' | 'thinking' | 'synthesizing' | 'converging'>('idle');
 
@@ -343,7 +351,7 @@ export function useChat() {
       pendingBodies.value = []
       const response = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
         body: JSON.stringify({
           messages: toApiMessages(messages.value.slice(0, -1)),
           thinkingLevel: settings.thinkingLevel,
