@@ -21,6 +21,16 @@ export function rawErrorMessage(err: unknown): string{
   return redactText(raw, currentSecrets())
 }
 
+// バックエンドが「バグではなく仕様どおりの状態」として送るエラー（例: 共有キーの日次上限到達）に
+// 付くコード。この種のエラーは reportError の対象にしない（ユーザーに「異常」と誤解させないため）
+class ChatStreamError extends Error {
+  code?: string | undefined
+  constructor(message?: string | undefined, code?: string | undefined){
+    super(message)
+    this.code = code
+  }
+}
+
 function classifyError(err: unknown): string{
   return redactText(classifyErrorMessage(err), currentSecrets())
 }
@@ -392,6 +402,7 @@ export function useChat() {
               type: string
               content?: string
               message?: string
+              code?: string
               bodyIndex?: number
               name?: string
               provider?: string
@@ -433,7 +444,7 @@ export function useChat() {
               block.content += parsed.content
               if (aiState.value !== 'converging') aiState.value = 'converging'
             }
-            if (parsed.type === 'error') throw new Error(parsed.message)
+            if (parsed.type === 'error') throw new ChatStreamError(parsed.message, parsed.code)
           } catch (e) {
             if (e instanceof SyntaxError) continue
             throw e
@@ -444,11 +455,14 @@ export function useChat() {
       if (!block.content) reactiveMsg.blocks.splice(reactiveMsg.blocks.indexOf(block), 1)
       const display = classifyError(err)      // 伏字化済み
       const raw     = rawErrorMessage(err)    // 伏字化済み
+      // limit_reached はバグではなく仕様どおりの状態なので、context を付けない
+      // （MessageBubble.vue は context の有無で「問題を報告する」ボタンを出し分ける）
+      const isExpected = err instanceof ChatStreamError && err.code === 'limit_reached'
 
       reactiveMsg.blocks.push({
           type: 'error',
           message: display,
-          context: {
+          ...(isExpected ? {} : { context: {
             raw,
             display,
             thinkingLevel: settings.thinkingLevel,
@@ -457,7 +471,7 @@ export function useChat() {
             conversationId: currentConversationId.value,
             userAgent: navigator.userAgent,
             occurredAt: new Date().toISOString(),
-         },
+         }}),
       })
     } finally {
       reactiveMsg.streaming = false  // Proxy 経由で書くことで watch を発火させる
