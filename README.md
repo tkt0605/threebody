@@ -19,15 +19,32 @@ https://threebody-phi.vercel.app
 
 Google認証でログイン後、設定画面でLLM APIキーを入力すればすぐに使える。
 
+> [!NOTE]
+> ホスト版ではOllamaは選べない。サーバーから各自のローカルPCで動くOllamaへは到達できないため。
+> Ollamaを使うには下の「クイック・スタート」でローカル実行する。
+
+## 対応プロバイダー
+| プロバイダー | APIキー | 備考 |
+|---|---|---|
+| Anthropic (Claude) | 必要 | |
+| OpenAI (ChatGPT) | 必要 | |
+| DeepSeek | 必要 | OpenAI互換エンドポイントとして扱う |
+| Ollama | 不要 | ローカル実行時のみ |
+
 ## LLM APIキーの取得方法
-1. OpenAPI, Anthropic, Google各社のAPIコンソールにアクセス
+1. OpenAI, Anthropic, DeepSeek各社のAPIコンソールにアクセス
 2. 各自のアカウントを作成・ログイン
 3. **Create API key** をクリック
 4. このアプリの`設定ボタン`の詳細設定から取得したAPI Keyと利用するLLMモデルを貼り付ける。
 
+## 無料お試し枠について（招待制）
+自分のAPIキーを持たないユーザー向けに、運営のキーで**1日5回**まで対話を試せる枠がある。
+ただし現在は運営が個別に許可したアカウントのみが対象で、Googleログインしただけでは有効にならない。
+有効な場合、運営が負担するトークンコストを固定するため思考レベルは2に固定される。
+
 ## これはどんなものか？ 
 従来のものは、モデルもUIも固定である。
-しかし、Threebodyは違う。Ollama・chatCPT・Claude・Gemini・Deepseekを
+しかし、Threebodyは違う。Ollama・ChatGPT・Claude・DeepSeekを
 自由に組み合わせ、３つの視点から物事を推論させ、答えを導く。
 ## 　クイック・スタート
 以下は、Githubからのディレクトリをクローンしてから依存関係をインストール。
