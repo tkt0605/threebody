@@ -19,7 +19,7 @@ import type { Message } from '../types/message'
 const { messages, sendMessage, openConversation, aiState, currentConversationId } = useChat()
 const { speak } = useTTS()
 const { settings } = useSettings()
-const { sharedKey, refreshCapabilities } = useCapabilities()
+const { sharedKey, ollama, refreshCapabilities } = useCapabilities()
 const { user } = useAuth()
 
 const route  = useRoute()
@@ -54,10 +54,16 @@ const appAside = ref<InstanceType<typeof AppAside> | null>(null)
 // 一体に収束するまではチャットログへ画面遷移させず、中央の球体画面のままにする
 const firstExchangeInFlight = ref(false)
 
-// 会話可能な体が1つ以上あるか（Ollamaはキー無しでも既定モデルで動くため常に成立）。
+// 会話可能な体が1つ以上あるか。
+// isBodyUsable は「provider===ollama なら常にtrue」を返すが、それは設定画面の見た目としては正しくても、
+// このデプロイで実際にOllamaへ到達できるとは限らない（本番等）。ゲートの判定だけは
+// capabilities.ollama.enabled で上書きし、送信して初めて接続エラーで失敗する偽陽性を防ぐ。
 // 自分のクラウドキーが1つも無くても、共有キーの無料枠が残っていれば会話は成立するため、
 // そちらも見ないと「使えるのに泣き顔」になってしまう（共有キーフォールバックの導入で発生した齟齬）
-const hasActiveBody = computed(() => settings.bodies.some(isBodyUsable) || sharedKey.value.allowed)
+const hasActiveBody = computed(() =>
+  settings.bodies.some(b => b.provider === 'ollama' ? ollama.value.enabled : isBodyUsable(b))
+  || sharedKey.value.allowed
+)
 
 // 自分のキーを設定せず共有キーに乗っている状態か（上限到達で allowed:false になった後も含む）。
 // allowed だけで判定すると、上限到達の瞬間に「今どれだけ使ったか」が一番知りたいのに
