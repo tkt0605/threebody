@@ -31,13 +31,19 @@ const subtext = computed(() => {
 <template>
   <div class="flex flex-col items-center gap-4 px-6 text-center select-none">
     <!-- 泣き顔 -->
-    <svg class="w-20 h-20 text-gray-300 dark:text-white/25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-      <circle cx="12" cy="12" r="9.5"/>
-      <path d="M8.5 10.2h.01M15.5 10.2h.01" stroke-linecap="round" stroke-width="2.2"/>
-      <path d="M8.3 16.2c1-1.2 2.3-1.8 3.7-1.8s2.7.6 3.7 1.8" stroke-linecap="round" stroke-linejoin="round"/>
-      <path d="M9 11.5c-.3 1-.9 1.7-.9 2.6a1 1 0 001 1" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+     <svg width="132" height="114" viewBox="0 0 120 104" fill="none" stroke="currentColor" aria-hidden="true">
+      <g opacity="0.3" stroke-width="1.5" stroke-linecap="round">
+        <line x1="53.2" y1="24.1" x2="24.8" y2="69.9" />
+        <line x1="66.8" y1="24.1" x2="95.2" y2="69.9" />
+        <line x1="31" y1="81" x2="89" y2="81" />
+      </g>
+      <g opacity="0.5" stroke-width="1.75" stroke-dasharray="3 5" stroke-linecap="round">
+        <circle cx="60" cy="13" r="13" />
+        <circle cx="18" cy="81" r="13" />
+        <circle cx="102" cy="81" r="13" />
+      </g>
+      <circle cx="60" cy="58" r="4.5" fill="currentColor" stroke="none" opacity="0.22" />
     </svg>
-
     <div class="space-y-1.5">
       <p class="text-gray-500 dark:text-white/50 text-sm font-medium">{{ heading }}</p>
       <p class="text-gray-400 dark:text-white/35 text-xs">{{ subtext }}</p>

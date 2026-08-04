@@ -59,8 +59,12 @@ const firstExchangeInFlight = ref(false)
 // そちらも見ないと「使えるのに泣き顔」になってしまう（共有キーフォールバックの導入で発生した齟齬）
 const hasActiveBody = computed(() => settings.bodies.some(isBodyUsable) || sharedKey.value.allowed)
 
-// 自分のキーを設定せず共有キーで会話している状態か。残り回数の表示に使う
-const usingSharedKey = computed(() => !hasOwnCloudKey(settings.bodies) && sharedKey.value.allowed)
+// 自分のキーを設定せず共有キーに乗っている状態か（上限到達で allowed:false になった後も含む）。
+// allowed だけで判定すると、上限到達の瞬間に「今どれだけ使ったか」が一番知りたいのに
+// バッジごと消えてしまう。can_use_shared_key 自体は生きている limit_reached はここに含める
+const usingSharedKey = computed(() =>
+  !hasOwnCloudKey(settings.bodies) && (sharedKey.value.allowed || sharedKey.value.reason === 'limit_reached')
+)
 
 // 音声認識完了 → 確認を経て送信
 const { recording, finalText, interimText, bars, confirming, confirmText, start, stop, confirmSend, redo, cancelConfirm } =
@@ -139,15 +143,21 @@ watch(
     <AppHeader />
 
     <main class="flex-1 min-h-0 flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950 ">
-      <!-- 共有キーで会話中：無料枠の残り回数を表示 -->
-      <div
-        v-if="usingSharedKey"
-        class="shrink-0 text-center text-xs py-1.5 text-indigo-600/80 bg-indigo-600/8
-               dark:text-indigo-300/80 dark:bg-indigo-500/10"
-      >
-        共有キーで利用中：本日あと{{ sharedKey.remaining }}/{{ sharedKey.dailyLimit }}回
-      </div>
-
+                <!-- 共有キーで会話中：使用状況を表示（上限到達後もここで「使い切った」ことが分かるようにする） -->
+          <div
+            v-if="usingSharedKey"
+            class="shrink-0 text-center text-xs py-1.5"
+            :class="sharedKey.reason === 'limit_reached'
+              ? 'text-amber-600/90 bg-amber-500/10 dark:text-amber-300/90 dark:bg-amber-400/10'
+              : 'text-indigo-600/80 bg-indigo-600/8 dark:text-indigo-300/80 dark:bg-indigo-500/10'"  
+          >
+          <template v-if="sharedKey.reason === 'limit_reached'">
+            共有キーの使用量が上限に達しました。（本日{{ sharedKey.dailyLimit }}/{{ sharedKey.dailyLimit }}回）
+          </template>
+          <template v-else>
+            共有キーで利用中：本日あと{{ sharedKey.remaining }}/{{ sharedKey.dailyLimit }}回
+          </template>
+        </div>
       <!-- APIキー・モデル未設定：脳みそがまだない -->
       <div v-if="!hasActiveBody" class="flex-1 flex items-center justify-center">
         <EmptyBrainState :shared-key="sharedKey" @open-settings="appAside?.openSettings()" />
