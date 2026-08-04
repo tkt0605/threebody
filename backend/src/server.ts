@@ -26,13 +26,14 @@ const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434'
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 type LevelConfig = {
-  anthropicModel:    string
-  openaiModel:       string
-  deepseekModel:     string
-  ollamaModel:       string
-  maxTokens:         number
-  thinkingBudget?:   number  // Sonnet 4.6 以下で使用（deprecated だが機能はする）
-  adaptiveThinking?: boolean // Opus 4.7 専用（budget_tokens は 400 になるため）
+  anthropicModel:     string
+  openaiModel:        string
+  deepseekModel:      string
+  ollamaModel:        string
+  maxTokens:          number
+  secondaryMaxTokens: number  // 三体モードの副体（見解）用。主体に統合される前提のため主体より少なめ
+  thinkingBudget?:    number  // Sonnet 4.6 以下で使用（deprecated だが機能はする）
+  adaptiveThinking?:  boolean // Opus 4.7 専用（budget_tokens は 400 になるため）
 }
 
 const M = {
@@ -56,11 +57,11 @@ const M = {
 }
 
 const LEVEL_CONFIG: Record<number, LevelConfig> = {
-  1: { anthropicModel: M.anthropic.fast,     openaiModel: M.openai.fast,     deepseekModel: M.deepseek.fast,     ollamaModel: M.ollama.default, maxTokens: 2048 },
-  2: { anthropicModel: M.anthropic.fast,     openaiModel: M.openai.fast,     deepseekModel: M.deepseek.fast,     ollamaModel: M.ollama.default, maxTokens: 4096 },
-  3: { anthropicModel: M.anthropic.balanced, openaiModel: M.openai.balanced, deepseekModel: M.deepseek.fast,     ollamaModel: M.ollama.default, maxTokens: 8192 },
-  4: { anthropicModel: M.anthropic.balanced, openaiModel: M.openai.balanced, deepseekModel: M.deepseek.powerful, ollamaModel: M.ollama.default, maxTokens: 16000, thinkingBudget: 8000 },
-  5: { anthropicModel: M.anthropic.powerful, openaiModel: M.openai.powerful, deepseekModel: M.deepseek.powerful, ollamaModel: M.ollama.default, maxTokens: 32000, adaptiveThinking: true },
+  1: { anthropicModel: M.anthropic.fast,     openaiModel: M.openai.fast,     deepseekModel: M.deepseek.fast,     ollamaModel: M.ollama.default, maxTokens: 2048,  secondaryMaxTokens: 512 },
+  2: { anthropicModel: M.anthropic.fast,     openaiModel: M.openai.fast,     deepseekModel: M.deepseek.fast,     ollamaModel: M.ollama.default, maxTokens: 4096,  secondaryMaxTokens: 768 },
+  3: { anthropicModel: M.anthropic.balanced, openaiModel: M.openai.balanced, deepseekModel: M.deepseek.fast,     ollamaModel: M.ollama.default, maxTokens: 8192,  secondaryMaxTokens: 1536 },
+  4: { anthropicModel: M.anthropic.balanced, openaiModel: M.openai.balanced, deepseekModel: M.deepseek.powerful, ollamaModel: M.ollama.default, maxTokens: 16000, secondaryMaxTokens: 3072, thinkingBudget: 8000 },
+  5: { anthropicModel: M.anthropic.powerful, openaiModel: M.openai.powerful, deepseekModel: M.deepseek.powerful, ollamaModel: M.ollama.default, maxTokens: 32000, secondaryMaxTokens: 6144, adaptiveThinking: true },
 }
 
 type Provider = 'anthropic' | 'openai' | 'deepseek' | 'ollama'
@@ -214,7 +215,7 @@ async function streamSecondaryBody(
   }
 
   if (body.provider === 'ollama') {
-    await streamOllamaNative(model, toOllamaMessages(messages, systemPrompt), Math.min(config.maxTokens, 2048), emit)
+    await streamOllamaNative(model, toOllamaMessages(messages, systemPrompt), config.maxTokens, emit)
     return full
   }
 
@@ -224,7 +225,7 @@ async function streamSecondaryBody(
     : []
   const stream = await oaiClient.chat.completions.create({
     model,
-    max_tokens: Math.min(config.maxTokens, 2048),
+    max_tokens: config.maxTokens,
     messages: [...systemMessages, ...messages],
     stream: true,
   })
@@ -426,7 +427,7 @@ app.post('/api/chat', async (req, res) => {
             const bodyIdx = bodies.indexOf(b)
             const name    = b.name ?? '副体'
             res.write(`data: ${JSON.stringify({ type: 'body_start', bodyIndex: bodyIdx, name, provider: b.provider })}\n\n`)
-            const text = await streamSecondaryBody(b, bodyIdx, oaiMessages, {...config, maxTokens: 512},b.personaPrompt ?? systemPrompt, res)
+            const text = await streamSecondaryBody(b, bodyIdx, oaiMessages, {...config, maxTokens: config.secondaryMaxTokens}, b.personaPrompt ?? systemPrompt, res)
             res.write(`data: ${JSON.stringify({ type: 'body_done', bodyIndex: bodyIdx })}\n\n`)
             return { bodyIdx, name, provider: b.provider, text }
           })
