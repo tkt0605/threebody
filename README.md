@@ -48,6 +48,7 @@ Google認証でログイン後、設定画面でLLM APIキーを入力すれば�
 自由に組み合わせ、３つの視点から物事を推論させ、答えを導く。
 ## 　クイック・スタート
 以下は、Githubからのディレクトリをクローンしてから依存関係をインストール。
+`.env`を新規作成し、自身が取得したAPIキーを`.env`に追加してください。
 ```bash
 git clone https://github.com/tkt0605/threebody
 cd threebody

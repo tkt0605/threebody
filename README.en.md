@@ -49,6 +49,7 @@ Conventional tools typically lock you into specific models and UIs.
 Threebody is different. It allows you to freely combine models—such as Ollama, ChatGPT, Claude, and DeepSeek—to reason about topics from three distinct perspectives and derive an answer.
 ## Quick Start
 Clone the repository from GitHub and install the dependencies as follows:
+Create a new `.env` file and add the API keys you've obtained to it.
 ```bash
 git clone https://github.com/tkt0605/threebody
 cd threebody

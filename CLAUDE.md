@@ -36,27 +36,33 @@ npx vitest run src/composables/__tests__/useChat.test.ts   # 単一ファイル
 
 ### フロントエンド (`src/`)
 - **Vue 3 Composition API** + TypeScript + Tailwind CSS v4
-- **ルーティング**: `src/router/index.ts` — `/`（要認証）、`/login`、`/signup`（`/login`にリダイレクト）、`/auth/callback`
+- **ルーティング**: 
+- `src/router/index.ts` — `/`（要認証）、`/login`、`/signup`（`/login`にリダイレクト）、`/auth/callback`
+- `/c/:id` -（ChatView, requiresAuth）— 会話への直リンク用ルート
 - **認証**: Supabase Auth（Google OAuth, PKCEフロー）。`useAuth.ts` がセッションをモジュールレベルの singleton として保持し、`router.beforeEach` が `/` へのアクセスをガードする
 
 ### バックエンド (`backend/src/server.ts`)
 - **単一ファイル** の Express サーバー。SSE（Server-Sent Events）形式でストリーミングレスポンスを返す
 - モデル設定は `.env` の環境変数で管理（コードは変更不要、`LEVEL_CONFIG` が参照する）
-- プロバイダーごとに `createBodyClient()` でクライアントを切り替え（Anthropic SDK / OpenAI互換SDK）。Ollama・DeepSeekはOpenAI互換エンドポイントとして扱う
+- OpenAI互換系（openai/deepseek/ollama）→ `createOpenAICompatClient(body: BodyConfig)` に一本化
+- Anthropic → 共有ファクトリなし、呼び出し箇所ごとに `new Anthropic({ apiKey })` を直接生成（server.ts 内に4箇所）
 - Ollamaのreasoningモデル（deepseek-r1等）は思考内容を `content` ではなく `delta.reasoning` に返すため、フォールバックで拾っている
 
 ### 状態管理パターン
 Composables はモジュールレベルのシングルトンとして設計されており、コンポーネント間で状態を共有する（Piniaは使っていない）：
-- `useChat.ts` — `messages` / `pendingBodies` / `aiState` / `archivedSessions` を module-level `ref` として保持し、Supabaseとの永続化・セッション管理も担う
+- `useChat.ts` — `messages` / `pendingBodies` / `aiState` を module-level `ref` として保持し、Supabaseとの永続化・会話管理
 - `useTriangleNodes.ts` — `placedNodes` を module-level `ref` として保持
 - `useSettings.ts` — `settings`（プロバイダー・モデル・三体設定など）を `reactive` として保持し、`localStorage` に自動永続化
 - `useAuth.ts` — `user` を module-level `ref` として保持。`onAuthStateChange` を購読
 
 ### 会話の永続化（Supabase）
-`sessions` → `messages` → `content_blocks` の3テーブル構成（`useChat.ts` 内で直接クエリ）：
-- 1ユーザー1アクティブセッションが前提（会話切り替えUIはまだ無い）。最後のメッセージから6時間（`SESSION_IDLE_MS`）経過していたら新しいセッションを自動的に開始し、古いセッションは `ended_at` を付けてアーカイブ扱いにする
-- `archiveCurrentSession()` で明示的にアーカイブして新しい会話を始めることも可能。サイドバー（`AppAside.vue`）にアーカイブ済みセッション一覧を表示し、`ArchiveViewerDialog.vue` で読み取り専用表示、削除も可能
-- `sessions.user_id` は `user_setting.id` への外部キーのため、`ensureUserProfile()` で先にプロフィール行をupsertしてからセッションを作る
+`conversations` → `messages` → `content_blocks` の3テーブル構成（`useChat.ts` 内で直接クエリ）：
+<!-- - 1ユーザー1アクティブセッションが前提（会話切り替えUIはまだ無い）。最後のメッセージから6時間（`SESSION_IDLE_MS`）経過していたら新しいセッションを自動的に開始し、古いセッションは `ended_at` を付けてアーカイブ扱いにする -->
+- `startNewConversation()` — 画面をクリアするだけ、DB書き込みは初回メッセージ送信まで遅延
+- `switchConversation(id)` - 会話を切り替えて履歴をリロードする
+- `renameConversation(id, title)`
+- `deleteConversation(id)` - messages/content_blocksも連鎖的に削除させる。
+- `conversations.user_id` は `user_setting.id` への外部キーのため、`ensureUserProfile()` で先にプロフィール行をupsertしてから会話を作る
 - エラーブロック（`type: 'error'`）と見解ブロック（`type: 'perspective'`）はDBに保存しない一時表示用（`persistMessage` は `text` ブロックのみ抽出）
 
 ### メッセージのブロック構造
@@ -64,7 +70,6 @@ Composables はモジュールレベルのシングルトンとして設計さ�
 - `text` — 通常の本文（三体モードでは `bodyIndex` でどの体の回答かを保持）
 - `error` — エラー表示用（非永続化）
 - `perspective` — 三体モードで副体の回答をリアルタイム表示する一時ブロック（非永続化）。`bodies: BodyPerspective[]` に各体の `content`/`done` を保持
-- `image` / `map` / `game` は将来用（未実装）
 
 ### 三体モード（マルチLLM）
 `/api/chat` が `bodies` 配列（`BodyConfig[]`、`provider`/`apiKey`/`model` を持つ）を受け取り、有効な体が2つ以上あると三体モードになる：
@@ -94,19 +99,21 @@ Composables はモジュールレベルのシングルトンとして設計さ�
 
 - **モデル更新**: `ANTHROPIC_MODEL_FAST/BALANCED/POWERFUL`、`OPENAI_MODEL_*`、`DEEPSEEK_MODEL_*`、`OLLAMA_MODEL_DEFAULT` を書き換えるだけでモデル変更可能
 - `VITE_API_BASE_URL`: バックエンドのURL（デフォルト `http://localhost:3000`）
-- `VITE_ORIGIN_BASE_URL`: フロントエンドのURL（CORSに使用）
-- `SUPABASE_URL`/`SUPABASE_KEY`/`SUPABASE_SERVICE_KEY`: バックエンド用（`SERVICE_KEY`はRLSバイパス用、現状serverでは未使用）
+- `VITE_ORIGIN_BASE_URL`: server.ts がCORSのoriginとして読んでいる（backend消費）
+- `SUPABASE_URL`/`SUPABASE_SERVICE_KEY`: バックエンド用（`SERVICE_KEY`はRLSバイパス用、現状serverでは未使用）
 - `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`: フロント用Supabaseクライアント（`src/lib/supabase.ts`）
 - `OLLAMA_BASE_URL`/`OLLAMA_NUM_PARALLEL`/`OLLAMA_FLASH_ATTENTION`: ローカルLLM用
+- `SHARED_ANTHROPIC_API_KEY`: 共有APIキー（ユーザー、一日分の無料お試し枠用のAPIキー）
+- `OLLAMA_ENABLED`: ollamaの利用可否の宣言用の引数（backend/src/ollama.ts, デプロイ先ごとのOllama利用可否宣言、未設定時はtrue扱い）
 
 ## 主要コンポーネント
 
-- `AppAside.vue` — 左サイドバー（三角形のNode配置UI、アーカイブ済みセッション一覧）
-- `AppRightSidebar.vue` — 右サイドバー（テキスト入力・音声UI）
+- `AppAside.vue` — 会話一覧（切替・リネーム・削除、複数並存）および設定を表示
+<!-- - `AppRightSidebar.vue` — 右サイドバー（テキスト入力・音声UI） -->
 - `NodeCanvas.vue` — 三角形のドラッグ配置キャンバス
 - `SettingsDialog.vue` — 設定（プロバイダー・モデル・三体設定）
 - `McpDialog.vue` / `McpPanel.vue` — MCPサーバー管理（現状UIのみ、バックエンド未連携）
-- `ArchiveViewerDialog.vue` — アーカイブ済みセッションの読み取り専用表示
+
 
 ## 音声機能
 
