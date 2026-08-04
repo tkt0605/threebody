@@ -1,5 +1,31 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import type { SharedKeyCapability } from '../composables/useCapabilities'
+
+const props = defineProps<{ sharedKey?: SharedKeyCapability | undefined }>()
 const emit = defineEmits<{ 'open-settings': [] }>()
+
+// 表示メッセージは共有キーの状態で出し分ける。「APIキーを入れて」だけだと、
+// 本当は無料枠が残っている（未ログイン）/ 今日はもう使い切っただけ、のケースまで
+// 一律「未設定」に見せてしまい、共有キーの存在に気づけない
+const heading = computed(() => {
+  switch (props.sharedKey?.reason) {
+    case 'not_signed_in':  return 'ログインすると無料でお試しできるよ'
+    case 'limit_reached':  return '今日の無料分を使い切ったよ'
+    default:                return '脳みそがまだないよ、、、'
+  }
+})
+
+const subtext = computed(() => {
+  switch (props.sharedKey?.reason) {
+    case 'not_signed_in':
+      return `ログインすれば1日${props.sharedKey?.dailyLimit ?? 5}回まで、キー無しで試せます。`
+    case 'limit_reached':
+      return '明日また無料枠が使えます。続けて使うなら設定から自分のAPIキーを登録してね。'
+    default:
+      return 'APIキーとモデルを入れてね。（例：Anthropic, OpenAI等々）'
+  }
+})
 </script>
 
 <template>
@@ -13,8 +39,8 @@ const emit = defineEmits<{ 'open-settings': [] }>()
     </svg>
 
     <div class="space-y-1.5">
-      <p class="text-gray-500 dark:text-white/50 text-sm font-medium">脳みそがまだないよ、、、</p>
-      <p class="text-gray-400 dark:text-white/35 text-xs">APIキーとモデルを入れてね。（例：Anthropic, OpenAI等々）</p>
+      <p class="text-gray-500 dark:text-white/50 text-sm font-medium">{{ heading }}</p>
+      <p class="text-gray-400 dark:text-white/35 text-xs">{{ subtext }}</p>
     </div>
 
     <button

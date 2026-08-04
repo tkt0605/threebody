@@ -11,12 +11,16 @@ import { useChat } from '../composables/useChat'
 import { useVoiceInput } from '../composables/useVoiceInput'
 import { useWakeWord } from '../composables/useWakeWord'
 import { useTTS } from '../composables/useTTS'
-import { useSettings, isBodyUsable } from '../composables/useSettings'
+import { useSettings, isBodyUsable, hasOwnCloudKey } from '../composables/useSettings'
+import { useCapabilities } from '../composables/useCapabilities'
+import { useAuth } from '../composables/useAuth'
 import type { Message } from '../types/message'
 
 const { messages, sendMessage, openConversation, aiState, currentConversationId } = useChat()
 const { speak } = useTTS()
 const { settings } = useSettings()
+const { sharedKey, refreshCapabilities } = useCapabilities()
+const { user } = useAuth()
 
 const route  = useRoute()
 const router = useRouter()
@@ -30,6 +34,9 @@ async function syncRouteConversation() {
 
 onMounted(syncRouteConversation)
 watch(() => route.params.id, syncRouteConversation)
+
+// 共有キーの残り回数はログイン状態で変わるため、マウント時と認証状態が変わるたびに取り直す
+watch(() => user.value?.id, refreshCapabilities, { immediate: true })
 
 // currentConversationIdが確定した瞬間（ページ読み込み時のensure、または「新規会話」からの
 // 最初のメッセージ送信でconversationsに行が作られた瞬間）に、"/" のままだったURLを /c/<id> に反映する。
@@ -47,8 +54,13 @@ const appAside = ref<InstanceType<typeof AppAside> | null>(null)
 // 一体に収束するまではチャットログへ画面遷移させず、中央の球体画面のままにする
 const firstExchangeInFlight = ref(false)
 
-// 会話可能な体が1つ以上あるか（Ollamaはキー無しでも既定モデルで動くため常に成立）
-const hasActiveBody = computed(() => settings.bodies.some(isBodyUsable))
+// 会話可能な体が1つ以上あるか（Ollamaはキー無しでも既定モデルで動くため常に成立）。
+// 自分のクラウドキーが1つも無くても、共有キーの無料枠が残っていれば会話は成立するため、
+// そちらも見ないと「使えるのに泣き顔」になってしまう（共有キーフォールバックの導入で発生した齟齬）
+const hasActiveBody = computed(() => settings.bodies.some(isBodyUsable) || sharedKey.value.allowed)
+
+// 自分のキーを設定せず共有キーで会話している状態か。残り回数の表示に使う
+const usingSharedKey = computed(() => !hasOwnCloudKey(settings.bodies) && sharedKey.value.allowed)
 
 // 音声認識完了 → 確認を経て送信
 const { recording, finalText, interimText, bars, confirming, confirmText, start, stop, confirmSend, redo, cancelConfirm } =
@@ -127,9 +139,18 @@ watch(
     <AppHeader />
 
     <main class="flex-1 min-h-0 flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950 ">
+      <!-- 共有キーで会話中：無料枠の残り回数を表示 -->
+      <div
+        v-if="usingSharedKey"
+        class="shrink-0 text-center text-xs py-1.5 text-indigo-600/80 bg-indigo-600/8
+               dark:text-indigo-300/80 dark:bg-indigo-500/10"
+      >
+        共有キーで利用中：本日あと{{ sharedKey.remaining }}/{{ sharedKey.dailyLimit }}回
+      </div>
+
       <!-- APIキー・モデル未設定：脳みそがまだない -->
       <div v-if="!hasActiveBody" class="flex-1 flex items-center justify-center">
-        <EmptyBrainState @open-settings="appAside?.openSettings()" />
+        <EmptyBrainState :shared-key="sharedKey" @open-settings="appAside?.openSettings()" />
       </div>
 
       <!-- 設定済み・会話なし（最初の発話が思考中の場合も含む）：中央に大きな球体 -->

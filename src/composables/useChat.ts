@@ -5,6 +5,7 @@ import { buildSystemPrompt, buildBodyPersonaPrompt } from './useSystemPrompt'
 import { BODY_PERSONA_INFO } from '../constants/bodyPersonas'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useCapabilities } from './useCapabilities'
 import { redactText } from '../lib/redact'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:3000'
@@ -333,6 +334,7 @@ async function deleteMessage(id: string): Promise<void> {
 
 export function useChat() {
   const { settings } = useSettings()
+  const { refreshCapabilities } = useCapabilities()
 
   async function sendMessage(text: string) {
     const userMsg: Message = {
@@ -478,6 +480,8 @@ export function useChat() {
       aiState.value = 'idle';
       pendingBodies.value = []
       persistMessage(reactiveMsg).catch(err => console.error('メッセージの保存に失敗しました', err))
+      // 共有キーを使った場合、残り回数がここで変わる。UIの表示を最新に保つ
+      void refreshCapabilities()
     }
   }
 

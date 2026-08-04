@@ -117,6 +117,13 @@ export function isBodyUsable(b: Pick<BodyConfig, 'provider' | 'apiKey' | 'model'
   return b.apiKey.trim().length > 0 && b.model.trim().length > 0
 }
 
+// クラウド系（GPT/Claude/DeepSeek）のキーを自分で1つでも設定済みか。
+// isBodyUsable は ollama を無条件 true にするため、「共有キーに頼っているか」の
+// 判定には使えない（常に true になってしまう）。バックエンドの hasOwnCloudKey と対応させる
+export function hasOwnCloudKey(bodies: readonly Pick<BodyConfig, 'provider' | 'apiKey' | 'model'>[]): boolean {
+  return bodies.some(b => b.provider !== 'ollama' && b.apiKey.trim().length > 0 && b.model.trim().length > 0)
+}
+
 export function useSettings() {
   return { settings }
 }
