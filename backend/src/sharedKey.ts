@@ -84,32 +84,21 @@ export async function checkSharedAllowance(userId: string | null): Promise<Share
 
 // 消費を1回分記録する。呼ぶのは「共有キーを使い、かつ応答が正常完了した」ときだけ。
 //
-// 読んでから書くまでの間に別のリクエストが割り込むと、同じ値を上書きしうる
-// （並列に投げれば上限をすり抜けられる）。1ユーザー数人規模のMVPでは許容し、
-// 本当の天井は Anthropic コンソール側の支出上限で押さえる。
-// 厳密にするなら SQL 側に加算関数を置いて1文で更新する
+// DB側の consume_shared_quota（単一UPDATE文、行ロックで直列化）を呼ぶことで原子的に加算する。
+// 読んでから書く実装だと、その間に別リクエストが割り込んで同じ値を上書きしうる
+// （並列に投げれば上限をすり抜けられる）ため、RPC側に寄せてある
 export async function consumeSharedQuota(userId: string): Promise<void> {
   const admin = getSupabaseAdmin()
   if (!admin) return
 
-  const today = jstDateString()
-
-  const { data, error } = await admin
-    .from('user_setting')
-    .select('can_use_shared_key, shared_daily_count, shared_last_used_date')
-    .eq('id', userId)
-    .maybeSingle<QuotaRow>()
-  if (error || !data) return
-
-  const { error: updateError } = await admin
-    .from('user_setting')
-    .update({
-      shared_daily_count:    usedToday(data, today) + 1,
-      shared_last_used_date: today,
-    })
-    .eq('id', userId)
+  // 判定（checkSharedAllowance）と保存で計算がずれると日跨ぎで不整合が出るため、
+  // ここも必ず jstDateString() を使う
+  const { error } = await admin.rpc('consume_shared_quota', {
+    p_user_id: userId,
+    p_today:   jstDateString(),
+  })
 
   // カウントに失敗しても応答そのものは既に返し終えている。
   // ここで throw しても取り消せないので、記録に残して続行する
-  if (updateError) console.error('[sharedKey] 利用回数の記録に失敗しました', updateError.message)
+  if (error) console.error('[sharedKey] 利用回数の記録に失敗しました', error.message)
 }
