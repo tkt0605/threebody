@@ -9,6 +9,7 @@ import {
   SHARED_DAILY_LIMIT, SHARED_THINKING_LEVEL,
   sharedApiKey, hasOwnCloudKey, checkSharedAllowance, consumeSharedQuota,
 } from './sharedKey'
+import { ollamaEnabled } from './ollama'
 
 dotenv.config({ path: new URL('../../.env', import.meta.url).pathname })
 
@@ -514,6 +515,7 @@ app.get('/api/capabilities', async (req, res) => {
     sharedKey: allowance.allowed
       ? { allowed: true,  remaining: allowance.remaining, dailyLimit: SHARED_DAILY_LIMIT, reason: null }
       : { allowed: false, remaining: 0,                   dailyLimit: SHARED_DAILY_LIMIT, reason: allowance.reason },
+    ollama: { enabled: ollamaEnabled() },
   })
 })
 
