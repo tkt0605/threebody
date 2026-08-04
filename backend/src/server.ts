@@ -386,7 +386,12 @@ app.post('/api/chat', async (req, res) => {
           res.write('data: [DONE]\n\n')
           return
         }
-      } else if (allowance.reason === 'limit_reached') {
+      } else if (allowance.reason !== 'limit_reached') {
+        // ここが無言だと「キー未設定なのに共有キーが動かない」の切り分けができない。
+        // unavailable=環境変数かSupabase未設定 / not_signed_in=トークン無し
+        // / not_permitted=can_use_shared_key が false か行が無い
+        console.info(`[sharedKey] 使用せず: ${allowance.reason}`)
+      } else {
         // 既存のerrorイベント形式に乗せる。フロントはこれをそのまま描画できる
         res.write(`data: ${JSON.stringify({
           type:    'error',
@@ -496,7 +501,17 @@ app.post('/api/chat', async (req, res) => {
 })
 
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', providers: ['anthropic', 'openai', 'deepseek', 'ollama'] })
+  res.json({
+    status:    'ok',
+    providers: ['anthropic', 'openai', 'deepseek', 'ollama'],
+    // 環境変数が入っているかどうかだけを返す（キーそのものは返さない）。
+    // Renderに設定が届いているかを、ログを見ずに外から確認できるようにする
+    config: {
+      sharedKey:      sharedApiKey() !== null,
+      anthropicModel: Boolean(process.env.ANTHROPIC_MODEL_FAST),
+      supabase:       Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY),
+    },
+  })
 })
 
 const PORT = Number(process.env.PORT ?? 3000)
