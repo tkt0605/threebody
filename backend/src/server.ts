@@ -503,6 +503,20 @@ app.post('/api/chat', async (req, res) => {
   }
 })
 
+// フロントが「あと何回、共有キーで無料利用できるか」を事前に知るためのエンドポイント。
+// /api/chat を実際に叩かなくても判定できるようにし、EmptyBrainState（泣き顔ゲート）が
+// 「自分のキーは無いが共有キーでまだ使える」状態を「使えない」と誤判定しないようにする
+app.get('/api/capabilities', async (req, res) => {
+  const userId    = await resolveUserId(req.headers.authorization)
+  const allowance = await checkSharedAllowance(userId)
+
+  res.json({
+    sharedKey: allowance.allowed
+      ? { allowed: true,  remaining: allowance.remaining, dailyLimit: SHARED_DAILY_LIMIT, reason: null }
+      : { allowed: false, remaining: 0,                   dailyLimit: SHARED_DAILY_LIMIT, reason: allowance.reason },
+  })
+})
+
 app.get('/api/health', (_req, res) => {
   res.json({
     status:    'ok',
