@@ -393,8 +393,11 @@ app.post('/api/chat', async (req, res) => {
         console.info(`[sharedKey] 使用せず: ${allowance.reason}`)
       } else {
         // 既存のerrorイベント形式に乗せる。フロントはこれをそのまま描画できる
+        // code: 'limit_reached' はバグではなく仕様どおりの制限なので、フロント側で
+        // 「問題を報告する」ボタン（本物のエラー用UI）を出さないための判別に使う
         res.write(`data: ${JSON.stringify({
           type:    'error',
+          code:    'limit_reached',
           message: `今日の無料利用は${SHARED_DAILY_LIMIT}回までです。設定から自分のAPIキーを登録すると続けて使えます。`,
         })}\n\n`)
         return
