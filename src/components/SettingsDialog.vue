@@ -159,7 +159,30 @@ defineExpose({ open })
               </div>
             </div>
           </div>
-
+          
+          <!-- 思考レベル -->
+          <div class="space-y-3">
+            <div class="flex items-baseline justify-between">
+              <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">思考レベル</label>
+              <span class="text-xs" :style="{ color: THINKING_LEVELS[draft.thinkingLevel - 1]!.color }">
+                Lv.{{ draft.thinkingLevel }} — {{ THINKING_LEVELS[draft.thinkingLevel - 1]!.desc }}
+              </span>
+            </div>
+            <div class="flex gap-1.5">
+              <button
+                v-for="lvl in THINKING_LEVELS"
+                :key="lvl.value"
+                class="flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl text-xs transition-all cursor-pointer border"
+                :style="draft.thinkingLevel === lvl.value
+                  ? { background: lvl.color + '22', borderColor: lvl.color + '99', color: lvl.color }
+                  : inactiveBtnStyle"
+                @click="draft.thinkingLevel = lvl.value"
+              >
+                <span class="font-bold text-sm">{{ lvl.value }}</span>
+                <span class="tracking-wide">{{ lvl.label }}</span>
+              </button>
+            </div>
+          </div>
           <!-- 話し方 -->
           <div class="space-y-3">
             <div class="flex items-baseline justify-between">
@@ -314,29 +337,6 @@ defineExpose({ open })
                 </div>
               </div>
 
-              <!-- 思考レベル（詳細: 1〜5） -->
-              <!-- <div class="space-y-3">
-                <div class="flex items-baseline justify-between">
-                  <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">思考レベル（詳細）</label>
-                  <span class="text-xs" :style="{ color: THINKING_LEVELS[draft.thinkingLevel - 1]!.color }">
-                    Lv.{{ draft.thinkingLevel }} — {{ THINKING_LEVELS[draft.thinkingLevel - 1]!.desc }}
-                  </span>
-                </div>
-                <div class="flex gap-1.5">
-                  <button
-                    v-for="lvl in THINKING_LEVELS"
-                    :key="lvl.value"
-                    class="flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl text-xs transition-all cursor-pointer border"
-                    :style="draft.thinkingLevel === lvl.value
-                      ? { background: lvl.color + '22', borderColor: lvl.color + '99', color: lvl.color }
-                      : inactiveBtnStyle"
-                    @click="draft.thinkingLevel = lvl.value"
-                  >
-                    <span class="font-bold text-sm">{{ lvl.value }}</span>
-                    <span class="tracking-wide">{{ lvl.label }}</span>
-                  </button>
-                </div>
-              </div> -->
             </div>
           </div>
         </div>
