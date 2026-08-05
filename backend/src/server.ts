@@ -1,5 +1,6 @@
 import express from 'express'
 import cors from 'cors'
+import rateLimit from 'express-rate-limit'
 import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 import dotenv from 'dotenv'
@@ -14,8 +15,23 @@ import { ollamaEnabled } from './ollama'
 dotenv.config({ path: new URL('../../.env', import.meta.url).pathname })
 
 const app = express()
+// Render等のリバースプロキシ経由で動くため、req.ip は既定だとプロキシ自身のIPになり、
+// 全ユーザーが同一IP扱いになってしまう（下のchatRateLimitが全員を1つのバケットとして数える）。
+// 1 はプロキシ1ホップぶんを信頼する意味で、X-Forwarded-For の一番右（＝直前のプロキシが
+// 付けた値）を実クライアントIPとして採用する。Render/Heroku等の単一プロキシ構成の定番設定
+app.set('trust proxy', 1)
 app.use(cors({ origin: process.env.VITE_ORIGIN_BASE_URL }))
 app.use(express.json())
+
+// /api/chat は curl等フロントを介さない生のリクエストでも叩ける（CORSはブラウザだけの制約のため）。
+// IPあたりの機械的な連打だけを弾く粗い防波堤。ユーザー単位にすると resolveUserId の
+// Supabase問い合わせが二重になるため、あえてIP単位に留める
+const chatRateLimit = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit:    15,
+  standardHeaders: true,
+  legacyHeaders:   false,
+})
 
 // OpenAI互換の /v1/chat/completions は think:false を無視し、reasoning搭載モデルは
 // 内部思考をそのまま流し続ける（content は空のまま）。ネイティブ /api/chat だけが
@@ -327,7 +343,7 @@ async function streamOpenAICompat(
   }
 }
 
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', chatRateLimit, async (req, res) => {
   const {
     messages,
     thinkingLevel = 3,
