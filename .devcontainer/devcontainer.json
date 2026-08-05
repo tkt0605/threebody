@@ -13,12 +13,13 @@
   ],
 
   // .env はコード側 (dotenv) で読み込むため runArgs での受け渡しは不要
-  // .env が未作成の場合に備え、postCreateCommand でテンプレートから生成する
+  // .env.example の有無に関係なく開けるよう、未作成なら空ファイルを生成する
 
-  // 初回作成時: .env がなければ .env.example からコピー（なければ空ファイル生成）し、
+  // 初回作成時: .env がなければ空ファイルを生成し、
   // 既存の node_modules を消してから入れ直す
-  "postCreateCommand": "[ -f .env ] || { [ -f .env.example ] && cp .env.example .env || touch .env; }; rm -rf node_modules && npm install",
+  "postCreateCommand": "[ -f .env ] || touch .env; rm -rf node_modules && npm install",
 
+  
   // コンテナ起動のたびに Ollama を並列推論モードで起動
   "postStartCommand": "echo 'Using host Ollama via host.docker.internal' ",
 
