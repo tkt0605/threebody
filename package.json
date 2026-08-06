@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:server": "tsx backend/src/server.ts",
-    "start": "tsx backend/src/server.ts",
+    "dev:server": "tsx backend/index.ts",
+    "start": "tsx backend/index.ts",
     "dev:all": "concurrently -n \"vite,express\" -c \"cyan,green\" \"npm run dev\" \"npm run dev:server\"",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",

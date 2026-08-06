@@ -6,7 +6,7 @@ export default defineConfig({
         environment: "jsdom",
         include: [
             "src/composables/__tests__/**/*.test.ts",
-            "backend/src/__tests__/**/*.test.ts"
+            "backend/tests/**/*.test.ts"
         ]
     }
 })

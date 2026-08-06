@@ -30,7 +30,7 @@ npm run test
 npx vitest run src/composables/__tests__/useChat.test.ts   # 単一ファイル
 ```
 
-テスト対象は `src/composables/__tests__/**/*.test.ts` と `backend/src/__tests__/**/*.test.ts`（vitest.config.ts）。
+テスト対象は `src/composables/__tests__/**/*.test.ts` と `backend/tests/**/*.test.ts`（vitest.config.ts）。
 
 ## アーキテクチャ
 
@@ -41,11 +41,14 @@ npx vitest run src/composables/__tests__/useChat.test.ts   # 単一ファイル
 - `/c/:id` -（ChatView, requiresAuth）— 会話への直リンク用ルート
 - **認証**: Supabase Auth（Google OAuth, PKCEフロー）。`useAuth.ts` がセッションをモジュールレベルの singleton として保持し、`router.beforeEach` が `/` へのアクセスをガードする
 
-### バックエンド (`backend/src/server.ts`)
-- **単一ファイル** の Express サーバー。SSE（Server-Sent Events）形式でストリーミングレスポンスを返す
-- モデル設定は `.env` の環境変数で管理（コードは変更不要、`LEVEL_CONFIG` が参照する）
-- OpenAI互換系（openai/deepseek/ollama）→ `createOpenAICompatClient(body: BodyConfig)` に一本化
-- Anthropic → 共有ファクトリなし、呼び出し箇所ごとに `new Anthropic({ apiKey })` を直接生成（server.ts 内に4箇所）
+### バックエンド (`backend/`)
+- Express サーバー。エントリポイントは `backend/index.ts`（`loadEnv.ts` で `.env` を読み込んでからルーターをマウントするだけ）。SSE（Server-Sent Events）形式でストリーミングレスポンスを返す
+- `backend/routes/` — `chat.ts`（`POST /api/chat`、三体モードのオーケストレーション含む）/ `capabilities.ts`（`GET /api/capabilities`）/ `health.ts`（`GET /api/health`）
+- `backend/llm/` — プロバイダー横断の型・設定・変換処理。`types.ts`（`Provider`/`BodyConfig`/`LevelConfig` 等）、`modelConfig.ts`（`M`/`LEVEL_CONFIG`）、`messageHelpers.ts`（メッセージ形式変換）、`textService.ts`（`streamBodyOAI`/`streamSecondaryBody` のプロバイダー横断オーケストレーション）
+- `backend/llm/providers/` — プロバイダーごとのストリーミング実装。`anthropic.ts` / `openaiCompat.ts`（openai/deepseek共通、`createOpenAICompatClient(body: BodyConfig)` に一本化）/ `ollama.ts`
+- `backend/utils/` — `errorSanitize.ts` / `jstDate.ts` など汎用の純関数
+- `backend/auth.ts` / `backend/sharedKey.ts` / `backend/supabaseAdmin.ts` はトップレベルに配置（Supabase/認証まわりのドメインロジック）
+- Anthropic → 共有ファクトリなし、呼び出し箇所ごとに `new Anthropic({ apiKey })` を直接生成（`llm/providers/anthropic.ts` に1箇所、`llm/textService.ts` に2箇所、`routes/chat.ts` に1箇所の計4箇所）
 - Ollamaのreasoningモデル（deepseek-r1等）は思考内容を `content` ではなく `delta.reasoning` に返すため、フォールバックで拾っている
 
 ### 状態管理パターン
@@ -99,12 +102,12 @@ Composables はモジュールレベルのシングルトンとして設計さ�
 
 - **モデル更新**: `ANTHROPIC_MODEL_FAST/BALANCED/POWERFUL`、`OPENAI_MODEL_*`、`DEEPSEEK_MODEL_*`、`OLLAMA_MODEL_DEFAULT` を書き換えるだけでモデル変更可能
 - `VITE_API_BASE_URL`: バックエンドのURL（デフォルト `http://localhost:3000`）
-- `VITE_ORIGIN_BASE_URL`: server.ts がCORSのoriginとして読んでいる（backend消費）
+- `VITE_ORIGIN_BASE_URL`: `backend/index.ts` がCORSのoriginとして読んでいる（backend消費）
 - `SUPABASE_URL`/`SUPABASE_SERVICE_KEY`: バックエンド用（`SERVICE_KEY`はRLSバイパス用、現状serverでは未使用）
 - `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`: フロント用Supabaseクライアント（`src/lib/supabase.ts`）
 - `OLLAMA_BASE_URL`/`OLLAMA_NUM_PARALLEL`/`OLLAMA_FLASH_ATTENTION`: ローカルLLM用
 - `SHARED_ANTHROPIC_API_KEY`: 共有APIキー（ユーザー、一日分の無料お試し枠用のAPIキー）
-- `OLLAMA_ENABLED`: ollamaの利用可否の宣言用の引数（backend/src/ollama.ts, デプロイ先ごとのOllama利用可否宣言、未設定時はtrue扱い）
+- `OLLAMA_ENABLED`: ollamaの利用可否の宣言用の引数（`backend/llm/providers/ollama.ts`, デプロイ先ごとのOllama利用可否宣言、未設定時はtrue扱い）
 
 ## 主要コンポーネント
 

@@ -8,7 +8,7 @@ description: プロジェクトのセキュリティ状況を分析し、脆弱�
 
 対象範囲：
 - フロントエンド（Supabase Auth、トークン・セッション管理、XSS/サニタイズ対策）
-- バックエンド（`backend/src/server.ts`、APIエンドポイント、入力バリデーション、`SUPABASE_SERVICE_KEY` などのシークレット管理）
+- バックエンド（`backend/`、APIエンドポイント、入力バリデーション、`SUPABASE_SERVICE_KEY` などのシークレット管理）
 - ネットワーク（CORS設定、SSE通信、外部LLM APIとの通信、`.env` の取り扱い）
 
 調査・出力すること：
