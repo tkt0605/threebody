@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## プロジェクト概要
 
-ThreeBodyは、マルチモーダルAI体験を探求するプロトタイプです。1〜3つのLLMノード（「体」）を三角形に配置し、その重心で音声チャットを行います。複数のLLM（Ollama・OpenAI・Anthropic・DeepSeekを自由に組み合わせ可能）が並列に回答し、主体（一体）が統合する「三体モード」が中心機能です。
+ThreeBodyは、マルチモーダルAI体験を探求するプロトタイプです。1〜3つのLLM（「体」）を設定し、粒子球体UI（`VoiceSphere.vue`）を通じて音声で会話します。複数のLLM（Ollama・OpenAI・Anthropic・DeepSeekを自由に組み合わせ可能）が並列に回答し、主体（一体）が統合する「三体モード」が中心機能です。
 
 ## 開発コマンド
 
@@ -54,9 +54,11 @@ npx vitest run src/composables/__tests__/useChat.test.ts   # 単一ファイル
 ### 状態管理パターン
 Composables はモジュールレベルのシングルトンとして設計されており、コンポーネント間で状態を共有する（Piniaは使っていない）：
 - `useChat.ts` — `messages` / `pendingBodies` / `aiState` を module-level `ref` として保持し、Supabaseとの永続化・会話管理
-- `useTriangleNodes.ts` — `placedNodes` を module-level `ref` として保持
-- `useSettings.ts` — `settings`（プロバイダー・モデル・三体設定など）を `reactive` として保持し、`localStorage` に自動永続化
+- `useSettings.ts` — `settings`（プロバイダー・モデル・三体設定など）を `reactive` として保持し、`localStorage` に自動永続化。APIキーだけは平文ではなく `lib/keyVault.ts` の `encryptText`/`decryptText` で暗号化して保存する
 - `useAuth.ts` — `user` を module-level `ref` として保持。`onAuthStateChange` を購読
+- `useCapabilities.ts` — `sharedKey` / `ollama`（`GET /api/capabilities` の結果）を module-level `ref` として保持
+- `useTheme.ts` — `isDark` を module-level `ref` として保持し `localStorage` に永続化
+- `useAsideDrawer.ts` — `asideOpen`（サイドバー開閉）を module-level `ref` として保持
 
 ### 会話の永続化（Supabase）
 `conversations` → `messages` → `content_blocks` の3テーブル構成（`useChat.ts` 内で直接クエリ）：
@@ -111,11 +113,16 @@ Composables はモジュールレベルのシングルトンとして設計さ�
 
 ## 主要コンポーネント
 
-- `AppAside.vue` — 会話一覧（切替・リネーム・削除、複数並存）および設定を表示
-<!-- - `AppRightSidebar.vue` — 右サイドバー（テキスト入力・音声UI） -->
-- `NodeCanvas.vue` — 三角形のドラッグ配置キャンバス
+すべて `src/components/` 配下。画面は `src/views/ChatView.vue` がこれらを組み立てている。
+
+- `AppAside.vue` — 左サイドバー。会話一覧（切替・リネーム・削除、複数並存）とアカウント操作。`SettingsDialog` はここにマウントされている（`AppAside.vue:184`）
+- `AppHeader.vue` — ヘッダー。会話タイトルの表示・インライン編集、新規会話、テーマ切替（`useTheme`）、サイドバー開閉（`useAsideDrawer`）
+- `VoiceSphere.vue` — Canvas 粒子球体。本アプリのビジュアルの中核。props ではなく `useChat` の `aiState` / `pendingBodies` と `useSettings` の `bodies` を直接購読し、有効な体の数だけ粒子クラスタ（最大3）に分裂させて `constants/bodyProviders.ts` の `BODY_PROVIDER_COLORS` で塗り分ける。球体そのものの色は 録音中=赤 / ウェイクワード待機中=紫 / 待機=シアン
+- `VoiceSphereDialog.vue` — 全画面の音声モーダル。`VoiceSphere` をラップし、マイク切替・確認送信・録り直しを emit する（`defineExpose` の `open()` / `close()` で開閉）
+- `MessageList.vue` / `MessageBubble.vue` — 会話ログ。`MessageBubble` がブロック種別（`text` / `error` / `perspective`）ごとの描画と、再送・削除・エラー報告（`useFeedback`）を担う
+- `EmptyBrainState.vue` — 脳（体）が未設定のときの空状態。共有キーの状態（`not_signed_in` / `limit_reached` / それ以外）でメッセージを出し分け、「未設定」と「無料枠を使い切った」を混同させない
 - `SettingsDialog.vue` — 設定（プロバイダー・モデル・三体設定）
-- `McpDialog.vue` / `McpPanel.vue` — MCPサーバー管理（現状UIのみ、バックエンド未連携）
+- `ThreeBodyLogo.vue` — 三体問題の軌道を模した SVG アニメーションロゴ
 
 
 ## 音声機能
@@ -124,4 +131,4 @@ Composables はモジュールレベルのシングルトンとして設計さ�
 - `useWakeWord.ts` — 「アイリス」でウェイクワード検知 → 録音開始
 - `useTTS.ts` — SpeechSynthesis API でAI応答を読み上げ
 
-録音中はウェイクワード検知を停止し、同一マイクの競合を防ぐ（`ChatView.vue:41`）。
+録音中はウェイクワード検知を停止し、同一マイクの競合を防ぐ（`ChatView.vue:91` の `watch(recording, ...)`）。
