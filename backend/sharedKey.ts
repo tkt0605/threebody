@@ -7,8 +7,8 @@ import { getSupabaseAdmin } from './supabaseAdmin'
 import { jstDateString } from './utils/jstDate'
 
 // 1ユーザーあたりの1日の上限。
-// Phase 0で単体1回→三体3回分のコストになったため、5→2へ引き下げ
-export const SHARED_DAILY_LIMIT = 2
+// Phase 0で単体1回→三体3回分のコストになったため、5→3へ引き下げ
+export const SHARED_DAILY_LIMIT = 3
 
 // 共有キー利用時に固定する思考レベル。
 // レベル5(Opus/32Kトークン)とレベル2(Haiku/4Kトークン)では単価が約40倍違う。
