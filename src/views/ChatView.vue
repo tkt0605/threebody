@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AppAside from '../components/AppAside.vue'
 import AppHeader from '../components/AppHeader.vue'
 import EmptyBrainState from '../components/EmptyBrainState.vue'
+import LimitReachedDialog from '../components/LimitReachedDialog.vue'
 import VoiceSphere from '../components/VoiceSphere.vue'
 import VoiceSphereDialog from '../components/VoiceSphereDialog.vue'
 import MessageList from '../components/MessageList.vue'
@@ -49,6 +50,7 @@ const voiceActive = ref(false)
 
 const voiceDialog = ref<InstanceType<typeof VoiceSphereDialog> | null>(null)
 const appAside = ref<InstanceType<typeof AppAside> | null>(null)
+const limitDialog = ref<InstanceType<typeof LimitReachedDialog> | null>(null)
 
 // 履歴が空の状態から中央の球体で最初の発話をした場合、思考（thinking）が終わって
 // 一体に収束するまではチャットログへ画面遷移させず、中央の球体画面のままにする
@@ -60,9 +62,20 @@ const firstExchangeInFlight = ref(false)
 // capabilities.ollama.enabled で上書きし、送信して初めて接続エラーで失敗する偽陽性を防ぐ。
 // 自分のクラウドキーが1つも無くても、共有キーの無料枠が残っていれば会話は成立するため、
 // そちらも見ないと「使えるのに泣き顔」になってしまう（共有キーフォールバックの導入で発生した齟齬）
+// 上限到達（limit_reached）は「使えない」ではなく「今日はもう使えない」なので、
+// 全画面差し替え（EmptyBrainState）の対象からは外す。not_signed_in / not_permitted /
+// unavailable はそもそも使う手段が無い状態なので、従来どおり全画面差し替えのまま
 const hasActiveBody = computed(() =>
   settings.bodies.some(b => b.provider === 'ollama' ? ollama.value.enabled : isBodyUsable(b))
   || sharedKey.value.allowed
+  || sharedKey.value.reason === 'limit_reached'
+)
+
+// 実際に録音を開始してよいか（バックエンドが受け付けるかの事前チェック）。
+// hasActiveBody と違い limit_reached は含めない。ここがfalseのときに録音を始めると、
+// 話し終えてから「上限到達」エラーで弾かれるだけなので、録音開始前にダイアログで止める
+const canRecord = computed(() =>
+  hasOwnCloudKey(settings.bodies) || sharedKey.value.allowed
 )
 
 // 自分のキーを設定せず共有キーに乗っている状態か（上限到達で allowed:false になった後も含む）。
@@ -79,9 +92,22 @@ const { recording, finalText, interimText, bars, confirming, confirmText, start,
     sendMessage(text)
   })
 
+// 録音を始めるすべての入口（中央の球体・下部の球体・ウェイクワード）はここを通す。
+// canRecord が false なら実際には録音せず、ダイアログで「使えない」ことを先に伝える
+// （録音・発話を終えてからエラーで弾かれる体験を避ける）
+function requestStart() {
+  if (!canRecord.value) { limitDialog.value?.open(); return }
+  start()
+}
+
+function requestVoiceDialog() {
+  if (!canRecord.value) { limitDialog.value?.open(); return }
+  voiceDialog.value?.open()
+}
+
 // 「アイリス」でウェイク → 録音開始
 const { listening: wakeListening, startListening, stopListening } = useWakeWord(() => {
-  start()
+  requestStart()
 })
 
 // ユーザーが一度でも明示的にマイクを使ったかどうか
@@ -176,7 +202,7 @@ watch(
             :recording="recording"
             :bars="bars"
             :wake-listening="wakeListening"
-            @click="recording ? stop() : start()"
+            @click="recording ? stop() : requestStart()"
           />
         </div>
 
@@ -204,7 +230,7 @@ watch(
           <div
             class="w-14 h-14 rounded-full overflow-hidden cursor-pointer transition-transform hover:scale-105"
             title="続けて話す"
-            @click="voiceDialog?.open()"
+            @click="requestVoiceDialog()"
           >
             <VoiceSphere
               :recording="recording"
@@ -231,5 +257,7 @@ watch(
       @redo="redo"
       @closed="cancelConfirm"
     />
+
+    <LimitReachedDialog ref="limitDialog" @open-settings="appAside?.openSettings()" />
   </div>
 </template>
