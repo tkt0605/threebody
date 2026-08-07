@@ -4,8 +4,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 import type { BodyConfig, Provider } from '../llm/types'
 import { M, LEVEL_CONFIG } from '../llm/modelConfig'
-import { extractTextContent, toOllamaMessages } from '../llm/messageHelpers'
-import { streamBodyOAI, streamSecondaryBody } from '../llm/textService'
+import { toOllamaMessages } from '../llm/messageHelpers'
+import { streamBodyOAI, orchestrateMultiBody } from '../llm/textService'
 import { streamAnthropic } from '../llm/providers/anthropic'
 import { streamOpenAICompat } from '../llm/providers/openaiCompat'
 import { streamOllamaNative } from '../llm/providers/ollama'
@@ -78,13 +78,22 @@ router.post('/chat', chatRateLimit, async (req, res) => {
           // 思考レベルはユーザーの指定ではなく固定値を使う。
           // 他人のトークンを運営が負担するため、ここがコスト上限の主レバーになる
           const sharedConfig = LEVEL_CONFIG[SHARED_THINKING_LEVEL]!
-          await streamBodyOAI(
-            { provider: 'anthropic', apiKey: key, model: sharedConfig.anthropicModel },
-            oaiMessages,
-            sharedConfig,
-            systemPrompt,
-            res,
-          )
+          // ThreeBodyの名を冠する以上、無料枠でも三体モードを見せる（Phase 0）。
+          // プロバイダーはAnthropicのみに揃え、新規シークレットへの依存を避ける
+          // （混成プロバイダー化は将来の拡張として温存）。同一モデル3体では見解が
+          // 収束しすぎるため、副体にはpersonaPromptで視点の差を持たせる
+          const sharedBodies: BodyConfig[] = [
+            { provider: 'anthropic', apiKey: key, model: sharedConfig.anthropicModel, name: '一体' },
+            {
+              provider: 'anthropic', apiKey: key, model: sharedConfig.anthropicModel, name: '二体',
+              personaPrompt: systemPrompt + '\n\n慎重派の視点で、リスクや見落としがちな懸念点を重視して答えてください。',
+            },
+            {
+              provider: 'anthropic', apiKey: key, model: sharedConfig.anthropicModel, name: '三体',
+              personaPrompt: systemPrompt + '\n\n発想派の視点で、別の角度からのアイデアや可能性を重視して答えてください。',
+            },
+          ]
+          await orchestrateMultiBody(sharedBodies, sharedBodies, oaiMessages, sharedConfig, systemPrompt, res)
           completed = true
           res.write('data: [DONE]\n\n')
           return
@@ -119,43 +128,9 @@ router.post('/chat', chatRateLimit, async (req, res) => {
       )
 
       if (available.length > 1) {
-        // 副体（二体・三体）からの見解を並列取得。完了ごとに body_start/body_done を通知し、
-        // フロントで「どの体がまだ話しているか」をリアルタイムに可視化できるようにする
-        const [primary, ...secondaries] = available as [BodyConfig, ...BodyConfig[]]
-
-        const secondaryResults = await Promise.all(
-          secondaries.map(async (b) => {
-            const bodyIdx = bodies.indexOf(b)
-            const name    = b.name ?? '副体'
-            res.write(`data: ${JSON.stringify({ type: 'body_start', bodyIndex: bodyIdx, name, provider: b.provider })}\n\n`)
-            const text = await streamSecondaryBody(b, bodyIdx, oaiMessages, {...config, maxTokens: config.secondaryMaxTokens}, b.personaPrompt ?? systemPrompt, res)
-            res.write(`data: ${JSON.stringify({ type: 'body_done', bodyIndex: bodyIdx })}\n\n`)
-            return { bodyIdx, name, provider: b.provider, text }
-          })
-        )
-
-        const perspectives = secondaryResults
-          .map(({ bodyIdx, name, provider, text }) => {
-            if (!text.trim()) return null
-            return `【${name}（${provider}）の見解】\n${text}`
-          })
-          .filter(Boolean)
-          .join('\n\n')
-
-        const synthesisSystemPrompt = systemPrompt
-          + '\n\n以下は他の体（LLM）の見解です。これらを踏まえて、より包括的かつ統合的な最終回答を生成してください。'
-
-        const lastUserMsg = oaiMessages[oaiMessages.length - 1]
-        const synthesisMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-          ...oaiMessages.slice(0, -1),
-          {
-            role: 'user',
-            content: `${extractTextContent(lastUserMsg?.content)}\n\n---\n${perspectives}`,
-          },
-        ]
-
-        res.write(`data: ${JSON.stringify({ type: 'synthesis_start', bodyIndex: bodies.indexOf(primary) })}\n\n`)
-        await streamBodyOAI(primary, synthesisMessages, config, synthesisSystemPrompt, res)
+        // 副体（二体・三体）からの見解を並列取得 → 主体が統合、という一連の流れは
+        // orchestrateMultiBody に集約（共有キー経路の三体モードとも共有）
+        await orchestrateMultiBody(bodies, available, oaiMessages, config, systemPrompt, res)
         completed = true
         res.write('data: [DONE]\n\n')
         return

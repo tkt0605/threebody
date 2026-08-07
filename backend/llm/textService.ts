@@ -2,7 +2,7 @@ import type express from 'express'
 import Anthropic from '@anthropic-ai/sdk'
 import type OpenAI from 'openai'
 import type { BodyConfig, LevelConfig } from './types'
-import { resolveBodyModel, toOllamaMessages, toAnthropicMessages } from './messageHelpers'
+import { resolveBodyModel, toOllamaMessages, toAnthropicMessages, extractTextContent } from './messageHelpers'
 import { streamOllamaNative } from './providers/ollama'
 import { createOpenAICompatClient, streamOpenAICompat } from './providers/openaiCompat'
 import { streamAnthropic } from './providers/anthropic'
@@ -92,4 +92,52 @@ export async function streamBodyOAI(
 
   const oaiClient = createOpenAICompatClient(body)
   await streamOpenAICompat(oaiClient, model, res, messages, config.maxTokens, systemPrompt)
+}
+
+// 副体（二体・三体）を並列取得 → 見解をシステムプロンプトに注入 → 主体が統合回答をストリーミング、
+// という三体モードの一連の流れ。`allBodies` は SSE の bodyIndex を求めるための元配列
+// （通常モードでは req.body.bodies、共有キーモードでは available と同一の配列）
+export async function orchestrateMultiBody(
+  allBodies: BodyConfig[],
+  available: BodyConfig[],
+  messages: OpenAI.Chat.ChatCompletionMessageParam[],
+  config: LevelConfig,
+  systemPrompt: string,
+  res: express.Response,
+): Promise<void> {
+  const [primary, ...secondaries] = available as [BodyConfig, ...BodyConfig[]]
+
+  const secondaryResults = await Promise.all(
+    secondaries.map(async (b) => {
+      const bodyIdx = allBodies.indexOf(b)
+      const name    = b.name ?? '副体'
+      res.write(`data: ${JSON.stringify({ type: 'body_start', bodyIndex: bodyIdx, name, provider: b.provider })}\n\n`)
+      const text = await streamSecondaryBody(b, bodyIdx, messages, { ...config, maxTokens: config.secondaryMaxTokens }, b.personaPrompt ?? systemPrompt, res)
+      res.write(`data: ${JSON.stringify({ type: 'body_done', bodyIndex: bodyIdx })}\n\n`)
+      return { name, provider: b.provider, text }
+    })
+  )
+
+  const perspectives = secondaryResults
+    .map(({ name, provider, text }) => {
+      if (!text.trim()) return null
+      return `【${name}（${provider}）の見解】\n${text}`
+    })
+    .filter(Boolean)
+    .join('\n\n')
+
+  const synthesisSystemPrompt = systemPrompt
+    + '\n\n以下は他の体（LLM）の見解です。これらを踏まえて、より包括的かつ統合的な最終回答を生成してください。'
+
+  const lastUserMsg = messages[messages.length - 1]
+  const synthesisMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    ...messages.slice(0, -1),
+    {
+      role: 'user',
+      content: `${extractTextContent(lastUserMsg?.content)}\n\n---\n${perspectives}`,
+    },
+  ]
+
+  res.write(`data: ${JSON.stringify({ type: 'synthesis_start', bodyIndex: allBodies.indexOf(primary) })}\n\n`)
+  await streamBodyOAI(primary, synthesisMessages, config, synthesisSystemPrompt, res)
 }
