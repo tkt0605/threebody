@@ -35,7 +35,8 @@ export async function streamSecondaryBody(
       ...(systemPrompt ? { system: systemPrompt } : {}),
     })
     stream.on('text', (textDelta) => emit(textDelta))
-    await stream.finalMessage()
+    const finalMsg = await stream.finalMessage()
+    console.info(`[usage] secondary bodyIndex=${bodyIndex} model=${model}`, finalMsg.usage)
     return full
   }
 

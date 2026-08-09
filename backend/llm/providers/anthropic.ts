@@ -33,5 +33,6 @@ export async function streamAnthropic(
   stream.on('text', (textDelta) => {
     res.write(`data: ${JSON.stringify({ type: 'text', content: textDelta })}\n\n`)
   })
-  await stream.finalMessage()
+  const finalMsg = await stream.finalMessage()
+  console.info(`[usage] primary model=${config.anthropicModel}`, finalMsg.usage)
 }
