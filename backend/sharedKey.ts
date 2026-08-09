@@ -66,11 +66,28 @@ export async function checkSharedAllowance(userId: string | null): Promise<Share
   const admin = getSupabaseAdmin()
   if (!admin) return { allowed: false, reason: 'unavailable' }
 
-  const { data, error } = await admin
+  let { data, error } = await admin
     .from('user_setting')
     .select('can_use_shared_key, shared_daily_count, shared_last_used_date')
     .eq('id', userId)
     .maybeSingle<QuotaRow>()
+
+  // 行そのものが無い（クエリ自体は成功、data=null かつ error=null）場合だけ自動作成する。
+  // persistMessage経由のプロフィール作成はfire-and-forgetなので、新規ユーザーの初回メッセージで
+  // ここが先に読みに来ることがある。バックエンド側でも行を作れるようにし、フロントの
+  // タイミングに依存しない形で「行が無いだけで弾かれる」問題を構造的に塞ぐ。
+  // payloadはidのみ（can_use_shared_key等はテーブルdefaultに委ねる）。
+  // upsertはconflict時もUPDATE（no-op同然）としてRETURNINGされるため、
+  // 同時実行で他リクエストが先に作っていてもここで行を取得できる
+  if (!data && !error) {
+    const created = await admin
+      .from('user_setting')
+      .upsert({ id: userId })
+      .select('can_use_shared_key, shared_daily_count, shared_last_used_date')
+      .maybeSingle<QuotaRow>()
+    data = created.data
+    error = created.error
+  }
 
   // 行が無い・読めない場合は「許可されていない」に倒す。
   // 判断できないときに使わせる側へ倒すと、運営のキーが無制限に使われうる

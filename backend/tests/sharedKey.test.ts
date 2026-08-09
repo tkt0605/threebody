@@ -13,12 +13,15 @@ type QuotaRow = {
   shared_last_used_date: string  | null
 }
 
-// checkSharedAllowance が使うのは .from().select().eq().maybeSingle() の1本だけ、
-// consumeSharedQuota が使うのは .rpc() だけなので、その2つだけ差し替えられれば十分
+// checkSharedAllowance が使うのは .from().select().eq().maybeSingle() と
+// （行が無い場合のみ）.from().upsert().select().maybeSingle()、
+// consumeSharedQuota が使うのは .rpc() だけなので、その3つだけ差し替えられれば十分
 function fakeAdmin(opts: {
   row?: QuotaRow | null
   selectError?: { message: string } | null
   rpcError?: { message: string } | null
+  upsertRow?: QuotaRow | null
+  upsertError?: { message: string } | null
 } = {}) {
   const maybeSingle = vi.fn().mockResolvedValue({
     data:  opts.row ?? null,
@@ -26,8 +29,16 @@ function fakeAdmin(opts: {
   })
   const eq     = vi.fn().mockReturnValue({ maybeSingle })
   const select = vi.fn().mockReturnValue({ eq })
-  const rpc    = vi.fn().mockResolvedValue({ data: null, error: opts.rpcError ?? null })
-  return { from: vi.fn().mockReturnValue({ select }), rpc }
+
+  const upsertMaybeSingle = vi.fn().mockResolvedValue({
+    data:  opts.upsertRow ?? null,
+    error: opts.upsertError ?? null,
+  })
+  const upsertSelect = vi.fn().mockReturnValue({ maybeSingle: upsertMaybeSingle })
+  const upsert        = vi.fn().mockReturnValue({ select: upsertSelect })
+
+  const rpc = vi.fn().mockResolvedValue({ data: null, error: opts.rpcError ?? null })
+  return { from: vi.fn().mockReturnValue({ select, upsert }), rpc, upsert }
 }
 
 describe('hasOwnCloudKey', () => {
@@ -121,9 +132,38 @@ describe('sharedApiKey / checkSharedAllowance', () => {
     await expect(checkSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'not_permitted' })
   })
 
-  it('行が無ければ not_permitted', async () => {
-    vi.mocked(getSupabaseAdmin).mockReturnValue(fakeAdmin({ row: null }) as never)
+  it('行が無ければservice roleで自動作成を試み、作成した行のcan_use_shared_keyがfalseならnot_permitted', async () => {
+    const admin = fakeAdmin({
+      row: null,
+      upsertRow: { can_use_shared_key: false, shared_daily_count: 0, shared_last_used_date: null },
+    })
+    vi.mocked(getSupabaseAdmin).mockReturnValue(admin as never)
     await expect(checkSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'not_permitted' })
+    // idのみでupsertする（can_use_shared_key等はテーブルdefaultに委ねる）
+    expect(admin.upsert).toHaveBeenCalledWith({ id: 'user-1' })
+  })
+
+  it('行の自動作成にも失敗したら not_permitted', async () => {
+    vi.mocked(getSupabaseAdmin).mockReturnValue(fakeAdmin({ row: null, upsertRow: null }) as never)
+    await expect(checkSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'not_permitted' })
+  })
+
+  it('行が無く、自動作成した行のcan_use_shared_keyがtrueなら許可される（招待制反転後の想定挙動）', async () => {
+    vi.mocked(getSupabaseAdmin).mockReturnValue(fakeAdmin({
+      row: null,
+      upsertRow: { can_use_shared_key: true, shared_daily_count: 0, shared_last_used_date: null },
+    }) as never)
+    await expect(checkSharedAllowance('user-1'))
+      .resolves.toEqual({ allowed: true, remaining: SHARED_DAILY_LIMIT })
+  })
+
+  it('行が既にあれば自動作成（upsert）は呼ばない', async () => {
+    const admin = fakeAdmin({
+      row: { can_use_shared_key: true, shared_daily_count: 0, shared_last_used_date: null },
+    })
+    vi.mocked(getSupabaseAdmin).mockReturnValue(admin as never)
+    await checkSharedAllowance('user-1')
+    expect(admin.upsert).not.toHaveBeenCalled()
   })
 
   it('can_use_shared_key が false なら not_permitted', async () => {
