@@ -22,8 +22,12 @@
 
 ## 各フェーズの要点
 
-**Phase 0（三体を既定に）**
-`backend/routes/chat.ts:70-90` の共有キー分岐を単体(`streamBodyOAI`)から三体オーケストレーションに差し替え。副体を安価プロバイダーに逃がせばコストは概ね+37.5%〜2倍以下に収まる見込み（要実測）。`SHARED_DAILY_LIMIT` は5→2〜3へ。
+**Phase 0（三体を既定に）— 完了（2026-08-09）**
+`backend/routes/chat.ts` の共有キー分岐を単体(`streamBodyOAI`)から三体オーケストレーション（`orchestrateMultiBody`）に差し替え済み。プロバイダーはAnthropic単独（混成化は将来の拡張として保留）。`SHARED_DAILY_LIMIT` は5→2に変更済み。
+
+実コストを実測した結果、1ターン ≈ $0.00998（Haiku 4.5、入力5,624トークン＋出力871トークン）で、単体換算比は約3倍（見積もりの+37.5%〜2倍以下より高い）。原因は出力が上限よりずっと少なく、代わりに入力トークンが3体分そのまま3倍化する影響が相対的に大きいため。絶対額は小さい（`SHARED_DAILY_LIMIT=2`で1ユーザー1日あたり最大約2セント）ため、この実測値のまま許容と決定。
+
+上限到達時のUXも修正済み：全画面差し替え（EmptyBrainState）を`limit_reached`では発生させず、録音を試みた時点でダイアログ（`LimitReachedDialog.vue`）で案内する方式に変更。
 
 **Phase 1（入口を開ける）**
 `can_use_shared_key` の default を false→true に反転（+既存行のバックフィル、全体日次上限の新設）。`persistMessage` が await されない fire-and-forget のため、新規ユーザーの初回メッセージで `user_setting` 行が未作成のまま `checkSharedAllowance` が読みうる競合が未検証・要対応。
