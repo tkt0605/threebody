@@ -47,6 +47,16 @@ comment on table public.user_setting is
 comment on column public.user_setting.can_use_shared_key is
   '共有キーの利用可否。運営がSupabase側で手動更新する招待制（申請UI・管理画面は未実装）。';
 
+-- 共有キーの「全ユーザー合計」の日次上限（運営側の総額キルスイッチ）。
+-- user_setting の shared_daily_count はユーザー単位、こちらは1行だけを日次で使い回す
+-- グローバルカウンタ。行は try_reserve_global_quota が upsert で自己生成する
+create table public.shared_key_global_usage (
+  day    date primary key,
+  count  integer not null default 0
+);
+comment on table public.shared_key_global_usage is
+  '共有キーの全ユーザー合計・日次消費カウンタ（Phase 1のキルスイッチ用）。dayはJST暦日。';
+
 -- 会話。1ユーザーが複数持てる（サイドバーの会話一覧）
 create table public.conversations (
   id          uuid primary key default gen_random_uuid(),
@@ -111,10 +121,11 @@ create index feedback_user_id_idx on public.feedback (user_id);
 -- 縛るためのものと理解すること。
 -- ============================================================================
 
-alter table public.user_setting   enable row level security;
-alter table public.conversations  enable row level security;
-alter table public.messages       enable row level security;
-alter table public.content_blocks enable row level security;
+alter table public.user_setting          enable row level security;
+alter table public.shared_key_global_usage enable row level security;
+alter table public.conversations         enable row level security;
+alter table public.messages              enable row level security;
+alter table public.content_blocks        enable row level security;
 alter table public.feedback       enable row level security;
 
 -- user_setting: 自分の行だけ読み書きできる。
@@ -271,3 +282,38 @@ $$;
 
 revoke all on function public.consume_shared_quota(uuid, date) from public;
 grant execute on function public.consume_shared_quota(uuid, date) to service_role;
+
+-- ============================================================================
+-- 5. RPC — 共有キーの「全体」日次上限を原子的に予約する（Phase 1のキルスイッチ）
+-- （backend/sharedKey.ts の checkSharedAllowance が、ユーザー個別の判定をすべて
+-- 通過した最後に呼ぶ。service_role からのみ呼ばれる想定）
+--
+-- 【設計】consume_shared_quota は「判定→LLM応答→加算」の間にレースがあり、同時
+-- リクエストで上限を超過しうる既知の問題を上のコメントに明記している。全体上限は
+-- 運営の総額を守る最後の砦なので、同じレースを持ち込みたくない。ここでは
+-- INSERT ... ON CONFLICT ... DO UPDATE ... RETURNING という単一ステートメントで
+-- 「加算」と「加算後の値の取得」を1つのアトミック操作にし、加算してから閾値と比較する
+-- （＝先に予約し、予約が上限を超えていたら呼び出し側が不許可にする）。
+-- そのため上限に達した瞬間の1〜数回は「予約はしたが不許可」というカウントのされ方に
+-- なるが、これは意図した安全側の誤差であり、上限を超えてLLMを呼んでしまう方向には倒れない。
+create or replace function public.try_reserve_global_quota(p_today date, p_limit integer)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_count integer;
+begin
+  insert into public.shared_key_global_usage (day, count)
+  values (p_today, 1)
+  on conflict (day) do update
+    set count = shared_key_global_usage.count + 1
+  returning count into v_count;
+
+  return v_count <= p_limit;
+end;
+$$;
+
+revoke all on function public.try_reserve_global_quota(date, integer) from public;
+grant execute on function public.try_reserve_global_quota(date, integer) to service_role;
