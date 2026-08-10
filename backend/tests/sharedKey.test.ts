@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { hasOwnCloudKey, sharedApiKey, checkSharedAllowance, consumeSharedQuota, SHARED_DAILY_LIMIT } from '../sharedKey'
+import {
+  hasOwnCloudKey, sharedApiKey, checkSharedAllowance, consumeSharedQuota,
+  SHARED_DAILY_LIMIT, GLOBAL_SHARED_DAILY_LIMIT,
+} from '../sharedKey'
 import { jstDateString } from '../utils/jstDate'
 import { getSupabaseAdmin } from '../supabaseAdmin'
 
@@ -13,15 +16,21 @@ type QuotaRow = {
   shared_last_used_date: string  | null
 }
 
-// checkSharedAllowance が使うのは .from().select().eq().maybeSingle() と
+// checkSharedAllowance が使うのは .from().select().eq().maybeSingle()、
 // （行が無い場合のみ）.from().upsert().select().maybeSingle()、
-// consumeSharedQuota が使うのは .rpc() だけなので、その3つだけ差し替えられれば十分
+// そして最後に .rpc('try_reserve_global_quota', ...)。
+// consumeSharedQuota が使うのは .rpc('consume_shared_quota', ...) だけ。
+// rpc は呼ばれる関数名で応答を出し分ける（片方だけ差し替えたいテストがあるため）
 function fakeAdmin(opts: {
   row?: QuotaRow | null
   selectError?: { message: string } | null
   rpcError?: { message: string } | null
   upsertRow?: QuotaRow | null
   upsertError?: { message: string } | null
+  // try_reserve_global_quota の戻り値。既定は true（＝全体上限にはまだ余裕がある）にして、
+  // 個人枠のテストがこれで足を取られないようにする
+  globalReserved?: boolean
+  globalReserveError?: { message: string } | null
 } = {}) {
   const maybeSingle = vi.fn().mockResolvedValue({
     data:  opts.row ?? null,
@@ -37,7 +46,15 @@ function fakeAdmin(opts: {
   const upsertSelect = vi.fn().mockReturnValue({ maybeSingle: upsertMaybeSingle })
   const upsert        = vi.fn().mockReturnValue({ select: upsertSelect })
 
-  const rpc = vi.fn().mockResolvedValue({ data: null, error: opts.rpcError ?? null })
+  const rpc = vi.fn().mockImplementation((fn: string) => {
+    if (fn === 'try_reserve_global_quota') {
+      return Promise.resolve({
+        data:  opts.globalReserveError ? null : (opts.globalReserved ?? true),
+        error: opts.globalReserveError ?? null,
+      })
+    }
+    return Promise.resolve({ data: null, error: opts.rpcError ?? null })
+  })
   return { from: vi.fn().mockReturnValue({ select, upsert }), rpc, upsert }
 }
 
@@ -201,6 +218,40 @@ describe('sharedApiKey / checkSharedAllowance', () => {
       },
     }) as never)
     await expect(checkSharedAllowance('user-1')).resolves.toEqual({ allowed: true, remaining: 1 })
+  })
+
+  it('個人枠が残っていても、全体上限の予約に失敗すれば limit_reached', async () => {
+    const admin = fakeAdmin({
+      row: { can_use_shared_key: true, shared_daily_count: 0, shared_last_used_date: null },
+      globalReserved: false,
+    })
+    vi.mocked(getSupabaseAdmin).mockReturnValue(admin as never)
+    await expect(checkSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'limit_reached' })
+    expect(admin.rpc).toHaveBeenCalledWith('try_reserve_global_quota', {
+      p_today: jstDateString(),
+      p_limit: GLOBAL_SHARED_DAILY_LIMIT,
+    })
+  })
+
+  it('全体上限の予約RPC自体が失敗しても許可に倒さない', async () => {
+    vi.mocked(getSupabaseAdmin).mockReturnValue(fakeAdmin({
+      row: { can_use_shared_key: true, shared_daily_count: 0, shared_last_used_date: null },
+      globalReserveError: { message: 'boom' },
+    }) as never)
+    await expect(checkSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'limit_reached' })
+  })
+
+  it('個人枠が上限に達していれば、全体上限の予約はしない（無駄な消費を避ける）', async () => {
+    const admin = fakeAdmin({
+      row: {
+        can_use_shared_key:    true,
+        shared_daily_count:    SHARED_DAILY_LIMIT,
+        shared_last_used_date: jstDateString(),
+      },
+    })
+    vi.mocked(getSupabaseAdmin).mockReturnValue(admin as never)
+    await checkSharedAllowance('user-1')
+    expect(admin.rpc).not.toHaveBeenCalledWith('try_reserve_global_quota', expect.anything())
   })
 
   it('日付が変わっていれば古いカウントを無視してリセット扱いにする', async () => {

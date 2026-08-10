@@ -3,12 +3,18 @@
 //
 // 共有キーが存在してよいのは Render の環境変数とこのプロセスのメモリ上だけ。
 // DBに入るのは「使ってよいか」と「今日何回使ったか」だけで、キーそのものは入らない。
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { getSupabaseAdmin } from './supabaseAdmin'
 import { jstDateString } from './utils/jstDate'
 
 // 1ユーザーあたりの1日の上限。
 // Phase 0で単体1回→三体3回分のコストになったため、5→3へ引き下げ
 export const SHARED_DAILY_LIMIT = 3
+
+// 全ユーザー合計の1日の上限（Phase 1のキルスイッチ）。
+// 招待制を撤廃すると1ユーザー単位の上限だけでは運営の総額を守れないため、
+// これとは独立に「サービス全体で1日50回まで」を最後の砦として設ける
+export const GLOBAL_SHARED_DAILY_LIMIT = 50
 
 // 共有キー利用時に固定する思考レベル。
 // レベル5(Opus/32Kトークン)とレベル2(Haiku/4Kトークン)では単価が約40倍違う。
@@ -59,6 +65,25 @@ function usedToday(row: QuotaRow, today: string): number {
   return row.shared_daily_count ?? 0
 }
 
+// 全体日次上限を原子的に予約する。DB側の try_reserve_global_quota
+// （INSERT ... ON CONFLICT ... DO UPDATE ... RETURNING の単一ステートメント）が
+// 「加算」と「加算後の値の取得」を1操作にまとめているため、consume_shared_quota側に
+// 明記されている既知のTOCTOUレース（判定→応答→加算の間に別リクエストが割り込む）を
+// 全体上限では持ち込まない。呼び出しはLLM応答を開始する前（予約）に行う
+async function reserveGlobalQuota(admin: SupabaseClient): Promise<boolean> {
+  const { data, error } = await admin.rpc('try_reserve_global_quota', {
+    p_today: jstDateString(),
+    p_limit: GLOBAL_SHARED_DAILY_LIMIT,
+  })
+
+  // RPC自体が失敗した場合は許可に倒さない（個人枠の判定と同じ安全側の方針）
+  if (error) {
+    console.error('[sharedKey] 全体上限の予約に失敗しました', error.message)
+    return false
+  }
+  return data === true
+}
+
 export async function checkSharedAllowance(userId: string | null): Promise<SharedAllowance> {
   if (!sharedApiKey())  return { allowed: false, reason: 'unavailable'   }
   if (!userId)          return { allowed: false, reason: 'not_signed_in' }
@@ -96,6 +121,11 @@ export async function checkSharedAllowance(userId: string | null): Promise<Share
 
   const used = usedToday(data, jstDateString())
   if (used >= SHARED_DAILY_LIMIT) return { allowed: false, reason: 'limit_reached' }
+
+  // 全体上限の予約は個人の判定をすべて通過した最後に行う。
+  // これより前で予約すると、not_signed_in/not_permitted等どのみち不許可になる
+  // リクエストにまで全体枠を消費してしまい、キルスイッチの意味が薄れる
+  if (!(await reserveGlobalQuota(admin))) return { allowed: false, reason: 'limit_reached' }
 
   return { allowed: true, remaining: SHARED_DAILY_LIMIT - used }
 }
