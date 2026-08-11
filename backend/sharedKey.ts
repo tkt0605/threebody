@@ -92,7 +92,13 @@ function logDecision(userId: string | null, detail: string): void {
   console.info(`[sharedKey] ${detail}${userId ? ` user=${userId}` : ''}`)
 }
 
-export async function checkSharedAllowance(userId: string | null): Promise<SharedAllowance> {
+// 判定だけを行い、全体枠は消費しない。「あと何回使えるか」を表示するだけの経路
+// （GET /api/capabilities）はこちらを呼ぶこと。
+//
+// 表示用の経路が全体枠を減らすと、ページを開き直すたびにキルスイッチが目減りし、
+// LLMを一度も呼ばないまま全体上限に到達しうる。副作用の有無で関数名を分け、
+// 呼び分けを型レベルで強制する（両者を1つの関数にすると必ずどちらかを取り違える）
+export async function peekSharedAllowance(userId: string | null): Promise<SharedAllowance> {
   if (!sharedApiKey()) {
     logDecision(null, 'SHARED_ANTHROPIC_API_KEY が未設定のため使用せず')
     return { allowed: false, reason: 'unavailable' }
@@ -150,17 +156,34 @@ export async function checkSharedAllowance(userId: string | null): Promise<Share
     return { allowed: false, reason: 'limit_reached' }
   }
 
-  // 全体上限の予約は個人の判定をすべて通過した最後に行う。
-  // これより前で予約すると、not_signed_in/not_permitted等どのみち不許可になる
-  // リクエストにまで全体枠を消費してしまい、キルスイッチの意味が薄れる
+  // 成功時はここでログを出さない。この関数は表示用の GET /api/capabilities からも
+  // 呼ばれ、ページを開くたびに「許可」が1行増えてしまう。許可の記録は実際にLLMを
+  // 呼ぶ reserveSharedAllowance 側に置き、ログ1行＝1ターンの対応を保つ
+  return { allowed: true, remaining: SHARED_DAILY_LIMIT - used }
+}
+
+// 判定に加えて、全体枠を1つ予約する。実際にLLMを呼ぶ経路（POST /api/chat）だけが呼ぶこと。
+//
+// 全体上限の予約は個人の判定をすべて通過した最後に行う。これより前で予約すると、
+// not_signed_in/not_permitted等どのみち不許可になるリクエストにまで
+// 全体枠を消費してしまい、キルスイッチの意味が薄れる
+export async function reserveSharedAllowance(userId: string | null): Promise<SharedAllowance> {
+  const allowance = await peekSharedAllowance(userId)
+  if (!allowance.allowed) return allowance
+
+  // peek が allowed を返した時点で admin は必ず取得できているが、型の上では
+  // null を排除できない。getSupabaseAdmin はキャッシュ済みなので取り直しは安い
+  const admin = getSupabaseAdmin()
+  if (!admin) return { allowed: false, reason: 'unavailable' }
+
   if (!(await reserveGlobalQuota(admin))) {
     logDecision(userId, `全体の1日上限に到達（上限${GLOBAL_SHARED_DAILY_LIMIT}回/日）`)
     return { allowed: false, reason: 'limit_reached' }
   }
 
-  const remaining = SHARED_DAILY_LIMIT - used
-  logDecision(userId, `許可（本日${used}回使用済み・残り${remaining}/${SHARED_DAILY_LIMIT}回）`)
-  return { allowed: true, remaining }
+  const used = SHARED_DAILY_LIMIT - allowance.remaining
+  logDecision(userId, `許可（本日${used}回使用済み・残り${allowance.remaining}/${SHARED_DAILY_LIMIT}回）`)
+  return allowance
 }
 
 // 消費を1回分記録する。呼ぶのは「共有キーを使い、かつ応答が正常完了した」ときだけ。
@@ -172,7 +195,7 @@ export async function consumeSharedQuota(userId: string): Promise<void> {
   const admin = getSupabaseAdmin()
   if (!admin) return
 
-  // 判定（checkSharedAllowance）と保存で計算がずれると日跨ぎで不整合が出るため、
+  // 判定（peekSharedAllowance）と保存で計算がずれると日跨ぎで不整合が出るため、
   // ここも必ず jstDateString() を使う
   const { error } = await admin.rpc('consume_shared_quota', {
     p_user_id: userId,

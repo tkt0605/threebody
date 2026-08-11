@@ -13,7 +13,7 @@ import { collectSecrets, sanitizeErrorMessage } from '../utils/errorSanitize'
 import { resolveUserId } from '../auth'
 import {
   SHARED_DAILY_LIMIT, SHARED_THINKING_LEVEL,
-  sharedApiKey, hasOwnCloudKey, checkSharedAllowance, consumeSharedQuota,
+  sharedApiKey, hasOwnCloudKey, reserveSharedAllowance, consumeSharedQuota,
 } from '../sharedKey'
 
 const router = Router()
@@ -68,7 +68,8 @@ router.post('/chat', chatRateLimit, async (req, res) => {
     // ── 共有キーへのフォールバック ─────────────────────────────────────────────
     // 自分のクラウド系キーを1つも設定していないユーザーだけがここに入る
     if (!hasOwnCloudKey({ bodies, provider, apiKey, model })) {
-      const allowance = await checkSharedAllowance(userId)
+      // 実際にLLMを呼ぶ経路なので、判定と同時に全体枠を1つ予約する側を呼ぶ
+      const allowance = await reserveSharedAllowance(userId)
 
       if (allowance.allowed) {
         // allowed を返した時点で共有キーは存在するが、型の上では null を排除できない
@@ -99,7 +100,7 @@ router.post('/chat', chatRateLimit, async (req, res) => {
           return
         }
       } else if (allowance.reason !== 'limit_reached') {
-        // 判定の内訳（誰が・なぜ弾かれたか）は checkSharedAllowance 側で出している。
+        // 判定の内訳（誰が・なぜ弾かれたか）は peekSharedAllowance 側で出している。
         // reason は同じ値でも原因が複数あるため、切り分けが要る箇所に近いあちらに寄せてある
       } else {
         // 既存のerrorイベント形式に乗せる。フロントはこれをそのまま描画できる

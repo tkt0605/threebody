@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
-  hasOwnCloudKey, sharedApiKey, checkSharedAllowance, consumeSharedQuota,
+  hasOwnCloudKey, sharedApiKey, peekSharedAllowance, reserveSharedAllowance, consumeSharedQuota,
   SHARED_DAILY_LIMIT, GLOBAL_SHARED_DAILY_LIMIT,
 } from '../sharedKey'
 import { jstDateString } from '../utils/jstDate'
@@ -16,9 +16,9 @@ type QuotaRow = {
   shared_last_used_date: string  | null
 }
 
-// checkSharedAllowance が使うのは .from().select().eq().maybeSingle()、
-// （行が無い場合のみ）.from().upsert().select().maybeSingle()、
-// そして最後に .rpc('try_reserve_global_quota', ...)。
+// peekSharedAllowance が使うのは .from().select().eq().maybeSingle() と、
+// （行が無い場合のみ）.from().upsert().select().maybeSingle()。
+// reserveSharedAllowance はそれに加えて最後に .rpc('try_reserve_global_quota', ...) を呼ぶ。
 // consumeSharedQuota が使うのは .rpc('consume_shared_quota', ...) だけ。
 // rpc は呼ばれる関数名で応答を出し分ける（片方だけ差し替えたいテストがあるため）
 function fakeAdmin(opts: {
@@ -108,7 +108,7 @@ describe('hasOwnCloudKey', () => {
   })
 })
 
-describe('sharedApiKey / checkSharedAllowance', () => {
+describe('sharedApiKey / reserveSharedAllowance（判定＋全体枠の予約）', () => {
   const saved = process.env.SHARED_ANTHROPIC_API_KEY
 
   beforeEach(() => { process.env.SHARED_ANTHROPIC_API_KEY = KEY })
@@ -131,22 +131,22 @@ describe('sharedApiKey / checkSharedAllowance', () => {
 
   it('共有キーが無ければ DB を見ずに unavailable', async () => {
     delete process.env.SHARED_ANTHROPIC_API_KEY
-    await expect(checkSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'unavailable' })
+    await expect(reserveSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'unavailable' })
   })
 
   it('未ログイン（userId が null）なら not_signed_in', async () => {
     // 誰の割当かを決められない。ここを許可に倒すと無認証で使い放題になる
-    await expect(checkSharedAllowance(null)).resolves.toEqual({ allowed: false, reason: 'not_signed_in' })
+    await expect(reserveSharedAllowance(null)).resolves.toEqual({ allowed: false, reason: 'not_signed_in' })
   })
 
   it('Supabase未設定（getSupabaseAdmin が null）なら DB を見ずに unavailable', async () => {
     vi.mocked(getSupabaseAdmin).mockReturnValue(null)
-    await expect(checkSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'unavailable' })
+    await expect(reserveSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'unavailable' })
   })
 
   it('行の取得に失敗したら not_permitted（許可に倒さない）', async () => {
     vi.mocked(getSupabaseAdmin).mockReturnValue(fakeAdmin({ selectError: { message: 'boom' } }) as never)
-    await expect(checkSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'not_permitted' })
+    await expect(reserveSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'not_permitted' })
   })
 
   it('行が無ければservice roleで自動作成を試み、作成した行のcan_use_shared_keyがfalseならnot_permitted', async () => {
@@ -155,14 +155,14 @@ describe('sharedApiKey / checkSharedAllowance', () => {
       upsertRow: { can_use_shared_key: false, shared_daily_count: 0, shared_last_used_date: null },
     })
     vi.mocked(getSupabaseAdmin).mockReturnValue(admin as never)
-    await expect(checkSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'not_permitted' })
+    await expect(reserveSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'not_permitted' })
     // idのみでupsertする（can_use_shared_key等はテーブルdefaultに委ねる）
     expect(admin.upsert).toHaveBeenCalledWith({ id: 'user-1' })
   })
 
   it('行の自動作成にも失敗したら not_permitted', async () => {
     vi.mocked(getSupabaseAdmin).mockReturnValue(fakeAdmin({ row: null, upsertRow: null }) as never)
-    await expect(checkSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'not_permitted' })
+    await expect(reserveSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'not_permitted' })
   })
 
   // Phase 1 Step 3 で can_use_shared_key の既定を true に反転したため、これが通常の経路。
@@ -172,7 +172,7 @@ describe('sharedApiKey / checkSharedAllowance', () => {
       row: null,
       upsertRow: { can_use_shared_key: true, shared_daily_count: 0, shared_last_used_date: null },
     }) as never)
-    await expect(checkSharedAllowance('user-1'))
+    await expect(reserveSharedAllowance('user-1'))
       .resolves.toEqual({ allowed: true, remaining: SHARED_DAILY_LIMIT })
   })
 
@@ -181,7 +181,7 @@ describe('sharedApiKey / checkSharedAllowance', () => {
       row: { can_use_shared_key: true, shared_daily_count: 0, shared_last_used_date: null },
     })
     vi.mocked(getSupabaseAdmin).mockReturnValue(admin as never)
-    await checkSharedAllowance('user-1')
+    await reserveSharedAllowance('user-1')
     expect(admin.upsert).not.toHaveBeenCalled()
   })
 
@@ -190,14 +190,14 @@ describe('sharedApiKey / checkSharedAllowance', () => {
     vi.mocked(getSupabaseAdmin).mockReturnValue(fakeAdmin({
       row: { can_use_shared_key: false, shared_daily_count: 0, shared_last_used_date: null },
     }) as never)
-    await expect(checkSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'not_permitted' })
+    await expect(reserveSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'not_permitted' })
   })
 
   it('今日まだ使っていなければ残り枠は上限いっぱい', async () => {
     vi.mocked(getSupabaseAdmin).mockReturnValue(fakeAdmin({
       row: { can_use_shared_key: true, shared_daily_count: 0, shared_last_used_date: null },
     }) as never)
-    await expect(checkSharedAllowance('user-1'))
+    await expect(reserveSharedAllowance('user-1'))
       .resolves.toEqual({ allowed: true, remaining: SHARED_DAILY_LIMIT })
   })
 
@@ -209,7 +209,7 @@ describe('sharedApiKey / checkSharedAllowance', () => {
         shared_last_used_date: jstDateString(),
       },
     }) as never)
-    await expect(checkSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'limit_reached' })
+    await expect(reserveSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'limit_reached' })
   })
 
   it('上限の1つ手前なら残り1で許可', async () => {
@@ -220,7 +220,7 @@ describe('sharedApiKey / checkSharedAllowance', () => {
         shared_last_used_date: jstDateString(),
       },
     }) as never)
-    await expect(checkSharedAllowance('user-1')).resolves.toEqual({ allowed: true, remaining: 1 })
+    await expect(reserveSharedAllowance('user-1')).resolves.toEqual({ allowed: true, remaining: 1 })
   })
 
   it('個人枠が残っていても、全体上限の予約に失敗すれば limit_reached', async () => {
@@ -229,7 +229,7 @@ describe('sharedApiKey / checkSharedAllowance', () => {
       globalReserved: false,
     })
     vi.mocked(getSupabaseAdmin).mockReturnValue(admin as never)
-    await expect(checkSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'limit_reached' })
+    await expect(reserveSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'limit_reached' })
     expect(admin.rpc).toHaveBeenCalledWith('try_reserve_global_quota', {
       p_today: jstDateString(),
       p_limit: GLOBAL_SHARED_DAILY_LIMIT,
@@ -241,7 +241,7 @@ describe('sharedApiKey / checkSharedAllowance', () => {
       row: { can_use_shared_key: true, shared_daily_count: 0, shared_last_used_date: null },
       globalReserveError: { message: 'boom' },
     }) as never)
-    await expect(checkSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'limit_reached' })
+    await expect(reserveSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'limit_reached' })
   })
 
   it('個人枠が上限に達していれば、全体上限の予約はしない（無駄な消費を避ける）', async () => {
@@ -253,7 +253,7 @@ describe('sharedApiKey / checkSharedAllowance', () => {
       },
     })
     vi.mocked(getSupabaseAdmin).mockReturnValue(admin as never)
-    await checkSharedAllowance('user-1')
+    await reserveSharedAllowance('user-1')
     expect(admin.rpc).not.toHaveBeenCalledWith('try_reserve_global_quota', expect.anything())
   })
 
@@ -266,7 +266,82 @@ describe('sharedApiKey / checkSharedAllowance', () => {
         shared_last_used_date: '2000-01-01',
       },
     }) as never)
-    await expect(checkSharedAllowance('user-1'))
+    await expect(reserveSharedAllowance('user-1'))
+      .resolves.toEqual({ allowed: true, remaining: SHARED_DAILY_LIMIT })
+  })
+})
+
+// 表示用の GET /api/capabilities が呼ぶ側。副作用が無いことがこの関数の存在理由なので、
+// 「予約しない」ことをテストの中心に置く
+describe('peekSharedAllowance（判定のみ・全体枠を消費しない）', () => {
+  const saved = process.env.SHARED_ANTHROPIC_API_KEY
+
+  beforeEach(() => { process.env.SHARED_ANTHROPIC_API_KEY = KEY })
+  afterEach(() => {
+    if (saved === undefined) delete process.env.SHARED_ANTHROPIC_API_KEY
+    else process.env.SHARED_ANTHROPIC_API_KEY = saved
+    vi.restoreAllMocks()
+  })
+
+  // 回帰テスト本体。ここが破れると、ユーザーがページを開き直すだけで全体枠が減り、
+  // LLMを一度も呼ばないまま1日50回のキルスイッチが落ちる
+  it('許可を返すときも全体上限の予約RPCを呼ばない', async () => {
+    const admin = fakeAdmin({
+      row: { can_use_shared_key: true, shared_daily_count: 0, shared_last_used_date: null },
+    })
+    vi.mocked(getSupabaseAdmin).mockReturnValue(admin as never)
+
+    await expect(peekSharedAllowance('user-1'))
+      .resolves.toEqual({ allowed: true, remaining: SHARED_DAILY_LIMIT })
+    expect(admin.rpc).not.toHaveBeenCalled()
+  })
+
+  it('個人枠の判定は reserve と同じ（上限に達していれば limit_reached）', async () => {
+    const admin = fakeAdmin({
+      row: {
+        can_use_shared_key:    true,
+        shared_daily_count:    SHARED_DAILY_LIMIT,
+        shared_last_used_date: jstDateString(),
+      },
+    })
+    vi.mocked(getSupabaseAdmin).mockReturnValue(admin as never)
+
+    await expect(peekSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'limit_reached' })
+    expect(admin.rpc).not.toHaveBeenCalled()
+  })
+
+  it('停止中のアカウントは not_permitted', async () => {
+    vi.mocked(getSupabaseAdmin).mockReturnValue(fakeAdmin({
+      row: { can_use_shared_key: false, shared_daily_count: 0, shared_last_used_date: null },
+    }) as never)
+    await expect(peekSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'not_permitted' })
+  })
+
+  // 行の自動作成は peek 側にも残す。表示のためのポーリングが結果的に user_setting の行を
+  // 先に作るため、persistMessage（fire-and-forget）との競合に対する保険にもなっている
+  it('行が無ければ自動作成し、既定のtrueなら許可を返す', async () => {
+    const admin = fakeAdmin({
+      row: null,
+      upsertRow: { can_use_shared_key: true, shared_daily_count: 0, shared_last_used_date: null },
+    })
+    vi.mocked(getSupabaseAdmin).mockReturnValue(admin as never)
+
+    await expect(peekSharedAllowance('user-1'))
+      .resolves.toEqual({ allowed: true, remaining: SHARED_DAILY_LIMIT })
+    expect(admin.upsert).toHaveBeenCalledWith({ id: 'user-1' })
+  })
+
+  // 【既知の制限】peek は全体枠を見ない（見るには予約するしかない構造のため）。
+  // 全体上限に達している日でも表示上は「残り3回」のままになり、実際に送信して初めて
+  // 弾かれる。全体枠と個人枠で reason を分ける改修（バックログ#2）とあわせて解消する
+  it('全体上限に達している日でも、表示用の残り回数は個人枠のまま返す', async () => {
+    const admin = fakeAdmin({
+      row: { can_use_shared_key: true, shared_daily_count: 0, shared_last_used_date: null },
+      globalReserved: false,
+    })
+    vi.mocked(getSupabaseAdmin).mockReturnValue(admin as never)
+
+    await expect(peekSharedAllowance('user-1'))
       .resolves.toEqual({ allowed: true, remaining: SHARED_DAILY_LIMIT })
   })
 })
