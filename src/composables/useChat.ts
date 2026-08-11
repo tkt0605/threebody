@@ -96,8 +96,22 @@ function flattenText(blocks: Message['blocks']) {
     .join('')
 }
 
+// バックエンドへ送る履歴の最大件数（user/assistant を合わせた通数）。
+// 10 ≒ 直近5往復。
+//
+// 【なぜ切るか】これまで会話の全メッセージを毎回送っており、入力トークンが会話の
+// 長さに比例して増え続けていた。しかも三体モードでは同じ履歴を副体2つ＋主体に
+// 送るため、その増分がそのまま3倍になる。1ターン $0.00998 の実測でも
+// 「出力ではなく入力の3倍化が支配的」と分かっており、ここが主なレバーになる。
+//
+// 【副作用】これより古い発言は参照できなくなる。長い会話で「さっき言ったこと」を
+// 忘れる挙動になるため、体感を見て調整すること
+export const HISTORY_LIMIT = 10
+
+// 直近 HISTORY_LIMIT 件だけをバックエンドへ送る。
+// 先頭ではなく末尾から取るのは、直近の文脈のほうが応答に効くため
 function toApiMessages(msgs: Message[]) {
-  return msgs.map(m => ({
+  return msgs.slice(-HISTORY_LIMIT).map(m => ({
     role: m.role,
     content: flattenText(m.blocks),
   }))

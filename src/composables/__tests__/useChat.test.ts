@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useChat } from '../useChat'
+import { useChat, HISTORY_LIMIT } from '../useChat'
 import type { ErrorBlock, Message, TextBlock } from '../../types/message'
 
 function sseStream(chunks: string[]): ReadableStream<Uint8Array> {
@@ -62,6 +62,50 @@ describe('useChat', () => {
     expect(textBlock(messages.value[0]!).content).toBe('こんにちは')
     expect(messages.value[1]?.role).toBe('assistant')
     expect(messages.value[1]?.streaming).toBe(false)
+  })
+
+  // 会話が伸びるほど入力トークンが線形に増え、三体モードではそれが3倍になる。
+  // 全件送信に戻ると気づかないままコストが膨らむため、ここで固定する
+  describe('履歴の切り詰め', () => {
+    // 送信ボディの messages を取り出す
+    function sentMessages(fetchMock: ReturnType<typeof vi.fn>): { role: string; content: string }[] {
+      const init = fetchMock.mock.calls[0]![1] as RequestInit
+      return (JSON.parse(init.body as string) as { messages: { role: string; content: string }[] }).messages
+    }
+
+    it(`直近 ${HISTORY_LIMIT} 件だけを送る`, async () => {
+      const fetchMock = vi.fn().mockResolvedValue(mockResponse({ body: sseStream(['data: [DONE]\n\n']) }))
+      vi.stubGlobal('fetch', fetchMock)
+
+      const { messages, sendMessage } = useChat()
+      // 上限を超える履歴を積む（古い順に 0,1,2,...）
+      messages.value = Array.from({ length: HISTORY_LIMIT + 6 }, (_, i) => ({
+        id:        `m${i}`,
+        role:      i % 2 === 0 ? 'user' as const : 'assistant' as const,
+        timestamp: new Date(),
+        blocks:    [{ type: 'text' as const, content: `古い発言${i}` }],
+      }))
+
+      await sendMessage('最新の発言')
+
+      const sent = sentMessages(fetchMock)
+      expect(sent).toHaveLength(HISTORY_LIMIT)
+      // 末尾から取ること。直近の文脈のほうが応答に効く
+      expect(sent.at(-1)?.content).toBe('最新の発言')
+      // 溢れた古い発言は落ちている
+      expect(sent.some(m => m.content === '古い発言0')).toBe(false)
+    })
+
+    it('上限以下なら全件そのまま送る', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(mockResponse({ body: sseStream(['data: [DONE]\n\n']) }))
+      vi.stubGlobal('fetch', fetchMock)
+
+      const { sendMessage } = useChat()
+      await sendMessage('こんにちは')
+
+      // 送信対象は「自分の発言まで」（応答用のプレースホルダは含めない）
+      expect(sentMessages(fetchMock)).toEqual([{ role: 'user', content: 'こんにちは' }])
+    })
   })
 
   it('SSEのtextイベントを順番に連結してストリーミング表示する', async () => {
