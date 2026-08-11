@@ -21,9 +21,17 @@ export const GLOBAL_SHARED_DAILY_LIMIT = 50
 // 他人のトークンを運営が負担する以上、ここはユーザーに選ばせない
 export const SHARED_THINKING_LEVEL = 2
 
+// limit_reached（そのユーザーが今日使い切った）と global_limit_reached（運営の
+// 全体枠が今日尽きた）は必ず区別する。前者は「あなたが使った」、後者は「あなたのせいでは
+// ない」であり、案内すべき次の行動も違う（前者=自分のキーを登録 or 明日、
+// 後者=時間をおくか自分のキーを登録）。同じ値にまとめると、1回も使っていない
+// ユーザーに「今日の無料利用は3回までです」と表示してしまう
 export type SharedAllowance =
   | { allowed: true;  remaining: number }
-  | { allowed: false; reason: 'unavailable' | 'not_signed_in' | 'not_permitted' | 'limit_reached' }
+  | {
+      allowed: false
+      reason: 'unavailable' | 'not_signed_in' | 'not_permitted' | 'limit_reached' | 'global_limit_reached'
+    }
 
 export function sharedApiKey(): string | null {
   const key = process.env.SHARED_ANTHROPIC_API_KEY?.trim()
@@ -84,10 +92,31 @@ async function reserveGlobalQuota(admin: SupabaseClient): Promise<boolean> {
   return data === true
 }
 
+// 今日の全体消費数を「読むだけ」で取得する（予約はしない）。
+// 表示用の peek が全体枠の状態を知るための経路。try_reserve_global_quota を呼ぶと
+// 見ただけで枠が減るため、こちらは単純な select にしてある。
+//
+// 行が無い＝今日はまだ誰も使っていないので 0。読めなかった場合は null を返し、
+// 呼び出し側は「不明」として表示を楽観側に倒す（実際に止めるのは予約側の責任で、
+// 表示の一時的な失敗でユーザーに「使えません」と誤って伝えないため）
+async function readGlobalUsage(admin: SupabaseClient): Promise<number | null> {
+  const { data, error } = await admin
+    .from('shared_key_global_usage')
+    .select('count')
+    .eq('day', jstDateString())
+    .maybeSingle<{ count: number | null }>()
+
+  if (error) {
+    console.warn('[sharedKey] 全体消費数の取得に失敗しました（表示のみ影響）', error.message)
+    return null
+  }
+  return data?.count ?? 0
+}
+
 // 判定の内訳をターミナルに出す。
 // SharedAllowance.reason は同じ値でも原因が複数あるため
-// （not_permitted = 明示的に停止 or 行の取得失敗 / limit_reached = 個人枠 or 全体枠）、
-// reason だけでは切り分けができない。運用時に「誰がなぜ弾かれたか」を追えるようにする
+// （not_permitted = 明示的に停止 or 行の取得失敗）、reason だけでは切り分けができない。
+// 運用時に「誰がなぜ弾かれたか」を追えるようにする
 function logDecision(userId: string | null, detail: string): void {
   console.info(`[sharedKey] ${detail}${userId ? ` user=${userId}` : ''}`)
 }
@@ -156,6 +185,15 @@ export async function peekSharedAllowance(userId: string | null): Promise<Shared
     return { allowed: false, reason: 'limit_reached' }
   }
 
+  // 全体枠の確認は個人枠の後。両方尽きている場合は個人枠を優先して伝える
+  // （そのユーザーにとっては「自分が使い切った」ほうが事実として近く、案内も明確なため）。
+  // ここは読むだけなので、予約側（reserveSharedAllowance）とは違いカウンタを動かさない
+  const globalUsed = await readGlobalUsage(admin)
+  if (globalUsed !== null && globalUsed >= GLOBAL_SHARED_DAILY_LIMIT) {
+    logDecision(userId, `全体の1日上限に到達（${globalUsed}/${GLOBAL_SHARED_DAILY_LIMIT}回）`)
+    return { allowed: false, reason: 'global_limit_reached' }
+  }
+
   // 成功時はここでログを出さない。この関数は表示用の GET /api/capabilities からも
   // 呼ばれ、ページを開くたびに「許可」が1行増えてしまう。許可の記録は実際にLLMを
   // 呼ぶ reserveSharedAllowance 側に置き、ログ1行＝1ターンの対応を保つ
@@ -176,9 +214,11 @@ export async function reserveSharedAllowance(userId: string | null): Promise<Sha
   const admin = getSupabaseAdmin()
   if (!admin) return { allowed: false, reason: 'unavailable' }
 
+  // peek の select をすり抜けた分（読んだ後・予約する前に他のリクエストが枠を取った）は
+  // ここで確実に止まる。判定の正本は常にこちらのRPC側
   if (!(await reserveGlobalQuota(admin))) {
     logDecision(userId, `全体の1日上限に到達（上限${GLOBAL_SHARED_DAILY_LIMIT}回/日）`)
-    return { allowed: false, reason: 'limit_reached' }
+    return { allowed: false, reason: 'global_limit_reached' }
   }
 
   const used = SHARED_DAILY_LIMIT - allowance.remaining

@@ -99,21 +99,25 @@ router.post('/chat', chatRateLimit, async (req, res) => {
           res.write('data: [DONE]\n\n')
           return
         }
-      } else if (allowance.reason !== 'limit_reached') {
-        // 判定の内訳（誰が・なぜ弾かれたか）は peekSharedAllowance 側で出している。
-        // reason は同じ値でも原因が複数あるため、切り分けが要る箇所に近いあちらに寄せてある
-      } else {
-        // 既存のerrorイベント形式に乗せる。フロントはこれをそのまま描画できる
-        // code: 'limit_reached' はバグではなく仕様どおりの制限なので、フロント側で
-        // 「問題を報告する」ボタン（本物のエラー用UI）を出さないための判別に使う
+      } else if (allowance.reason === 'limit_reached' || allowance.reason === 'global_limit_reached') {
+        // 既存のerrorイベント形式に乗せる。フロントはこれをそのまま描画できる。
+        // code はバグではなく仕様どおりの制限であることの印で、フロント側は
+        // 「問題を報告する」ボタン（本物のエラー用UI）を出さない判別に使う。
+        //
+        // 個人枠と全体枠で文言を必ず分ける。全体枠で弾かれたユーザーは今日まだ1回も
+        // 使っていないことがあり、そこへ「今日の無料利用は3回までです」と出すと
+        // 「使っていないのに使い切った」と言われたことになる
         res.write(`data: ${JSON.stringify({
           type:    'error',
-          code:    'limit_reached',
-          message: `今日の無料利用は${SHARED_DAILY_LIMIT}回までです。設定から自分のAPIキーを登録すると続けて使えます。`,
+          code:    allowance.reason,
+          message: allowance.reason === 'limit_reached'
+            ? `今日の無料利用は${SHARED_DAILY_LIMIT}回までです。設定から自分のAPIキーを登録すると続けて使えます。`
+            : '本日ぶんの無料お試し枠（全体）が終了しました。明日また使えます。今すぐ続けるなら設定から自分のAPIキーを登録してください。',
         })}\n\n`)
         return
       }
-      // unavailable / not_signed_in / not_permitted は従来どおりの処理へ落ちる
+      // unavailable / not_signed_in / not_permitted は従来どおりの処理へ落ちる。
+      // 判定の内訳（誰が・なぜ弾かれたか）は peekSharedAllowance 側でログに出している
     }
 
     // ── 三体モード ─────────────────────────────────────────────────────────────

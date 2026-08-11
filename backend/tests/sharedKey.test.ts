@@ -16,17 +16,23 @@ type QuotaRow = {
   shared_last_used_date: string  | null
 }
 
-// peekSharedAllowance が使うのは .from().select().eq().maybeSingle() と、
-// （行が無い場合のみ）.from().upsert().select().maybeSingle()。
+// peekSharedAllowance が使うのは user_setting への .select().eq().maybeSingle()、
+// （行が無い場合のみ）.upsert().select().maybeSingle()、そして
+// shared_key_global_usage への .select().eq().maybeSingle()（読むだけ・予約しない）。
 // reserveSharedAllowance はそれに加えて最後に .rpc('try_reserve_global_quota', ...) を呼ぶ。
 // consumeSharedQuota が使うのは .rpc('consume_shared_quota', ...) だけ。
-// rpc は呼ばれる関数名で応答を出し分ける（片方だけ差し替えたいテストがあるため）
+//
+// from はテーブル名で、rpc は関数名で応答を出し分ける（片方だけ差し替えたいテストがあるため）
 function fakeAdmin(opts: {
   row?: QuotaRow | null
   selectError?: { message: string } | null
   rpcError?: { message: string } | null
   upsertRow?: QuotaRow | null
   upsertError?: { message: string } | null
+  // shared_key_global_usage の今日の行。既定は0回（＝全体枠に余裕がある）。
+  // null は「今日の行がまだ無い」＝誰も使っていない状態を表す
+  globalUsed?: number | null
+  globalUsageError?: { message: string } | null
   // try_reserve_global_quota の戻り値。既定は true（＝全体上限にはまだ余裕がある）にして、
   // 個人枠のテストがこれで足を取られないようにする
   globalReserved?: boolean
@@ -46,6 +52,12 @@ function fakeAdmin(opts: {
   const upsertSelect = vi.fn().mockReturnValue({ maybeSingle: upsertMaybeSingle })
   const upsert        = vi.fn().mockReturnValue({ select: upsertSelect })
 
+  const usageMaybeSingle = vi.fn().mockResolvedValue({
+    data:  opts.globalUsed === undefined ? { count: 0 } : (opts.globalUsed === null ? null : { count: opts.globalUsed }),
+    error: opts.globalUsageError ?? null,
+  })
+  const usageSelect = vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ maybeSingle: usageMaybeSingle }) })
+
   const rpc = vi.fn().mockImplementation((fn: string) => {
     if (fn === 'try_reserve_global_quota') {
       return Promise.resolve({
@@ -55,7 +67,11 @@ function fakeAdmin(opts: {
     }
     return Promise.resolve({ data: null, error: opts.rpcError ?? null })
   })
-  return { from: vi.fn().mockReturnValue({ select, upsert }), rpc, upsert }
+
+  const from = vi.fn().mockImplementation((table: string) =>
+    table === 'shared_key_global_usage' ? { select: usageSelect } : { select, upsert })
+
+  return { from, rpc, upsert, usageSelect }
 }
 
 describe('hasOwnCloudKey', () => {
@@ -223,17 +239,31 @@ describe('sharedApiKey / reserveSharedAllowance（判定＋全体枠の予約）
     await expect(reserveSharedAllowance('user-1')).resolves.toEqual({ allowed: true, remaining: 1 })
   })
 
-  it('個人枠が残っていても、全体上限の予約に失敗すれば limit_reached', async () => {
+  // 個人枠（limit_reached）と混同しないこと。このユーザーは今日まだ0回しか使っていない
+  it('個人枠が残っていても、全体上限の予約に失敗すれば global_limit_reached', async () => {
     const admin = fakeAdmin({
       row: { can_use_shared_key: true, shared_daily_count: 0, shared_last_used_date: null },
       globalReserved: false,
     })
     vi.mocked(getSupabaseAdmin).mockReturnValue(admin as never)
-    await expect(reserveSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'limit_reached' })
+    await expect(reserveSharedAllowance('user-1'))
+      .resolves.toEqual({ allowed: false, reason: 'global_limit_reached' })
     expect(admin.rpc).toHaveBeenCalledWith('try_reserve_global_quota', {
       p_today: jstDateString(),
       p_limit: GLOBAL_SHARED_DAILY_LIMIT,
     })
+  })
+
+  // peek の select が上限未満を返した直後に他のリクエストが枠を取り切った場合、
+  // 最後に止められるのは予約RPCだけ。ここが判定の正本であることを固定する
+  it('peekが通しても、予約RPCが false を返せば global_limit_reached', async () => {
+    vi.mocked(getSupabaseAdmin).mockReturnValue(fakeAdmin({
+      row: { can_use_shared_key: true, shared_daily_count: 0, shared_last_used_date: null },
+      globalUsed: 0,
+      globalReserved: false,
+    }) as never)
+    await expect(reserveSharedAllowance('user-1'))
+      .resolves.toEqual({ allowed: false, reason: 'global_limit_reached' })
   })
 
   it('全体上限の予約RPC自体が失敗しても許可に倒さない', async () => {
@@ -241,7 +271,8 @@ describe('sharedApiKey / reserveSharedAllowance（判定＋全体枠の予約）
       row: { can_use_shared_key: true, shared_daily_count: 0, shared_last_used_date: null },
       globalReserveError: { message: 'boom' },
     }) as never)
-    await expect(reserveSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'limit_reached' })
+    await expect(reserveSharedAllowance('user-1'))
+      .resolves.toEqual({ allowed: false, reason: 'global_limit_reached' })
   })
 
   it('個人枠が上限に達していれば、全体上限の予約はしない（無駄な消費を避ける）', async () => {
@@ -331,18 +362,61 @@ describe('peekSharedAllowance（判定のみ・全体枠を消費しない）', 
     expect(admin.upsert).toHaveBeenCalledWith({ id: 'user-1' })
   })
 
-  // 【既知の制限】peek は全体枠を見ない（見るには予約するしかない構造のため）。
-  // 全体上限に達している日でも表示上は「残り3回」のままになり、実際に送信して初めて
-  // 弾かれる。全体枠と個人枠で reason を分ける改修（バックログ#2）とあわせて解消する
-  it('全体上限に達している日でも、表示用の残り回数は個人枠のまま返す', async () => {
+  // 全体枠は「予約せずに読むだけ」で確認する。これが無いと、全体上限に達した日でも
+  // UIは「残り3回」と表示し続け、送信して初めて弾かれることになる
+  it('全体消費数が上限に達していれば global_limit_reached（予約はしない）', async () => {
     const admin = fakeAdmin({
       row: { can_use_shared_key: true, shared_daily_count: 0, shared_last_used_date: null },
-      globalReserved: false,
+      globalUsed: GLOBAL_SHARED_DAILY_LIMIT,
     })
     vi.mocked(getSupabaseAdmin).mockReturnValue(admin as never)
 
     await expect(peekSharedAllowance('user-1'))
+      .resolves.toEqual({ allowed: false, reason: 'global_limit_reached' })
+    expect(admin.rpc).not.toHaveBeenCalled()
+  })
+
+  it('全体消費数が上限の1つ手前ならまだ許可', async () => {
+    vi.mocked(getSupabaseAdmin).mockReturnValue(fakeAdmin({
+      row: { can_use_shared_key: true, shared_daily_count: 0, shared_last_used_date: null },
+      globalUsed: GLOBAL_SHARED_DAILY_LIMIT - 1,
+    }) as never)
+    await expect(peekSharedAllowance('user-1'))
       .resolves.toEqual({ allowed: true, remaining: SHARED_DAILY_LIMIT })
+  })
+
+  it('今日の行がまだ無ければ0回として扱う', async () => {
+    vi.mocked(getSupabaseAdmin).mockReturnValue(fakeAdmin({
+      row: { can_use_shared_key: true, shared_daily_count: 0, shared_last_used_date: null },
+      globalUsed: null,
+    }) as never)
+    await expect(peekSharedAllowance('user-1'))
+      .resolves.toEqual({ allowed: true, remaining: SHARED_DAILY_LIMIT })
+  })
+
+  // 表示専用の経路なので、ここだけは安全側（不許可）に倒さない。実際に止めるのは
+  // 予約側の責任であり、一時的な読み取り失敗で「使えません」と誤って伝えないため
+  it('全体消費数を読めなかった場合は表示を楽観側に倒す', async () => {
+    vi.mocked(getSupabaseAdmin).mockReturnValue(fakeAdmin({
+      row: { can_use_shared_key: true, shared_daily_count: 0, shared_last_used_date: null },
+      globalUsageError: { message: 'boom' },
+    }) as never)
+    await expect(peekSharedAllowance('user-1'))
+      .resolves.toEqual({ allowed: true, remaining: SHARED_DAILY_LIMIT })
+  })
+
+  // 個人枠が尽きている日は、全体枠の状態に関わらず個人枠を伝える
+  // （そのユーザーにとっては「自分が使い切った」ほうが事実として近い）
+  it('個人枠と全体枠の両方が尽きていれば個人枠（limit_reached）を優先する', async () => {
+    vi.mocked(getSupabaseAdmin).mockReturnValue(fakeAdmin({
+      row: {
+        can_use_shared_key:    true,
+        shared_daily_count:    SHARED_DAILY_LIMIT,
+        shared_last_used_date: jstDateString(),
+      },
+      globalUsed: GLOBAL_SHARED_DAILY_LIMIT,
+    }) as never)
+    await expect(peekSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'limit_reached' })
   })
 })
 
