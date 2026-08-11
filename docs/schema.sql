@@ -259,8 +259,8 @@ revoke update (can_use_shared_key, shared_daily_count, shared_last_used_date)
 -- 1にリセットする。
 --
 -- 【既知の残課題・要検討】この関数自体は「上限を超えていないか」を見ない。
--- 上限判定は呼び出し側の checkSharedAllowance（LLM応答の開始前）が行い、この関数は
--- 応答が完了した後に加算するだけ（backend/sharedKey.ts:85-89, backend/routes/chat.ts の
+-- 上限判定は呼び出し側の peekSharedAllowance（LLM応答の開始前）が行い、この関数は
+-- 応答が完了した後に加算するだけ（backend/sharedKey.ts, backend/routes/chat.ts の
 -- finally 相当）。判定と加算の間にLLM応答という長い時間が挟まるため、同一ユーザーが
 -- ほぼ同時に複数リクエストを投げた場合、両方が「まだ上限内」と判定されて通過し、
 -- 結果的に日次上限を1〜数回分超過しうる（加算そのものはこの関数により正しく記録される
@@ -289,8 +289,9 @@ grant execute on function public.consume_shared_quota(uuid, date) to service_rol
 
 -- ============================================================================
 -- 5. RPC — 共有キーの「全体」日次上限を原子的に予約する（Phase 1のキルスイッチ）
--- （backend/sharedKey.ts の checkSharedAllowance が、ユーザー個別の判定をすべて
--- 通過した最後に呼ぶ。service_role からのみ呼ばれる想定）
+-- （backend/sharedKey.ts の reserveSharedAllowance が、ユーザー個別の判定
+-- （peekSharedAllowance）をすべて通過した最後に呼ぶ。service_role からのみ呼ばれる想定。
+-- 表示専用の GET /api/capabilities は peek 側を呼ぶため、ここには到達しない）
 --
 -- 【設計】consume_shared_quota は「判定→LLM応答→加算」の間にレースがあり、同時
 -- リクエストで上限を超過しうる既知の問題を上のコメントに明記している。全体上限は
