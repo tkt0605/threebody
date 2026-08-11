@@ -77,7 +77,20 @@ git log と実コードで裏を取った現在地。**進捗はこの節を正�
 |---|---|
 | `orchestrateMultiBody` は `available` の要素が `allBodies` と同一参照でないと `bodyIndex` が `-1` になる | `backend/llm/textService.ts` |
 | `providers/anthropic.ts` はモジュール読込時に `new Anthropic()` するため、jsdom環境のテストではモック必須 | `backend/llm/providers/anthropic.ts` |
-| 全体クォータは予約時に消費されるため、LLM失敗時も枠が減る（個人クォータは減らない） | `backend/sharedKey.ts` |
+| ~~全体クォータは予約時に消費されるため、LLM失敗時も枠が減る~~ → **解消**（下記） | `backend/sharedKey.ts` |
+
+### 2026-08-11 追加分（共有キーの枠まわり）
+
+| 内容 | 状態 |
+|---|---|
+| `/api/capabilities` が予約側を呼んでおり、ページを開くだけで全体枠が減っていた | 解消。`peekSharedAllowance`（判定のみ）と `reserveSharedAllowance`（判定＋予約）に分割 |
+| `limit_reached` が個人枠と全体枠で同じ値だった（未使用のユーザーに「3回まで使いました」と表示） | 解消。`global_limit_reached` を新設し、SSE・UI・ダイアログの文言を分離 |
+| 予約した全体枠が失敗時に戻らない | 解消。`release_global_quota` RPC と `releaseGlobalQuota()` を新設し、`routes/chat.ts` の finally で「共有キーで提供できなかったとき」だけ返す |
+| `/api/capabilities`・`/api/chat` にルートテストが無い | 解消。`backend/tests/capabilitiesRoute.test.ts` / `chatRoute.test.ts`（依存追加なしで express を ephemeral port に立てて叩く） |
+
+**要適用** — `docs/schema.sql` 6章の**ブロックC**（`release_global_quota`）をSupabaseへ流すこと。
+未適用でもチャットは動くが、失敗したぶんの全体枠が戻らず、ログに
+`[sharedKey] 全体枠の解放に失敗しました` が出続ける。
 
 ---
 

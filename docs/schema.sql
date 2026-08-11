@@ -323,6 +323,32 @@ $$;
 revoke all on function public.try_reserve_global_quota(date, integer) from public;
 grant execute on function public.try_reserve_global_quota(date, integer) to service_role;
 
+-- 予約の取り消し。try_reserve_global_quota で1つ取ったあと、LLM応答を提供できなかった
+-- （プロバイダーのエラー・ユーザーの中断）場合に、その1つを枠へ返す。
+-- backend/routes/chat.ts の finally が「予約したが completed に到達しなかった」ときだけ呼ぶ。
+--
+-- 【設計】全体上限が縛りたいのは「実際に提供できたターン数」であり、提供できなかった分まで
+-- 枠を食うと、プロバイダー障害の日に無料枠が誰にも届かないまま尽きる。個人枠
+-- （consume_shared_quota）も成功時のみ加算しており、こちらを解放することで両者の意味が揃う。
+--
+-- 【安全側の作り】greatest(count - 1, 0) で負に落ちないようにしてある。二重解放や、
+-- 日を跨いで解放が走った場合（p_today が予約時と別日になる）でもカウンタは壊れない。
+-- 日跨ぎのときは where が一致せず何も起きないか、翌日の枠が1つ多くなるだけで、
+-- 上限そのものは破れない
+create or replace function public.release_global_quota(p_today date)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.shared_key_global_usage
+  set count = greatest(count - 1, 0)
+  where day = p_today;
+$$;
+
+revoke all on function public.release_global_quota(date) from public;
+grant execute on function public.release_global_quota(date) to service_role;
+
 -- ============================================================================
 -- 6. マイグレーション — 既存プロジェクトへの適用手順
 --
@@ -332,6 +358,8 @@ grant execute on function public.try_reserve_global_quota(date, integer) to serv
 --
 -- 【ブロックA】は何度流しても壊れない（冪等）。
 -- 【ブロックB】は一度きり。Aだけを流し直したい場合はBを含めないこと。
+-- 【ブロックC】は何度流しても壊れない（冪等）。A・B適用済みのプロジェクトは
+--   これだけを追加で流せばよい。
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -416,3 +444,33 @@ update public.user_setting
 --    無関係な過去日でテストしてから消す。p_limit=0 なので false が返れば正常
 --      select public.try_reserve_global_quota(date '1999-01-01', 0);  -- 期待値: false
 --      delete from public.shared_key_global_usage where day = date '1999-01-01';
+
+-- ----------------------------------------------------------------------------
+-- ブロックC：予約の解放 — 何度実行してもよい
+--
+-- A・B を適用済みのプロジェクトで、今後これだけを追加で流す。
+-- これが無いと backend の releaseGlobalQuota が「関数が無い」で失敗し、
+-- LLM応答に失敗したぶんの全体枠が戻らないまま減り続ける
+-- （＝チャットは動くが、障害の多い日に無料枠が早く尽きる）。
+-- ----------------------------------------------------------------------------
+
+create or replace function public.release_global_quota(p_today date)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.shared_key_global_usage
+  set count = greatest(count - 1, 0)
+  where day = p_today;
+$$;
+
+revoke all on function public.release_global_quota(date) from public;
+grant execute on function public.release_global_quota(date) to service_role;
+
+-- 確認（無関係な過去日で試してから消す）
+--   select public.try_reserve_global_quota(date '1999-01-01', 10);  -- count = 1
+--   select public.release_global_quota(date '1999-01-01');          -- count = 0
+--   select public.release_global_quota(date '1999-01-01');          -- 0 のまま（負にならない）
+--   select * from public.shared_key_global_usage where day = date '1999-01-01';
+--   delete from public.shared_key_global_usage where day = date '1999-01-01';
