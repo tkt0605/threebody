@@ -42,6 +42,10 @@ function classifyErrorMessage(err: unknown): string{
   }
   if (err instanceof Error){
         if (err.message.startsWith('HTTP 429')) return 'APIの利用制限に達しました。しばらく経ってから再試行してください。'
+    // /api/chat は認証必須。画面はログイン済みでも、セッションの期限切れで
+    // ここに来ることがある。「リクエストが失敗しました (HTTP 401)」では
+    // 何をすればいいか分からないので、再ログインを促す
+    if (err.message.startsWith('HTTP 401')) return 'ログインの有効期限が切れました。再度ログインしてください。'
     if (err.message.startsWith('HTTP 5'))   return `サーバーエラーが発生しました (${err.message})。`
     if (err.message.startsWith('HTTP '))    return `リクエストが失敗しました (${err.message})。`
     return err.message

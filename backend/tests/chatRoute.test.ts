@@ -45,9 +45,39 @@ async function post(body: unknown) {
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(body),
     })
-    return parseSSE(await response.text())
+    return { status: response.status, ...parseSSE(await response.text()) }
   })
 }
+
+// 認証は全経路の手前にある。ここが通らないと以降の分岐は1つも評価されない
+describe('POST /api/chat — 認証', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(reserveSharedAllowance).mockResolvedValue({ allowed: true, remaining: 2 })
+  })
+
+  // 未ログインのcurl直叩きでこのサーバーをLLMプロキシとして踏み台にできる状態を塞ぐ。
+  // 自分のAPIキーを持っていても通さない
+  it('トークンが無ければ 401 を返し、LLMには一切到達しない', async () => {
+    vi.mocked(resolveUserId).mockResolvedValue(null)
+    const { status } = await post(OWN_KEY)
+
+    expect(status).toBe(401)
+    expect(orchestrateMultiBody).not.toHaveBeenCalled()
+    expect(reserveSharedAllowance).not.toHaveBeenCalled()
+  })
+
+  // SSEヘッダを flush した後ではステータスを変えられない。
+  // 401 が実際に返っている＝認証判定がヘッダ送出より前にあることの担保になる
+  it('401 は SSE ではなく通常のJSONとして返る', async () => {
+    vi.mocked(resolveUserId).mockResolvedValue(null)
+    const { status, events, done } = await post(OWN_KEY)
+
+    expect(status).toBe(401)
+    expect(events).toHaveLength(0)
+    expect(done).toBe(false)
+  })
+})
 
 describe('POST /api/chat — 共有キーの枠', () => {
   beforeEach(() => {

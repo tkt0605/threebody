@@ -47,14 +47,26 @@ router.post('/chat', chatRateLimit, async (req, res) => {
     apiKey?:       string
   }
 
+  // 認証は必須。トークンが無い・検証に失敗したリクエストはここで終わる。
+  //
+  // 【必須にした理由】以前は null を許して「自分のAPIキーを持つユーザーは未ログインでも
+  // 使える」設計だったが、それはこのサーバーを誰でもLLMプロキシとして踏み台にできる
+  // ということでもあった。運営のコストは増えない（共有キー経路は元から userId 必須）が、
+  // 帯域とプロセスがただ乗りされ、無料プランでは可用性に直結する。
+  // フロントは router の requiresAuth で全画面ログイン必須なので、実質的な後退は無い。
+  //
+  // 【順序が重要】SSEヘッダを flush した後では 401 を返せない（ステータスは送信済みに
+  // なる）。認証判定は必ずヘッダ送出より前に置くこと
+  const userId = await resolveUserId(req.headers.authorization)
+  if (!userId) {
+    res.status(401).json({ error: 'ログインが必要です。' })
+    return
+  }
+
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
   res.flushHeaders()
-
-  // 共有APIキーの割当判定にのみ使う。トークンが無い・検証に失敗した場合は null になり、
-  // 従来どおり（ユーザー自身のキーで）動く。認証は必須にしない
-  const userId = await resolveUserId(req.headers.authorization)
 
   const config      = (LEVEL_CONFIG[thinkingLevel] ?? LEVEL_CONFIG[3])!
   const oaiMessages = messages as unknown as OpenAI.Chat.ChatCompletionMessageParam[]
