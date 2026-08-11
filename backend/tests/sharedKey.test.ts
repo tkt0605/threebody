@@ -165,7 +165,9 @@ describe('sharedApiKey / checkSharedAllowance', () => {
     await expect(checkSharedAllowance('user-1')).resolves.toEqual({ allowed: false, reason: 'not_permitted' })
   })
 
-  it('行が無く、自動作成した行のcan_use_shared_keyがtrueなら許可される（招待制反転後の想定挙動）', async () => {
+  // Phase 1 Step 3 で can_use_shared_key の既定を true に反転したため、これが通常の経路。
+  // 新規ユーザーの初回メッセージ（＝まだ user_setting の行が無い）がそのまま通る
+  it('行が無くても、自動作成した行が既定のtrueなら許可される', async () => {
     vi.mocked(getSupabaseAdmin).mockReturnValue(fakeAdmin({
       row: null,
       upsertRow: { can_use_shared_key: true, shared_daily_count: 0, shared_last_used_date: null },
@@ -183,7 +185,8 @@ describe('sharedApiKey / checkSharedAllowance', () => {
     expect(admin.upsert).not.toHaveBeenCalled()
   })
 
-  it('can_use_shared_key が false なら not_permitted', async () => {
+  // 既定が true になった後の false は「運営が明示的に停止した」を意味する（ブロックリスト方式）
+  it('can_use_shared_key が false なら not_permitted（明示的に停止されたアカウント）', async () => {
     vi.mocked(getSupabaseAdmin).mockReturnValue(fakeAdmin({
       row: { can_use_shared_key: false, shared_daily_count: 0, shared_last_used_date: null },
     }) as never)
