@@ -13,7 +13,7 @@ import { collectSecrets, sanitizeErrorMessage } from '../utils/errorSanitize'
 import { resolveUserId } from '../auth'
 import {
   SHARED_DAILY_LIMIT, SHARED_THINKING_LEVEL,
-  sharedApiKey, hasOwnCloudKey, reserveSharedAllowance, consumeSharedQuota,
+  sharedApiKey, hasOwnCloudKey, reserveSharedAllowance, consumeSharedQuota, releaseGlobalQuota,
 } from '../sharedKey'
 
 const router = Router()
@@ -63,6 +63,9 @@ router.post('/chat', chatRateLimit, async (req, res) => {
   // カウントを増やしてよいのは両方 true のときだけ（判定は finally）
   let sharedKeyUsed = false
   let completed     = false
+  // 全体枠を1つ予約したか。予約は応答を始める前に取るので、提供できずに終わった場合は
+  // finally で返す必要がある（返さないと、失敗するたびにキルスイッチが目減りする）
+  let globalReserved = false
 
   try {
     // ── 共有キーへのフォールバック ─────────────────────────────────────────────
@@ -72,6 +75,10 @@ router.post('/chat', chatRateLimit, async (req, res) => {
       const allowance = await reserveSharedAllowance(userId)
 
       if (allowance.allowed) {
+        // この時点で全体枠を1つ取っている。以降どの経路で抜けても、
+        // [DONE] に到達しなければ finally で返す
+        globalReserved = true
+
         // allowed を返した時点で共有キーは存在するが、型の上では null を排除できない
         const key = sharedApiKey()
         if (key) {
@@ -174,11 +181,19 @@ router.post('/chat', chatRateLimit, async (req, res) => {
     console.error('[/api/chat]', message)
     res.write(`data: ${JSON.stringify({ type: 'error', message })}\n\n`)
   } finally {
-    // finally で「無条件に」消費すると、catch を通ったエラー時にも加算されて要件と逆になる。
-    // 増やしてよいのは共有キーを使い、かつ [DONE] まで到達したときだけ。
-    // completed の判定が入っているため、この位置でも catch 経由では発火しない
-    if (sharedKeyUsed && completed && userId) {
+    // 「共有キーで応答を提供できた」＝ 個人枠を数えてよく、全体枠も返さない唯一の状態。
+    // finally で「無条件に」消費すると catch 経由のエラー時にも加算されて要件と逆になるため
+    // completed を見るが、完了しても共有キーを使っていない経路（予約後にキーが読めず
+    // Ollama へ落ちた等）があるので、completed だけでも足りない
+    const sharedKeyServed = sharedKeyUsed && completed
+
+    if (sharedKeyServed && userId) {
       await consumeSharedQuota(userId)
+    }
+    // 予約したのに提供できなかったぶんは全体枠へ返す。
+    // 個人枠が「提供できたときだけ加算」なのと表裏の関係になっている
+    if (globalReserved && !sharedKeyServed) {
+      await releaseGlobalQuota()
     }
     res.end()
   }

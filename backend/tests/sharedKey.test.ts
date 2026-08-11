@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
-  hasOwnCloudKey, sharedApiKey, peekSharedAllowance, reserveSharedAllowance, consumeSharedQuota,
+  hasOwnCloudKey, sharedApiKey, peekSharedAllowance, reserveSharedAllowance, consumeSharedQuota, releaseGlobalQuota,
   SHARED_DAILY_LIMIT, GLOBAL_SHARED_DAILY_LIMIT,
 } from '../sharedKey'
 import { jstDateString } from '../utils/jstDate'
@@ -448,6 +448,41 @@ describe('consumeSharedQuota', () => {
     await expect(consumeSharedQuota('user-1')).resolves.toBeUndefined()
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining('利用回数の記録に失敗しました'),
+      'db down',
+    )
+  })
+})
+
+// 予約したのに応答を提供できなかったぶんを全体枠へ返す側。
+// 呼ぶ条件（いつ返すか）は routes/chat.ts の責務なので chatRoute.test.ts で担保し、
+// ここでは「返す操作そのもの」だけを見る
+describe('releaseGlobalQuota', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('Supabase未設定なら何もせず静かに戻る', async () => {
+    vi.mocked(getSupabaseAdmin).mockReturnValue(null)
+    await expect(releaseGlobalQuota()).resolves.toBeUndefined()
+  })
+
+  // 予約と同じ暦日で返すこと。ここが別計算だと日跨ぎで別の日の枠を戻してしまう
+  it('今日の日付で release_global_quota RPC を呼ぶ', async () => {
+    const admin = fakeAdmin()
+    vi.mocked(getSupabaseAdmin).mockReturnValue(admin as never)
+
+    await releaseGlobalQuota()
+
+    expect(admin.rpc).toHaveBeenCalledWith('release_global_quota', { p_today: jstDateString() })
+  })
+
+  // 応答の失敗は既にユーザーへ伝わっている。ここで throw しても取り消せるものが無い
+  it('RPCが失敗しても throw せず、ログに残すだけ', async () => {
+    const admin = fakeAdmin({ rpcError: { message: 'db down' } })
+    vi.mocked(getSupabaseAdmin).mockReturnValue(admin as never)
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await expect(releaseGlobalQuota()).resolves.toBeUndefined()
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('全体枠の解放に失敗しました'),
       'db down',
     )
   })

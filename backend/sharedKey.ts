@@ -226,6 +226,27 @@ export async function reserveSharedAllowance(userId: string | null): Promise<Sha
   return allowance
 }
 
+// 予約した全体枠を1つ返す。呼ぶのは「予約したが応答を提供できなかった」ときだけ。
+//
+// 全体上限が縛りたいのは「実際に提供できたターン数」なので、プロバイダーのエラーや
+// ユーザーの中断で1文字も届かなかった分まで枠を食わせない。個人枠（consumeSharedQuota）が
+// 成功時のみ加算しているのと意味を揃える意図でもある。
+//
+// 【許容している誤差】途中まで出力してから落ちた場合もここで戻すため、トークンを
+// 消費した失敗の分だけ全体枠が甘くなる（最大でも失敗した回数ぶん）。上限50回/日に対する
+// 影響は小さく、逆に「障害の日に無料枠が誰にも届かないまま尽きる」ほうが損失が大きいと判断した。
+// 日跨ぎのタイミングで呼ばれた場合の扱いは docs/schema.sql の release_global_quota を参照
+export async function releaseGlobalQuota(): Promise<void> {
+  const admin = getSupabaseAdmin()
+  if (!admin) return
+
+  const { error } = await admin.rpc('release_global_quota', { p_today: jstDateString() })
+
+  // 戻せなくても応答の失敗自体は既にユーザーへ伝わっている。
+  // ここで throw しても何も取り消せないので、記録に残して続行する
+  if (error) console.error('[sharedKey] 全体枠の解放に失敗しました', error.message)
+}
+
 // 消費を1回分記録する。呼ぶのは「共有キーを使い、かつ応答が正常完了した」ときだけ。
 //
 // DB側の consume_shared_quota（単一UPDATE文、行ロックで直列化）を呼ぶことで原子的に加算する。
