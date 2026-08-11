@@ -63,7 +63,10 @@ renderer.code = ({ text, lang }) => {
 marked.use({ renderer })
 
 function renderMarkdown(content: string): string {
-  return String(marked.parse(content))
+  // async: false を明示して同期版のオーバーロードを選ぶ。省略すると戻り値の型が
+  // string | Promise<string> になり、String() でくるむと Promise のときに
+  // 「[object Promise]」がそのまま描画されうる
+  return marked.parse(content, { async: false })
 }
 
 function handleCopyClick(event: MouseEvent) {

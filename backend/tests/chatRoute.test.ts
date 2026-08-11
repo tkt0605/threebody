@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import chatRouter from '../routes/chat'
 import { withRouter, parseSSE } from './helpers/testServer'
 import { SHARED_DAILY_LIMIT, reserveSharedAllowance, consumeSharedQuota, releaseGlobalQuota, sharedApiKey } from '../sharedKey'
-import { orchestrateMultiBody, streamBodyOAI } from '../llm/textService'
+import { orchestrateMultiBody } from '../llm/textService'
 import { resolveUserId } from '../auth'
 
 vi.mock('../auth', () => ({ resolveUserId: vi.fn() }))

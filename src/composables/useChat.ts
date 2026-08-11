@@ -26,7 +26,7 @@ export function rawErrorMessage(err: unknown): string{
 // 付くコード。この種のエラーは reportError の対象にしない（ユーザーに「異常」と誤解させないため）
 class ChatStreamError extends Error {
   code?: string | undefined
-  constructor(message?: string | undefined, code?: string | undefined){
+  constructor(message?: string, code?: string){
     super(message)
     this.code = code
   }

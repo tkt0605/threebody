@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue'
-import {  useSettings,  isBodyUsable,  type Language, type ThinkingLevel, type Provider, type VoiceStyle, type Preset, type BodyProvider, type BodyConfig } from '../composables/useSettings'
+import { ref, reactive, computed } from 'vue'
+// Provider / VoiceStyle / Preset は draft の型アサーションでのみ使っていたが、
+// settings 側の型がそのまま通るためアサーション自体が不要になり、importも落とした
+import {  useSettings,  isBodyUsable,  type Language, type ThinkingLevel, type BodyProvider, type BodyConfig } from '../composables/useSettings'
 import { 
   VOICE_STYLE_OPTIONS,
   PRESET_OPTIONS
@@ -70,7 +72,7 @@ const draft = reactive({
   preset:        settings.preset,
   thinkingLevel: settings.thinkingLevel,
   systemPrompt:  settings.systemPrompt,
-  provider:      settings.provider as Provider,
+  provider:      settings.provider,
   bodies:        settings.bodies.map(cloneBody) as [BodyConfig, BodyConfig, BodyConfig],
 })
 
@@ -91,8 +93,8 @@ function close() {
 
 function save() {
   settings.language      = draft.language
-  settings.voiceStyle    = draft.voiceStyle as VoiceStyle
-  settings.preset        = draft.preset as Preset
+  settings.voiceStyle    = draft.voiceStyle
+  settings.preset        = draft.preset
   settings.thinkingLevel = draft.thinkingLevel
   settings.systemPrompt  = draft.systemPrompt
   draft.bodies.forEach((b, i) => {

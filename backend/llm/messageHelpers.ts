@@ -37,7 +37,7 @@ export function toAnthropicMessages(
       m.role === 'user' || m.role === 'assistant'
     )
     .map(m => ({
-      role: m.role as 'user' | 'assistant',
+      role: m.role,
       content: typeof m.content === 'string'
         ? m.content
         : Array.isArray(m.content)

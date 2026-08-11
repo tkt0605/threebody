@@ -14,7 +14,9 @@ function openDb(): Promise<IDBDatabase> {
       req.result.createObjectStore(STORE_NAME)
     }
     req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
+    // req.error は DOMException | null。null のまま reject すると、受け側の
+    // err instanceof Error が偽になり、画面には「null」だけが残る
+    req.onerror = () => reject(req.error ?? new Error('IndexedDB を開けませんでした'))
   })
 }
 
@@ -29,7 +31,7 @@ function getOrCreateKey(): Promise<CryptoKey> {
       const tx = db.transaction(STORE_NAME, 'readonly')
       const req = tx.objectStore(STORE_NAME).get(KEY_ID)
       req.onsuccess = () => resolve(req.result as CryptoKey | undefined)
-      req.onerror = () => reject(req.error)
+      req.onerror = () => reject(req.error ?? new Error('暗号鍵の読み出しに失敗しました'))
     })
     if (existing) return existing
 
@@ -38,7 +40,7 @@ function getOrCreateKey(): Promise<CryptoKey> {
       const tx = db.transaction(STORE_NAME, 'readwrite')
       tx.objectStore(STORE_NAME).put(key, KEY_ID)
       tx.oncomplete = () => resolve()
-      tx.onerror = () => reject(tx.error)
+      tx.onerror = () => reject(tx.error ?? new Error('暗号鍵の保存に失敗しました'))
     })
     return key
   })()
