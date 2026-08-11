@@ -1,7 +1,8 @@
+# .env は無視するが、.env.example（値を空にしたテンプレート）は追跡する。
+# ここで .env* のようなパターンにするとテンプレートまで消えるので注意
 .env
+.env.*.local
 node_modules
-.env
-.env.*.env
 back.txt
 *.txt
 *.bak
