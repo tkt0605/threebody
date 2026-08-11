@@ -1,0 +1,50 @@
+# push / PR のたびに、手元で毎回叩いていた4つをまとめて回す。
+#
+# 【なぜ必要か】品質の確認が「人間が忘れずに実行すること」に依存している状態を終わらせるため。
+# 実際、共有キーの全体上限を追加した際に GET /api/capabilities という別の呼び出し元を
+# 見落とし、ページを開くだけで無料枠が減る不具合が本番へ出た。テスト自体は存在したが、
+# 誰も回さなければ意味がない。
+#
+# 【シークレット不要】テストは .env を読まない（dotenv を読み込むのは backend/index.ts だけで、
+# テストはそこを経由しない）。ここに API キー等を足す必要はないし、足さないこと。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 同じブランチへ連続で push したとき、古い実行を打ち切って最新だけを走らせる
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 本番（Render）に合わせる。ここがずれると「CIは通ったのに本番で落ちる」が起きる
+          node-version: '24'
+          cache: npm
+
+      # package-lock.json のとおりに入れる（npm install と違い、lock を書き換えない）
+      - run: npm ci
+
+      # 4つは互いに独立なので、1つ落ちても残りの結果が見えるように continue-on-error は付けず、
+      # あえて別ステップに分けている（どれが落ちたかがログの見出しで分かる）
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck (frontend)
+        run: npx vue-tsc --noEmit
+
+      - name: Typecheck (backend)
+        run: npm run typecheck:backend
+
+      - name: Test
+        run: npm run test
