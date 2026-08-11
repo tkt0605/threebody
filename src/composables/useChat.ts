@@ -170,7 +170,27 @@ async function createConversation(): Promise<string> {
 }
 
 // 指定した会話に切り替え、その履歴を読み込む（読み取り専用ではなく、そのまま続きから会話できる）
+// 進行中のストリーミングを中断するためのコントローラ。
+// 会話の切り替えや次の送信で、前のストリームを確実に止められるようにする。
+// 止められないと (1) 破棄したはずのmessageへ書き込みが続く (2) Lv5は最大32Kトークンを
+// 生成し切ってしまう (3) 共有キー利用時はその1回分のクォータが戻らない、の3つが起きる
+let inFlight: AbortController | null = null
+
+// 進行中の応答があれば中断する。無ければ何もしない。
+// UIの状態もここで戻す。中断されたリクエスト自身のfinallyに任せると、
+// 「新しい送信が始まった直後に古い方のfinallyがidleへ戻す」競合が起きる
+function stopGeneration(): void {
+  if (!inFlight) return
+  inFlight.abort()
+  inFlight = null
+  aiState.value = 'idle'
+  pendingBodies.value = []
+}
+
 async function switchConversation(id: string): Promise<void> {
+  // 切り替え前に止める。止めないと、前の会話のストリームが
+  // 新しい会話の画面へ書き込みを続ける
+  stopGeneration()
   currentConversationId.value = id
   messages.value = await fetchMessages(id)
 }
@@ -182,6 +202,7 @@ let pendingNewConversation = false
 // 画面をまっさらな状態に戻すだけで、conversationsテーブルへの書き込みは行わない。
 // 実際に会話が作られるのは、ここから最初のメッセージが送信されたタイミング（persistMessage経由）
 function startNewConversation(): void {
+  stopGeneration()
   currentConversationId.value = null
   messages.value = []
   pendingNewConversation = true
@@ -358,11 +379,18 @@ export function useChat() {
     const reactiveMsg = messages.value[messages.value.length - 1]!
     const block = reactiveMsg.blocks[0] as TextBlock
 
+    // 前の応答がまだ流れていれば止めてから始める（多重ストリームを作らない）
+    stopGeneration()
+    const controller = new AbortController()
+    inFlight = controller
+    let aborted = false
+
     try {
       aiState.value = 'thinking';
       pendingBodies.value = []
       const response = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
+        signal: controller.signal,
         headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
         body: JSON.stringify({
           messages: toApiMessages(messages.value.slice(0, -1)),
@@ -455,6 +483,15 @@ export function useChat() {
       }
     } catch (err) {
       if (!block.content) reactiveMsg.blocks.splice(reactiveMsg.blocks.indexOf(block), 1)
+
+      // 中断はユーザー起因（会話切替・新規会話・次の送信）なのでエラーではない。
+      // ここで抜けることで、エラーブロックの表示と、切り替え先の会話への
+      // 誤った永続化（下のfinally）の両方を避ける
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        aborted = true
+        return
+      }
+
       const display = classifyError(err)      // 伏字化済み
       const raw     = rawErrorMessage(err)    // 伏字化済み
       // limit_reached はバグではなく仕様どおりの状態なので、context を付けない
@@ -477,11 +514,23 @@ export function useChat() {
       })
     } finally {
       reactiveMsg.streaming = false  // Proxy 経由で書くことで watch を発火させる
-      aiState.value = 'idle';
-      pendingBodies.value = []
-      persistMessage(reactiveMsg).catch(err => console.error('メッセージの保存に失敗しました', err))
-      // 共有キーを使った場合、残り回数がここで変わる。UIの表示を最新に保つ
-      void refreshCapabilities()
+
+      // 自分がまだ「現在進行中」の場合だけ共有状態を戻す。
+      // 中断済みの場合は stopGeneration が既に戻しているか、
+      // 後続の送信が thinking にしているので触ってはいけない
+      if (inFlight === controller) {
+        inFlight = null
+        aiState.value = 'idle'
+        pendingBodies.value = []
+      }
+
+      // 中断時は保存しない。ensureConversation は「現在の会話」を返すため、
+      // 会話切替による中断だと切り替え先へ書き込んでしまう
+      if (!aborted) {
+        persistMessage(reactiveMsg).catch(err => console.error('メッセージの保存に失敗しました', err))
+        // 共有キーを使った場合、残り回数がここで変わる。UIの表示を最新に保つ
+        void refreshCapabilities()
+      }
     }
   }
 
@@ -493,7 +542,7 @@ export function useChat() {
   }
 
   return {
-    messages, sendMessage, aiState, pendingBodies, openConversation, deleteMessage, retryMessage,
+    messages, sendMessage, stopGeneration, aiState, pendingBodies, openConversation, deleteMessage, retryMessage,
     conversations, currentConversationId, currentConversation,
     startNewConversation, deleteConversation, renameConversation,
   }

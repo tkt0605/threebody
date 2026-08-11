@@ -86,7 +86,7 @@ const usingSharedKey = computed(() =>
 )
 
 // 音声認識完了 → 確認を経て送信
-const { recording, finalText, interimText, bars, confirming, confirmText, start, stop, confirmSend, redo, cancelConfirm } =
+const { recording, finalText, interimText, bars, errorMsg, confirming, confirmText, start, stop, confirmSend, redo, cancelConfirm } =
   useVoiceInput((text) => {
     voiceActive.value = true
     sendMessage(text)
@@ -206,6 +206,11 @@ watch(
           />
         </div>
 
+        <!-- マイク拒否・非対応ブラウザ。出さないと「球体を押しても無反応」にしか見えない -->
+        <p v-if="errorMsg" role="alert" class="text-sm text-center max-w-sm text-red-500 dark:text-red-400">
+          {{ errorMsg }}
+        </p>
+
         <!-- 認識結果の確認：誤認識のまま送らないよう、送信前に一度確認を挟む -->
         <div v-if="confirming" class="flex flex-col items-center gap-3 max-w-sm text-center">
           <p class="text-sm text-gray-700 dark:text-white/80">『{{ confirmText }}』でいいですか？</p>
@@ -252,6 +257,7 @@ watch(
       :wake-listening="wakeListening"
       :confirming="confirming"
       :confirm-text="confirmText"
+      :error-msg="errorMsg"
       @toggle-mic="recording ? stop() : start()"
       @confirm-send="confirmSend"
       @redo="redo"

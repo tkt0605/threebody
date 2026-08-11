@@ -20,6 +20,19 @@ function mockResponse(opts: { ok?: boolean; status?: number; body?: ReadableStre
   } as unknown as Response
 }
 
+// 応答を返さず、signal が中断されたときだけ reject する fetch。
+// 本物の fetch は「渡された時点で既に中断済み」なら即座に reject するため、
+// そこも再現しておく（しないと中断済みシグナルで永久に待ち続ける）
+function abortAwareFetch() {
+  return vi.fn().mockImplementation((_url: string, init: RequestInit) =>
+    new Promise((_resolve, reject) => {
+      const fail = () => reject(new DOMException('Aborted', 'AbortError'))
+      if (init.signal!.aborted) return fail()
+      init.signal!.addEventListener('abort', fail)
+    })
+  )
+}
+
 function textBlock(msg: Message, index = 0) {
   return msg.blocks[index] as TextBlock
 }
@@ -136,5 +149,60 @@ describe('useChat', () => {
     const assistant = messages.value[1]!
     expect(assistant.blocks).toHaveLength(1)
     expect(errorBlock(assistant).message).toBe('開始直後にエラー')
+  })
+
+  describe('生成の中断', () => {
+    it('fetch に AbortSignal を渡している', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(mockResponse({ body: sseStream(['data: [DONE]\n\n']) }))
+      vi.stubGlobal('fetch', fetchMock)
+
+      const { sendMessage } = useChat()
+      await sendMessage('hi')
+
+      const init = fetchMock.mock.calls[0]![1] as RequestInit
+      expect(init.signal).toBeInstanceOf(AbortSignal)
+      expect(init.signal!.aborted).toBe(false)
+    })
+
+    it('stopGeneration で進行中の応答を中断し、aiState を idle に戻す', async () => {
+      // レスポンスが返る前に中断されるケース（＝最も長く走りうる区間）を再現する
+      let abortSignal: AbortSignal | undefined
+      const fetchMock = abortAwareFetch()
+      vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string, init: RequestInit) => {
+        abortSignal = init.signal!
+        return fetchMock(url, init)
+      }))
+
+      const { sendMessage, stopGeneration, aiState, messages } = useChat()
+      const inFlight = sendMessage('hi')
+      await vi.waitFor(() => expect(abortSignal).toBeDefined())
+
+      stopGeneration()
+      await inFlight
+
+      expect(abortSignal!.aborted).toBe(true)
+      expect(aiState.value).toBe('idle')
+      // 中断はエラーではないので、エラーブロックを足さない
+      expect(messages.value[1]!.blocks.some(b => b.type === 'error')).toBe(false)
+    })
+
+    it('中断されても次の送信は通常どおり動く', async () => {
+      vi.stubGlobal('fetch', abortAwareFetch())
+
+      const { sendMessage, stopGeneration, aiState } = useChat()
+      const first = sendMessage('1回目')
+      stopGeneration()
+      await first
+      expect(aiState.value).toBe('idle')
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse({
+        body: sseStream(['data: {"type":"text","content":"2回目の応答"}\n\n', 'data: [DONE]\n\n']),
+      })))
+      const { messages } = useChat()
+      await sendMessage('2回目')
+
+      expect(textBlock(messages.value.at(-1)!).content).toBe('2回目の応答')
+      expect(aiState.value).toBe('idle')
+    })
   })
 })

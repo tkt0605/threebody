@@ -8,6 +8,7 @@ defineProps<{
   wakeListening: boolean
   confirming:    boolean
   confirmText:   string
+  errorMsg?:     string | null
 }>()
 
 const emit = defineEmits<{ 'toggle-mic': []; 'confirm-send': []; redo: []; closed: [] }>()
@@ -43,6 +44,11 @@ defineExpose({ open, close })
               @click="emit('toggle-mic')"
             />
           </div>
+          <!-- マイク拒否・非対応ブラウザ。出さないと「球体を押しても無反応」にしか見えない -->
+          <p v-if="errorMsg" role="alert" class="text-sm text-center max-w-sm text-red-500 dark:text-red-400">
+            {{ errorMsg }}
+          </p>
+
           <!-- 認識結果の確認：誤認識のまま送らないよう、送信前に一度確認を挟む -->
           <div v-if="confirming" class="flex flex-col items-center gap-3 max-w-sm text-center">
             <p class="text-sm text-gray-700 dark:text-white/80">『{{ confirmText }}』でいいですか？</p>
