@@ -62,17 +62,22 @@ const firstExchangeInFlight = ref(false)
 // capabilities.ollama.enabled で上書きし、送信して初めて接続エラーで失敗する偽陽性を防ぐ。
 // 自分のクラウドキーが1つも無くても、共有キーの無料枠が残っていれば会話は成立するため、
 // そちらも見ないと「使えるのに泣き顔」になってしまう（共有キーフォールバックの導入で発生した齟齬）
-// 上限到達（limit_reached）は「使えない」ではなく「今日はもう使えない」なので、
-// 全画面差し替え（EmptyBrainState）の対象からは外す。not_signed_in / not_permitted /
-// unavailable はそもそも使う手段が無い状態なので、従来どおり全画面差し替えのまま
+// 上限到達（個人枠 limit_reached / 全体枠 global_limit_reached）は「使えない」ではなく
+// 「今日はもう使えない」なので、全画面差し替え（EmptyBrainState）の対象からは外す。
+// not_signed_in / not_permitted / unavailable はそもそも使う手段が無い状態なので、
+// 従来どおり全画面差し替えのまま
+const limitReached = computed(() =>
+  sharedKey.value.reason === 'limit_reached' || sharedKey.value.reason === 'global_limit_reached'
+)
+
 const hasActiveBody = computed(() =>
   settings.bodies.some(b => b.provider === 'ollama' ? ollama.value.enabled : isBodyUsable(b))
   || sharedKey.value.allowed
-  || sharedKey.value.reason === 'limit_reached'
+  || limitReached.value
 )
 
 // 実際に録音を開始してよいか（バックエンドが受け付けるかの事前チェック）。
-// hasActiveBody と違い limit_reached は含めない。ここがfalseのときに録音を始めると、
+// hasActiveBody と違い上限到達は含めない。ここがfalseのときに録音を始めると、
 // 話し終えてから「上限到達」エラーで弾かれるだけなので、録音開始前にダイアログで止める
 const canRecord = computed(() =>
   hasOwnCloudKey(settings.bodies) || sharedKey.value.allowed
@@ -80,9 +85,9 @@ const canRecord = computed(() =>
 
 // 自分のキーを設定せず共有キーに乗っている状態か（上限到達で allowed:false になった後も含む）。
 // allowed だけで判定すると、上限到達の瞬間に「今どれだけ使ったか」が一番知りたいのに
-// バッジごと消えてしまう。can_use_shared_key 自体は生きている limit_reached はここに含める
+// バッジごと消えてしまう。can_use_shared_key 自体は生きている上限到達はここに含める
 const usingSharedKey = computed(() =>
-  !hasOwnCloudKey(settings.bodies) && (sharedKey.value.allowed || sharedKey.value.reason === 'limit_reached')
+  !hasOwnCloudKey(settings.bodies) && (sharedKey.value.allowed || limitReached.value)
 )
 
 // 音声認識完了 → 確認を経て送信
@@ -179,11 +184,16 @@ watch(
           <div
             v-if="usingSharedKey"
             class="shrink-0 text-center text-xs py-1.5"
-            :class="sharedKey.reason === 'limit_reached'
+            :class="limitReached
               ? 'text-amber-600/90 bg-amber-500/10 dark:text-amber-300/90 dark:bg-amber-400/10'
-              : 'text-indigo-600/80 bg-indigo-600/8 dark:text-indigo-300/80 dark:bg-indigo-500/10'"  
+              : 'text-indigo-600/80 bg-indigo-600/8 dark:text-indigo-300/80 dark:bg-indigo-500/10'"
           >
-          <template v-if="sharedKey.reason === 'limit_reached'">
+          <!-- 全体枠で止まっている場合、このユーザーの使用回数は0回のこともある。
+               個人枠の「3/3回」を出すと事実と違う表示になるため文言ごと分ける -->
+          <template v-if="sharedKey.reason === 'global_limit_reached'">
+            本日ぶんの無料お試し枠（全体）が終了しました。明日また使えます。
+          </template>
+          <template v-else-if="sharedKey.reason === 'limit_reached'">
             共有キーの使用量が上限に達しました。（本日{{ sharedKey.dailyLimit }}/{{ sharedKey.dailyLimit }}回）
           </template>
           <template v-else>
@@ -264,6 +274,6 @@ watch(
       @closed="cancelConfirm"
     />
 
-    <LimitReachedDialog ref="limitDialog" @open-settings="appAside?.openSettings()" />
+    <LimitReachedDialog ref="limitDialog" :reason="sharedKey.reason" @open-settings="appAside?.openSettings()" />
   </div>
 </template>

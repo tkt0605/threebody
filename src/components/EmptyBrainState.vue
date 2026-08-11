@@ -10,9 +10,12 @@ const emit = defineEmits<{ 'open-settings': [] }>()
 // 一律「未設定」に見せてしまい、共有キーの存在に気づけない
 const heading = computed(() => {
   switch (props.sharedKey?.reason) {
-    case 'not_signed_in':  return 'ログインすると無料でお試しできるよ'
-    case 'limit_reached':  return '今日の無料分を使い切ったよ'
-    default:                return '脳みそがまだないよ、、、'
+    case 'not_signed_in':        return 'ログインすると無料でお試しできるよ'
+    case 'limit_reached':        return '今日の無料分を使い切ったよ'
+    // 「あなたが使い切った」ではないので文言を分ける。全体枠で止まったユーザーは
+    // 今日まだ1回も使っていないことがある
+    case 'global_limit_reached': return '今日はみんなの無料枠がいっぱいだよ'
+    default:                     return '脳みそがまだないよ、、、'
   }
 })
 
@@ -22,6 +25,8 @@ const subtext = computed(() => {
       return `ログインすれば1日${props.sharedKey?.dailyLimit ?? 5}回まで、キー無しで試せます。`
     case 'limit_reached':
       return '明日また無料枠が使えます。続けて使うなら設定から自分のAPIキーを登録してね。'
+    case 'global_limit_reached':
+      return '本日ぶんのお試し枠が終了しました。明日また使えます。今すぐ使うなら設定から自分のAPIキーを登録してね。'
     default:
       return 'APIキーとモデルを入れてね。（例：Anthropic, OpenAI等々）'
   }

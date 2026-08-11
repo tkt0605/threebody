@@ -1,7 +1,22 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import type { SharedKeyReason } from '../composables/useCapabilities'
 
+// 個人枠（limit_reached）と全体枠（global_limit_reached）で文言を出し分ける。
+// 既定は個人枠側にしておく（このダイアログは canRecord が false のときにだけ開き、
+// その到達経路は実質この2つに絞られる）
+const props = defineProps<{ reason?: SharedKeyReason | undefined }>()
 const emit = defineEmits<{ 'open-settings': [] }>()
+
+const isGlobal = computed(() => props.reason === 'global_limit_reached')
+
+const heading = computed(() => isGlobal.value
+  ? '今日はみんなの無料枠がいっぱいだよ'
+  : '今日の無料分を使い切ったよ')
+
+const subtext = computed(() => isGlobal.value
+  ? '本日ぶんのお試し枠が終了しました。明日また使えます。今すぐ使うなら設定から自分のAPIキーを登録してね。'
+  : '明日また無料枠が使えます。続けて使うなら設定から自分のAPIキーを登録してね。')
 
 const dialogRef = ref<HTMLDialogElement | null>(null)
 
@@ -27,8 +42,8 @@ defineExpose({ open, close })
       @click.self="close"
     >
       <div class="flex flex-col items-center gap-3 px-6 py-6 text-center">
-        <p class="text-sm font-medium text-gray-700 dark:text-white/80">今日の無料分を使い切ったよ</p>
-        <p class="text-xs text-gray-400 dark:text-white/40">明日また無料枠が使えます。続けて使うなら設定から自分のAPIキーを登録してね。</p>
+        <p class="text-sm font-medium text-gray-700 dark:text-white/80">{{ heading }}</p>
+        <p class="text-xs text-gray-400 dark:text-white/40">{{ subtext }}</p>
         <div class="flex gap-2 mt-1">
           <button
             class="px-4 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer

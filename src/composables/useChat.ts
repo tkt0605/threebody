@@ -494,9 +494,10 @@ export function useChat() {
 
       const display = classifyError(err)      // 伏字化済み
       const raw     = rawErrorMessage(err)    // 伏字化済み
-      // limit_reached はバグではなく仕様どおりの状態なので、context を付けない
+      // 上限到達（個人枠・全体枠とも）はバグではなく仕様どおりの状態なので、context を付けない
       // （MessageBubble.vue は context の有無で「問題を報告する」ボタンを出し分ける）
-      const isExpected = err instanceof ChatStreamError && err.code === 'limit_reached'
+      const isExpected = err instanceof ChatStreamError
+        && (err.code === 'limit_reached' || err.code === 'global_limit_reached')
 
       reactiveMsg.blocks.push({
           type: 'error',
