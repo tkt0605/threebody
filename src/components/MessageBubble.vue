@@ -210,15 +210,50 @@ function handleCopyClick(event: MouseEvent) {
 .prose-content :deep(li) {
   margin-bottom: 0.15em;
 }
+/* コードブロックの配色。
+   ライト = 薄いグレー（ダークのスレート #262a33 と同じ寒色系に揃え、テーマ切替時の
+   印象差を小さくする）／ダーク = 従来の値をそのまま維持。
+   v-html で描画される中身にはスコープ属性が付かないため個別に色を指定できないが、
+   カスタムプロパティは .prose-content から継承されるので、変数だけ切り替えれば全体に効く */
+.prose-content {
+  --code-bg:          #f4f5f7;
+  --code-fg:          #32363d;
+  --code-border:      #d7dae0;
+  --code-header-bg:   #e9ebef;
+  --code-header-fg:   #4e5561;
+  --code-lang-alpha:  0.9;
+  --code-inline-bg:   rgba(110, 120, 140, 0.14);
+  --code-btn-border:  rgba(100, 110, 125, 0.35);
+  --code-btn-hover:   rgba(100, 110, 125, 0.13);
+  --code-ok:          #16a34a;
+  --code-ok-border:   rgba(22, 163, 74, 0.45);
+}
+.dark .prose-content {
+  --code-bg:          #262a33;
+  --code-fg:          #e2e4e9;
+  --code-border:      rgba(255, 255, 255, 0.08);
+  --code-header-bg:   #2f3440;
+  --code-header-fg:   rgba(255, 255, 255, 0.5);
+  --code-lang-alpha:  0.6;
+  --code-inline-bg:   rgba(128, 128, 128, 0.15);
+  --code-btn-border:  rgba(128, 128, 128, 0.3);
+  --code-btn-hover:   rgba(128, 128, 128, 0.15);
+  --code-ok:          #4ade80;
+  --code-ok-border:   rgba(74, 222, 128, 0.4);
+}
+
 .prose-content :deep(code) {
   font-family: ui-monospace, monospace;
-  background: rgba(128, 128, 128, 0.15);
+  background: var(--code-inline-bg);
   padding: 0.1em 0.3em;
   border-radius: 0.25em;
   font-size: 0.85em;
 }
+/* フェンス付きコードは .code-block 経由で描画されるため、ここは字下げコード等の保険 */
 .prose-content :deep(pre) {
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--code-bg);
+  color: var(--code-fg);
+  border: 1px solid var(--code-border);
   padding: 0.75em 1em;
   border-radius: 0.5em;
   overflow-x: auto;
@@ -233,9 +268,9 @@ function handleCopyClick(event: MouseEvent) {
   margin-bottom: 0.5em;
   border-radius: 0.5em;
   overflow: hidden;
-  background: #262a33;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #e2e4e9;
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  color: var(--code-fg);
 }
 .prose-content :deep(.code-block-header) {
   display: flex;
@@ -243,13 +278,14 @@ function handleCopyClick(event: MouseEvent) {
   justify-content: space-between;
   padding: 0.25em 0.75em;
   font-size: 0.75em;
-  background: #2f3440;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.5);
+  background: var(--code-header-bg);
+  border-bottom: 1px solid var(--code-border);
+  color: var(--code-header-fg);
 }
 .prose-content :deep(.code-block-lang) {
   font-family: ui-monospace, monospace;
-  opacity: 0.6;
+  /* ライトは背景とのコントラストが取りにくいので、ダークより薄めない */
+  opacity: var(--code-lang-alpha);
   text-transform: lowercase;
 }
 .prose-content :deep(.copy-btn) {
@@ -259,14 +295,14 @@ function handleCopyClick(event: MouseEvent) {
   font-size: 0.75em;
   padding: 0.15em 0.6em;
   border-radius: 0.35em;
-  border: 1px solid rgba(128, 128, 128, 0.3);
+  border: 1px solid var(--code-btn-border);
   background: transparent;
   color: inherit;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
 .prose-content :deep(.copy-btn:hover) {
-  background: rgba(128, 128, 128, 0.15);
+  background: var(--code-btn-hover);
 }
 .prose-content :deep(.copy-btn:disabled) {
   opacity: 0.6;
@@ -274,10 +310,10 @@ function handleCopyClick(event: MouseEvent) {
 }
 .prose-content :deep(.check-icon) {
   display: none;
-  color: #4ade80;
+  color: var(--code-ok);
 }
 .prose-content :deep(.copy-btn.copied) {
-  border-color: rgba(74, 222, 128, 0.4);
+  border-color: var(--code-ok-border);
 }
 .prose-content :deep(.copy-btn.copied .copy-icon) {
   display: none;
@@ -285,10 +321,13 @@ function handleCopyClick(event: MouseEvent) {
 .prose-content :deep(.copy-btn.copied .check-icon) {
   display: inline;
 }
+/* .code-block が枠と背景を持つので、内側の pre は素通しにする
+   （上の汎用 pre ルールの border/background をここで打ち消す） */
 .prose-content :deep(.code-block pre) {
   margin-bottom: 0;
   border-radius: 0;
   background: none;
+  border: none;
 }
 .prose-content :deep(strong) {
   font-weight: 600;
