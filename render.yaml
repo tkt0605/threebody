@@ -1,0 +1,59 @@
+# Render の Blueprint（Infrastructure as Code）。
+#
+# 【なぜ置くか】ビルド・起動コマンドがRenderダッシュボードにしか存在せず、
+# リポジトリ側と食い違ったまま気づけない状態だった。実際、backend/src/server.ts を
+# backend/index.ts へ移動した際に package.json は追従したがダッシュボードは
+# 取り残され、本番が ERR_MODULE_NOT_FOUND でクラッシュループした。
+#
+# 【重要・現状】既にダッシュボードから作成済みのサービスは、このファイルを置いただけでは
+# Blueprint 管理に切り替わらない。切り替えるには Render 側で Blueprint として
+# 接続し直す必要がある。それまでの間、このファイルは「正しい設定の正本」を
+# リポジトリに残す記録として機能する（＝ダッシュボードを直すときの参照先）。
+#
+# 【シークレット】sync: false は「値をこのファイルに書かず、ダッシュボードで設定する」
+# 指定。APIキーやサービスキーを平文でコミットしないために必須。
+
+services:
+  - type: web
+    name: threebody-api
+    runtime: node
+
+    # 【意図的に書いていない】plan / region は現行サービスの実設定を確認できていない。
+    # 推測値を書いた状態で Blueprint 接続すると、サービスを別リージョンへ
+    # 作り替えてしまう恐れがある。接続する前に実際の値を確認して追記すること
+    #
+    # 起動コマンドは npm start に固定する。エントリポイントのパスを package.json
+    # 1箇所に寄せることで、ファイルを移動したときの追従漏れが起きなくなる
+    buildCommand: npm install
+    startCommand: npm start
+
+    # 起動確認に使う。backend/routes/health.ts が返す
+    healthCheckPath: /api/health
+
+    envVars:
+      # ── ダッシュボードで設定する（値はここに書かない）──────────────────────
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SHARED_ANTHROPIC_API_KEY
+        sync: false
+      # フロント（Vercel）のURL。CORSの origin として backend/index.ts が読む
+      - key: VITE_ORIGIN_BASE_URL
+        sync: false
+
+      # ── モデル指定（秘匿情報ではないので値を持たせる）──────────────────────
+      # modelConfig.ts が非null断言で読むため、未設定だと undefined のまま
+      # APIへ渡る。使うプロバイダーのぶんは必ず埋めること
+      - key: ANTHROPIC_MODEL_FAST
+        value: claude-haiku-4-5-20251001
+      - key: ANTHROPIC_MODEL_BALANCED
+        value: claude-sonnet-5
+      - key: ANTHROPIC_MODEL_POWERFUL
+        value: claude-opus-5
+
+      # ── Ollama ────────────────────────────────────────────────────────────
+      # Renderからローカルの Ollama へは到達できない。true のままにすると
+      # UIが「使える」と表示し、送信して初めて接続エラーになる
+      - key: OLLAMA_ENABLED
+        value: 'false'
