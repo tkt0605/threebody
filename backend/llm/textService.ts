@@ -6,6 +6,7 @@ import { resolveBodyModel, toOllamaMessages, toAnthropicMessages, extractTextCon
 import { streamOllamaNative } from './providers/ollama'
 import { createOpenAICompatClient, streamOpenAICompat } from './providers/openaiCompat'
 import { streamAnthropic } from './providers/anthropic'
+import { collectSecrets, sanitizeErrorMessage } from '../utils/errorSanitize'
 
 // 副体（二体・三体）の見解をリアルタイムに可視化するため、非ストリーミングではなく
 // body_text イベントを逐次送出しながら全文を蓄積して返す
@@ -108,24 +109,48 @@ export async function orchestrateMultiBody(
 ): Promise<void> {
   const [primary, ...secondaries] = available as [BodyConfig, ...BodyConfig[]]
 
-  const secondaryResults = await Promise.all(
+  // allSettled にしているのは、副体1体の失敗で三体モードごと落とさないため。
+  // Promise.all だと1体が throw した時点で reject し、他の体の見解も主体による統合も
+  // まるごと失われる（＝「複数視点の統合」という売りと噛み合わない）
+  const settled = await Promise.allSettled(
     secondaries.map(async (b) => {
       const bodyIdx = allBodies.indexOf(b)
       const name    = b.name ?? '副体'
       res.write(`data: ${JSON.stringify({ type: 'body_start', bodyIndex: bodyIdx, name, provider: b.provider })}\n\n`)
-      const text = await streamSecondaryBody(b, bodyIdx, messages, { ...config, maxTokens: config.secondaryMaxTokens }, b.personaPrompt ?? systemPrompt, res)
-      res.write(`data: ${JSON.stringify({ type: 'body_done', bodyIndex: bodyIdx })}\n\n`)
-      return { name, provider: b.provider, text }
+      try {
+        return await streamSecondaryBody(b, bodyIdx, messages, { ...config, maxTokens: config.secondaryMaxTokens }, b.personaPrompt ?? systemPrompt, res)
+      } finally {
+        // 成功・失敗のどちらでも必ず送る。送らないとフロントの pendingBodies から
+        // この体が消えず、球体が分裂したまま固まる（useChat.ts の body_done ハンドラ）
+        res.write(`data: ${JSON.stringify({ type: 'body_done', bodyIndex: bodyIdx })}\n\n`)
+      }
     })
   )
 
-  const perspectives = secondaryResults
-    .map(({ name, provider, text }) => {
-      if (!text.trim()) return null
-      return `【${name}（${provider}）の見解】\n${text}`
+  const secrets = collectSecrets({ bodies: allBodies })
+  const perspectives = settled
+    .map((result, i) => {
+      const b    = secondaries[i]!
+      const name = b.name ?? '副体'
+      if (result.status === 'rejected') {
+        // 失敗した体は見解から除外して統合を続ける。キーがエラー本文へ
+        // echo back されることがあるため、ログに出す前に必ず伏せ字化する
+        console.error(`[三体] ${name}(${b.provider}) の応答に失敗しました:`, sanitizeErrorMessage(result.reason, secrets))
+        return null
+      }
+      if (!result.value.trim()) return null
+      return `【${name}（${b.provider}）の見解】\n${result.value}`
     })
     .filter(Boolean)
     .join('\n\n')
+
+  // 副体が全滅した場合、空の見解を「以下は他の体の見解です」に続けて注入すると
+  // 主体が存在しない見解について語り出す。単体モードに縮退させる
+  if (!perspectives) {
+    res.write(`data: ${JSON.stringify({ type: 'synthesis_start', bodyIndex: allBodies.indexOf(primary) })}\n\n`)
+    await streamBodyOAI(primary, messages, config, systemPrompt, res)
+    return
+  }
 
   const synthesisSystemPrompt = systemPrompt
     + '\n\n以下は他の体（LLM）の見解です。これらを踏まえて、より包括的かつ統合的な最終回答を生成してください。'
