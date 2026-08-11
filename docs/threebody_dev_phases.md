@@ -8,6 +8,79 @@
 - **mulmo-series-analysis** — 中嶋聡さんの3プロジェクト（MulmoChat/MulmoClaude/MulmoTerminal）の共通思想を抽出：LLM=汎用OS、データ主権、エージェント監督
 - **alignment文書** — その思想とThreeBodyの現状を突き合わせ、「音声対話ファースト」を主軸に据えた上で、**音声3本柱（柱A/B/C）× 一体型移行（Apple I→II）を1本の順序に統合**したのがPhase 0〜6
 
+---
+
+## 達成状況（2026-08-11 / `d8a14dc` 時点）
+
+git log と実コードで裏を取った現在地。**進捗はこの節を正本とする。**
+
+### 達成済み
+
+| 項目 | 出所 | 裏付けコミット |
+|---|---|---|
+| Phase 0：共有キー経路を三体モードに | ロードマップ | `8088f02` `98c651f` `c614cfd` `1c36512` `6c085a7` |
+| Phase 1 Step 1：行が無ければ自動作成 | ロードマップ | `51c8517` |
+| Phase 1 Step 2：全体日次上限（50回/日） | ロードマップ | `92bccda` `2493cbf` |
+| Phase 1 Step 3：招待制の反転 | ロードマップ | `c092537` `8bd21ba` |
+| Supabase へのマイグレーション適用（`schema.sql` 6章 A・B） | ロードマップ | 2026-08-11 適用完了 → **Phase 1 完了** |
+| 共有キー判定のログ出力（誰が・なぜ弾かれたか） | 運用要望 | `5ff3fbe` `8b33e73` `d8a14dc` |
+| `Promise.all` → `allSettled`（副体1体の失敗で全滅しない） | 棚卸し 1.7 | `a89a265` |
+| `errorMsg` の画面表示（マイク拒否時の「無反応」解消） | 棚卸し 1.1 | `9c452f1` |
+| `AbortController` による生成中断 | 棚卸し 1.2 | `9c452f1` |
+| 三体オーケストレーションのテスト（0件 → 5件） | 棚卸し 1.9（一部） | `a89a265` |
+| `CLAUDE.md` の実態合わせ | 棚卸し 3.8 | `accdd69`（本セッション前に完了済み） |
+| 外部レビュー12項目の事実確認 | — | `8195f98` |
+| コードブロックのライト/ダーク配色分離 | UI要望 | 最新 |
+
+### 対応不要（外部レビューの指摘が誤りだったもの）
+
+| 指摘 | 実態 |
+|---|---|
+| #2 レート制限がサーバー側に無い | IP単位のrate-limit + DB/RPCによる原子的クォータが実装済み |
+| #3 APIキーがlocalStorageに平文 | `keyVault.ts` でAES-GCM暗号化、鍵は非exportableでIndexedDB保持 |
+| #10 三体モードがデフォルトON | キー未設定ユーザーは実質OFF（共有キー枠のみPhase 0で意図的にON） |
+| #11 `NodeCanvas.vue` がポインタ必須 | 同ファイルは削除済み。**ただし同じ欠陥が `VoiceSphere.vue` に現存** → 未達成側に計上 |
+
+### 未達成
+
+**基盤**
+
+- `eslint.config.js` にルールが0件／CI（`.github/workflows`）が無い（棚卸し 1.5）
+- 会話履歴を毎回まるごと送信（棚卸し 1.8）
+- `.env.example` が無い（棚卸し 1.4）
+- `/api/chat` の BYOK 経路が無認証（棚卸し 1.10 / 外部レビュー #1）
+- `stopGeneration` がUIから未配線 — 本セッションで公開したが呼び出し元が無い
+
+**トラックA：音声（Phase 2）**
+
+- `echoCancellation` 未指定（#6）
+- 逐次TTS（#4）
+- バージイン（#5）
+- エンドポインティング調整（#7）
+
+**トラックB：アクセシビリティ**
+
+- ストリーミング出力の `aria-live`（#12）— `role="alert"` はエラー表示にのみ追加済み
+- `VoiceSphere` のキーボード操作（#11）
+- 抽象入力イベント層（選択/確定/取消/移動）
+
+**トラックC：確信度**
+
+- モデル間の一致度の構造化抽出（#8）
+- 状態モデル・候補生成（#9）
+
+**Phase 3以降** — 初回体験 / 定額課金 / MCP / マルチモーダル
+
+### 本セッションで判明した新規の負債
+
+| 内容 | 場所 |
+|---|---|
+| `orchestrateMultiBody` は `available` の要素が `allBodies` と同一参照でないと `bodyIndex` が `-1` になる | `backend/llm/textService.ts` |
+| `providers/anthropic.ts` はモジュール読込時に `new Anthropic()` するため、jsdom環境のテストではモック必須 | `backend/llm/providers/anthropic.ts` |
+| 全体クォータは予約時に消費されるため、LLM失敗時も枠が減る（個人クォータは減らない） | `backend/sharedKey.ts` |
+
+---
+
 ## 開発フェーズ一覧（実装順）
 
 | Phase | 一言でいうと | 前提 | 対応する柱/根拠 |
@@ -29,7 +102,7 @@
 
 上限到達時のUXも修正済み：全画面差し替え（EmptyBrainState）を`limit_reached`では発生させず、録音を試みた時点でダイアログ（`LimitReachedDialog.vue`）で案内する方式に変更。
 
-**Phase 1（入口を開ける）— コード側完了（2026-08-11）／Supabaseへの適用待ち**
+**Phase 1（入口を開ける）— 完了（2026-08-11）**
 
 ホワイトリスト方式（招待した人だけ許可）からブロックリスト方式（既定で許可し、問題のあるアカウントだけ停止）へ転換。3ステップで実装した。
 
@@ -37,7 +110,9 @@
 - **Step 2** — 全体日次上限（キルスイッチ）を新設。`shared_key_global_usage` テーブルと `try_reserve_global_quota` RPC。`INSERT ... ON CONFLICT ... DO UPDATE ... RETURNING` の単一ステートメントで「加算」と「加算後の値の取得」を原子的に行い、`consume_shared_quota` に残る既知のTOCTOUレースを持ち込まない設計。上限は50回/日（約$0.5/日）
 - **Step 3** — `can_use_shared_key` の既定を false→true に反転。`docs/schema.sql` の「6. マイグレーション」に適用SQLを記載
 
-**残作業** — `docs/schema.sql` の 6-1・6-2 を Supabase SQL Editor で実行する。`ALTER ... SET DEFAULT` は既存行に効かないため、DEFAULT変更とUPDATEによるバックフィルは必ずセットかつこの順序で流す。
+**適用済み** — `docs/schema.sql` 6章（ブロックA：全体上限のテーブル＋RPC／ブロックB：DEFAULT反転＋既存行バックフィル）を 2026-08-11 に Supabase へ適用。これをもって Phase 1 の完了条件（招待を受けていないアカウントがログイン後そのまま三体モードを使え、かつ運営が総額を1か所で止められる）を満たした。
+
+**以降の運用メモ** — `can_use_shared_key = false` の意味が「まだ招待していない」から「運営が明示的に停止した」に変わっている。停止したアカウントは `[sharedKey] 停止中のアカウント（can_use_shared_key=false） user=...` としてExpressのログに出る。バックフィル用の `UPDATE`（6章ブロックB）は**二度と流さないこと**（停止したアカウントを復活させてしまう）。
 
 **Phase 2（沈黙を消す）**
 逐次TTS（句点単位で`speak()`）、barge-in（再生中も低感度ASRでcancel）、確認ステップの音声化、三体モードとの緊張への方針決定（A:主体先行 / B:音声時縮退 / C:球体+相槌）を**実装前に選択**する必要あり。
