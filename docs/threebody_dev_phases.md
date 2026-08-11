@@ -29,8 +29,15 @@
 
 上限到達時のUXも修正済み：全画面差し替え（EmptyBrainState）を`limit_reached`では発生させず、録音を試みた時点でダイアログ（`LimitReachedDialog.vue`）で案内する方式に変更。
 
-**Phase 1（入口を開ける）**
-`can_use_shared_key` の default を false→true に反転（+既存行のバックフィル、全体日次上限の新設）。`persistMessage` が await されない fire-and-forget のため、新規ユーザーの初回メッセージで `user_setting` 行が未作成のまま `checkSharedAllowance` が読みうる競合が未検証・要対応。
+**Phase 1（入口を開ける）— コード側完了（2026-08-11）／Supabaseへの適用待ち**
+
+ホワイトリスト方式（招待した人だけ許可）からブロックリスト方式（既定で許可し、問題のあるアカウントだけ停止）へ転換。3ステップで実装した。
+
+- **Step 1** — `checkSharedAllowance` に「行が無ければ service role で自動作成」を追加。`persistMessage` が await されない fire-and-forget のため、新規ユーザーの初回メッセージで `user_setting` 行が未作成のまま読まれる競合があったが、フロントのタイミングに依存しない形で構造的に解消
+- **Step 2** — 全体日次上限（キルスイッチ）を新設。`shared_key_global_usage` テーブルと `try_reserve_global_quota` RPC。`INSERT ... ON CONFLICT ... DO UPDATE ... RETURNING` の単一ステートメントで「加算」と「加算後の値の取得」を原子的に行い、`consume_shared_quota` に残る既知のTOCTOUレースを持ち込まない設計。上限は50回/日（約$0.5/日）
+- **Step 3** — `can_use_shared_key` の既定を false→true に反転。`docs/schema.sql` の「6. マイグレーション」に適用SQLを記載
+
+**残作業** — `docs/schema.sql` の 6-1・6-2 を Supabase SQL Editor で実行する。`ALTER ... SET DEFAULT` は既存行に効かないため、DEFAULT変更とUPDATEによるバックフィルは必ずセットかつこの順序で流す。
 
 **Phase 2（沈黙を消す）**
 逐次TTS（句点単位で`speak()`）、barge-in（再生中も低感度ASRでcancel）、確認ステップの音声化、三体モードとの緊張への方針決定（A:主体先行 / B:音声時縮退 / C:球体+相槌）を**実装前に選択**する必要あり。

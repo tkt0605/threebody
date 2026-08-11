@@ -34,8 +34,12 @@ create table public.user_setting (
 
   -- 共有APIキー（運営負担の無料お試し枠）関連。書き込めるのは service_role のみ
   -- （backend/sharedKey.ts, backend/supabaseAdmin.ts:4-6）。
-  -- 招待制のため既定は false（README: 招待制と明記）
-  can_use_shared_key     boolean not null default false,
+  --
+  -- 既定は true（Phase 1 で false から反転）。ホワイトリスト方式（招待した人だけ許可）から
+  -- ブロックリスト方式（既定で許可し、問題のあるアカウントだけ個別に false）へ切り替えた。
+  -- 運営の総額は1ユーザー単位のこの列ではなく、shared_key_global_usage の全体上限が守る。
+  -- ＝ この列を false にする意味も「まだ招待していない」から「明示的に止めた」に変わっている
+  can_use_shared_key     boolean not null default true,
   shared_daily_count     integer not null default 0,
   -- JST暦日を 'YYYY-MM-DD' の date として保持（backend/jstDate.ts:23）
   shared_last_used_date  date,
@@ -45,7 +49,7 @@ create table public.user_setting (
 comment on table public.user_setting is
   'ユーザープロフィール兼、共有APIキーの日次クォータ。id は auth.users.id と同一。';
 comment on column public.user_setting.can_use_shared_key is
-  '共有キーの利用可否。運営がSupabase側で手動更新する招待制（申請UI・管理画面は未実装）。';
+  '共有キーの利用可否。既定 true（ブロックリスト方式）。false は「運営が明示的に停止した」を意味する。';
 
 -- 共有キーの「全ユーザー合計」の日次上限（運営側の総額キルスイッチ）。
 -- user_setting の shared_daily_count はユーザー単位、こちらは1行だけを日次で使い回す
@@ -317,3 +321,97 @@ $$;
 
 revoke all on function public.try_reserve_global_quota(date, integer) from public;
 grant execute on function public.try_reserve_global_quota(date, integer) to service_role;
+
+-- ============================================================================
+-- 6. マイグレーション — 既存プロジェクトへの適用手順
+--
+-- 上の 1〜5 は「新規に作る場合」の完成形。すでに稼働している Supabase
+-- プロジェクトには、この 6 章を Supabase SQL Editor に貼って実行する。
+-- 6 章だけで完結するようになっており、上を参照する必要はない。
+--
+-- 【ブロックA】は何度流しても壊れない（冪等）。
+-- 【ブロックB】は一度きり。Aだけを流し直したい場合はBを含めないこと。
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- ブロックA：全体上限（Phase 1 Step 2）— 何度実行してもよい
+--
+-- これを飛ばして B だけを実行すると、バックエンドの reserveGlobalQuota が
+-- 「関数が無い」で失敗し、安全側に倒れて全ユーザーが limit_reached になる。
+-- ＝ 門を開けたのに誰も通れない状態になるので、必ず A から実行すること。
+-- ----------------------------------------------------------------------------
+
+create table if not exists public.shared_key_global_usage (
+  day    date primary key,
+  count  integer not null default 0
+);
+
+comment on table public.shared_key_global_usage is
+  '共有キーの全ユーザー合計・日次消費カウンタ（Phase 1のキルスイッチ用）。dayはJST暦日。';
+
+-- ポリシーを1つも作らないので、authenticated からは実質アクセス不可。
+-- service_role は RLS をバイパスするため、バックエンドからだけ読み書きできる
+alter table public.shared_key_global_usage enable row level security;
+
+create or replace function public.try_reserve_global_quota(p_today date, p_limit integer)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_count integer;
+begin
+  insert into public.shared_key_global_usage (day, count)
+  values (p_today, 1)
+  on conflict (day) do update
+    set count = shared_key_global_usage.count + 1
+  returning count into v_count;
+
+  return v_count <= p_limit;
+end;
+$$;
+
+revoke all on function public.try_reserve_global_quota(date, integer) from public;
+grant execute on function public.try_reserve_global_quota(date, integer) to service_role;
+
+-- ----------------------------------------------------------------------------
+-- ブロックB：招待制の反転（Phase 1 Step 3）— 一度きり
+--
+-- 【重要】ALTER ... SET DEFAULT は「これから作られる行」にしか効かない。
+-- 既存行は false のまま残るため、UPDATE によるバックフィルが別途必要になる。
+-- これを忘れると「新規ユーザーは使えるのに、既存ユーザーだけ使えない」状態になる。
+--
+-- 【順序】必ず DEFAULT → UPDATE の順で実行すること。逆にすると、UPDATE の後・
+-- ALTER の前に登録したユーザーだけが false のまま取り残される。
+-- ----------------------------------------------------------------------------
+
+alter table public.user_setting
+  alter column can_use_shared_key set default true;
+
+-- 既存行のバックフィル。
+-- 実行前の false は全て「まだ招待していない」を意味する（＝この時点では
+-- ブロック目的で false にされた行は存在しない）ため、一律 true にしてよい。
+--
+-- 【一度きり】この UPDATE を流した後は false の意味が「明示的に停止した」に変わる。
+-- 二度目以降にこれを実行すると、停止したはずのアカウントを復活させてしまう。
+update public.user_setting
+  set can_use_shared_key = true
+  where can_use_shared_key = false;
+
+-- ----------------------------------------------------------------------------
+-- 実行後の確認
+-- ----------------------------------------------------------------------------
+-- 1. false が残っていないこと（バックフィルの成否）
+--      select can_use_shared_key, count(*) from public.user_setting group by 1;
+--
+-- 2. 新規ユーザーが既定で許可されること（DEFAULT の成否）
+--      select column_default from information_schema.columns
+--       where table_name = 'user_setting' and column_name = 'can_use_shared_key';
+--      -- 期待値: true
+--
+-- 3. 全体上限の関数が動くこと。
+--    実運用の日付（バックエンドは jstDateString() を使う）に触れないよう、
+--    無関係な過去日でテストしてから消す。p_limit=0 なので false が返れば正常
+--      select public.try_reserve_global_quota(date '1999-01-01', 0);  -- 期待値: false
+--      delete from public.shared_key_global_usage where day = date '1999-01-01';
