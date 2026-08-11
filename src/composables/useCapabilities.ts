@@ -20,7 +20,17 @@ export interface OllamaCapability {
   enabled: boolean
 }
 
-const DEFAULT_SHARED_KEY: SharedKeyCapability = { allowed: false, remaining: 0, dailyLimit: 5, reason: null }
+// 1日の上限回数の正本はバックエンドの SHARED_DAILY_LIMIT で、実際の表示には
+// /api/capabilities の応答に入っている dailyLimit を使う。これはその応答が届く前
+// （または prop が渡っていないとき）の繋ぎでしかない。
+//
+// 数値を2箇所に散らすと必ず片方だけ古くなるため、フロント側の繋ぎ値はここ1箇所に集約する
+// （実際、以前はここと EmptyBrainState.vue が 5 のまま取り残されていた）
+export const FALLBACK_DAILY_LIMIT = 3
+
+const DEFAULT_SHARED_KEY: SharedKeyCapability = {
+  allowed: false, remaining: 0, dailyLimit: FALLBACK_DAILY_LIMIT, reason: null,
+}
 // バックエンド側の既定値（未設定なら true）に合わせる。フェッチ前をfalse扱いにすると、
 // 取得が終わるまでの一瞬だけ「Ollamaも使えない」に見えてゲートがチラつく
 const DEFAULT_OLLAMA: OllamaCapability = { enabled: true }

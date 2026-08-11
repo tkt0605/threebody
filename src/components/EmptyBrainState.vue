@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { SharedKeyCapability } from '../composables/useCapabilities'
+import { FALLBACK_DAILY_LIMIT, type SharedKeyCapability } from '../composables/useCapabilities'
 
 const props = defineProps<{ sharedKey?: SharedKeyCapability | undefined }>()
 const emit = defineEmits<{ 'open-settings': [] }>()
@@ -22,7 +22,7 @@ const heading = computed(() => {
 const subtext = computed(() => {
   switch (props.sharedKey?.reason) {
     case 'not_signed_in':
-      return `ログインすれば1日${props.sharedKey?.dailyLimit ?? 5}回まで、キー無しで試せます。`
+      return `ログインすれば1日${props.sharedKey?.dailyLimit ?? FALLBACK_DAILY_LIMIT}回まで、キー無しで試せます。`
     case 'limit_reached':
       return '明日また無料枠が使えます。続けて使うなら設定から自分のAPIキーを登録してね。'
     case 'global_limit_reached':
