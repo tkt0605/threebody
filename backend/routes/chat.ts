@@ -74,7 +74,6 @@ router.post('/chat', chatRateLimit, async (req, res) => {
         // allowed を返した時点で共有キーは存在するが、型の上では null を排除できない
         const key = sharedApiKey()
         if (key) {
-          console.log('共有キー無事取得完了！！')
           sharedKeyUsed = true
           // 思考レベルはユーザーの指定ではなく固定値を使う。
           // 他人のトークンを運営が負担するため、ここがコスト上限の主レバーになる
@@ -100,11 +99,8 @@ router.post('/chat', chatRateLimit, async (req, res) => {
           return
         }
       } else if (allowance.reason !== 'limit_reached') {
-        // ここが無言だと「キー未設定なのに共有キーが動かない」の切り分けができない。
-        // unavailable=環境変数かSupabase未設定 / not_signed_in=トークン無し
-        // / not_permitted=運営が明示的に停止したアカウント（既定はtrueなので通常は出ない）
-        //   か、行の取得・自動作成に失敗した場合
-        console.info(`[sharedKey] 使用せず: ${allowance.reason}`)
+        // 判定の内訳（誰が・なぜ弾かれたか）は checkSharedAllowance 側で出している。
+        // reason は同じ値でも原因が複数あるため、切り分けが要る箇所に近いあちらに寄せてある
       } else {
         // 既存のerrorイベント形式に乗せる。フロントはこれをそのまま描画できる
         // code: 'limit_reached' はバグではなく仕様どおりの制限なので、フロント側で

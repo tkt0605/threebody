@@ -84,12 +84,29 @@ async function reserveGlobalQuota(admin: SupabaseClient): Promise<boolean> {
   return data === true
 }
 
+// 判定の内訳をターミナルに出す。
+// SharedAllowance.reason は同じ値でも原因が複数あるため
+// （not_permitted = 明示的に停止 or 行の取得失敗 / limit_reached = 個人枠 or 全体枠）、
+// reason だけでは切り分けができない。運用時に「誰がなぜ弾かれたか」を追えるようにする
+function logDecision(userId: string | null, detail: string): void {
+  console.info(`[sharedKey] ${detail}${userId ? ` user=${userId}` : ''}`)
+}
+
 export async function checkSharedAllowance(userId: string | null): Promise<SharedAllowance> {
-  if (!sharedApiKey())  return { allowed: false, reason: 'unavailable'   }
-  if (!userId)          return { allowed: false, reason: 'not_signed_in' }
+  if (!sharedApiKey()) {
+    logDecision(null, 'SHARED_ANTHROPIC_API_KEY が未設定のため使用せず')
+    return { allowed: false, reason: 'unavailable' }
+  }
+  if (!userId) {
+    logDecision(null, '未ログインのため使用せず')
+    return { allowed: false, reason: 'not_signed_in' }
+  }
 
   const admin = getSupabaseAdmin()
-  if (!admin) return { allowed: false, reason: 'unavailable' }
+  if (!admin) {
+    logDecision(userId, 'Supabase未設定のため使用せず')
+    return { allowed: false, reason: 'unavailable' }
+  }
 
   let { data, error } = await admin
     .from('user_setting')
@@ -115,19 +132,35 @@ export async function checkSharedAllowance(userId: string | null): Promise<Share
   }
 
   // 行が無い・読めない場合は「許可されていない」に倒す。
-  // 判断できないときに使わせる側へ倒すと、運営のキーが無制限に使われうる
-  if (error || !data) return { allowed: false, reason: 'not_permitted' }
-  if (!data.can_use_shared_key) return { allowed: false, reason: 'not_permitted' }
+  // 判断できないときに使わせる側へ倒すと、運営のキーが無制限に使われうる。
+  // これは仕様どおりの拒否ではなく異常なので warn で出す（下の停止中アカウントとは別物）
+  if (error || !data) {
+    console.warn(`[sharedKey] user_setting の行を取得できませんでした user=${userId}`, error?.message ?? '(行が無く、自動作成にも失敗)')
+    return { allowed: false, reason: 'not_permitted' }
+  }
+  // Phase 1 で既定を true に反転したため、ここに来るのは運営が明示的に停止したアカウントだけ
+  if (!data.can_use_shared_key) {
+    logDecision(userId, '停止中のアカウント（can_use_shared_key=false）')
+    return { allowed: false, reason: 'not_permitted' }
+  }
 
   const used = usedToday(data, jstDateString())
-  if (used >= SHARED_DAILY_LIMIT) return { allowed: false, reason: 'limit_reached' }
+  if (used >= SHARED_DAILY_LIMIT) {
+    logDecision(userId, `個人の1日上限に到達（${used}/${SHARED_DAILY_LIMIT}回）`)
+    return { allowed: false, reason: 'limit_reached' }
+  }
 
   // 全体上限の予約は個人の判定をすべて通過した最後に行う。
   // これより前で予約すると、not_signed_in/not_permitted等どのみち不許可になる
   // リクエストにまで全体枠を消費してしまい、キルスイッチの意味が薄れる
-  if (!(await reserveGlobalQuota(admin))) return { allowed: false, reason: 'limit_reached' }
+  if (!(await reserveGlobalQuota(admin))) {
+    logDecision(userId, `全体の1日上限に到達（上限${GLOBAL_SHARED_DAILY_LIMIT}回/日）`)
+    return { allowed: false, reason: 'limit_reached' }
+  }
 
-  return { allowed: true, remaining: SHARED_DAILY_LIMIT - used }
+  const remaining = SHARED_DAILY_LIMIT - used
+  logDecision(userId, `許可（本日${used}回使用済み・残り${remaining}/${SHARED_DAILY_LIMIT}回）`)
+  return { allowed: true, remaining }
 }
 
 // 消費を1回分記録する。呼ぶのは「共有キーを使い、かつ応答が正常完了した」ときだけ。
