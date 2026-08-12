@@ -1,22 +1,5 @@
 import { ref } from 'vue'
-
-// Markdown記法を読み上げ用にプレーンテキスト化する
-function stripMarkdown(text: string): string {
-  return text
-    .replace(/```[\s\S]*?```/g, '')          // コードブロック
-    .replace(/`([^`]+)`/g, '$1')             // インラインコード
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1') // 画像
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')  // リンク
-    .replace(/^#{1,6}\s+/gm, '')             // 見出し
-    .replace(/\*\*([^*]+)\*\*/g, '$1')       // 太字(**)
-    .replace(/__([^_]+)__/g, '$1')           // 太字(__)
-    .replace(/\*([^*]+)\*/g, '$1')           // 斜体(*)
-    .replace(/_([^_]+)_/g, '$1')             // 斜体(_)
-    .replace(/^\s*[-*+]\s+/gm, '')           // 箇条書き記号
-    .replace(/^\s*\d+\.\s+/gm, '')           // 番号付きリスト記号
-    .replace(/^>\s+/gm, '')                  // 引用
-    .trim()
-}
+import { stripMarkdown } from '../lib/stripMarkdown'
 
 // 品質の高い日本語音声を優先順で選ぶ
 function pickVoice(lang: string): SpeechSynthesisVoice | null {

@@ -110,14 +110,14 @@ function handleCopyClick(event: MouseEvent) {
     >
       <template v-for="(block, i) in message.blocks" :key="i">
         <span class="block" v-if="block.type === 'text' && (block.content || message.streaming) && message.role === 'user'">
-          ❯ {{ block.content }}<span v-if="message.streaming" class="animate-pulse">▍</span>
+          ❯ {{ block.content }}<span v-if="message.streaming" class="animate-pulse" aria-hidden="true">▍</span>
         </span>
         <div
           v-else-if="block.type === 'text' && (block.content || message.streaming) && message.role === 'assistant'"
           class="prose-content"
           :class="block.bodyIndex != null ? 'border-l-2 pl-3 -ml-3' : ''"
           :style="block.bodyIndex != null ? { borderColor: roleColor(block.bodyIndex) } : {}"
-          v-html="DOMPurify.sanitize(renderMarkdown(block.content)) + (message.streaming ? '<span class=\'animate-pulse\'>▍</span>' : '')"
+          v-html="DOMPurify.sanitize(renderMarkdown(block.content)) + (message.streaming ? '<span class=\'animate-pulse\' aria-hidden=\'true\'>▍</span>' : '')"
           @click="handleCopyClick"
         />
         <div v-else-if="block.type === 'perspective' && block.bodies.length > 0" class="space-y-2 mb-3">
@@ -134,7 +134,7 @@ function handleCopyClick(event: MouseEvent) {
               </div>
               <div
                 class="prose-content text-gray-600 dark:text-white/60"
-                v-html="DOMPurify.sanitize(renderMarkdown(b.content)) + (!b.done ? '<span class=\'animate-pulse\'>▍</span>' : '')"
+                v-html="DOMPurify.sanitize(renderMarkdown(b.content)) + (!b.done ? '<span class=\'animate-pulse\' aria-hidden=\'true\'>▍</span>' : '')"
                 @click="handleCopyClick"
               />
             </div>

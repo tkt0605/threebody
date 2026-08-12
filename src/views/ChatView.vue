@@ -8,20 +8,24 @@ import LimitReachedDialog from '../components/LimitReachedDialog.vue'
 import VoiceSphere from '../components/VoiceSphere.vue'
 import VoiceSphereDialog from '../components/VoiceSphereDialog.vue'
 import MessageList from '../components/MessageList.vue'
+import StopButton from '../components/StopButton.vue'
+import ChatLiveRegion from '../components/ChatLiveRegion.vue'
 import { useChat } from '../composables/useChat'
 import { useVoiceInput } from '../composables/useVoiceInput'
 import { useWakeWord } from '../composables/useWakeWord'
 import { useTTS } from '../composables/useTTS'
 import { useSettings, isBodyUsable, hasOwnCloudKey } from '../composables/useSettings'
 import { useCapabilities } from '../composables/useCapabilities'
+import { useChatAnnouncer } from '../composables/useChatAnnouncer'
 import { useAuth } from '../composables/useAuth'
 import type { Message } from '../types/message'
 
-const { messages, sendMessage, openConversation, aiState, currentConversationId } = useChat()
-const { speak } = useTTS()
+const { messages, sendMessage, cancelGeneration, openConversation, aiState, currentConversationId } = useChat()
+const { speak, cancel: cancelSpeech } = useTTS()
 const { settings } = useSettings()
 const { sharedKey, ollama, refreshCapabilities } = useCapabilities()
 const { user } = useAuth()
+const { announce } = useChatAnnouncer()
 
 const route  = useRoute()
 const router = useRouter()
@@ -89,6 +93,22 @@ const canRecord = computed(() =>
 const usingSharedKey = computed(() =>
   !hasOwnCloudKey(settings.bodies) && (sharedKey.value.allowed || limitReached.value)
 )
+
+// 生成中か（思考・統合・出力のいずれか）。停止ボタンの表示条件
+const generating = computed(() => aiState.value !== 'idle')
+
+// ユーザーが明示的に止めたときの後始末。
+// 読み上げ（TTS）まで止めないと、止めたはずの応答が声だけ続いてしまう。
+// voiceActive を先に落としてから中断するのは、中断で streaming が false になった瞬間に
+// 下の watch が「完成した」と見なして途中までの応答を読み上げてしまうため
+function handleStop() {
+  voiceActive.value = false
+  cancelSpeech()
+  cancelGeneration()
+  // 止めた結果は「何も起きなくなる」ことなので、音声だけで追っている人には
+  // 明示的に伝えないと成功したのか分からない
+  announce('生成を停止しました')
+}
 
 // 音声認識完了 → 確認を経て送信
 const { recording, finalText, interimText, bars, errorMsg, confirming, confirmText, start, stop, confirmSend, redo, cancelConfirm } =
@@ -177,6 +197,8 @@ watch(
 
 <template>
   <div class="flex flex-col h-dvh overflow-hidden">
+    <!-- 画面のどのモード（球体だけ／会話ログ）でも読み上げが途切れないよう、最上位に置く -->
+    <ChatLiveRegion />
     <AppHeader />
 
     <main class="flex-1 min-h-0 flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950 ">
@@ -221,6 +243,9 @@ watch(
           {{ errorMsg }}
         </p>
 
+        <!-- 最初の発話は収束するまでこの画面に留まるため、停止ボタンもここに要る -->
+        <StopButton v-if="generating" @click="handleStop" />
+
         <!-- 認識結果の確認：誤認識のまま送らないよう、送信前に一度確認を挟む -->
         <div v-if="confirming" class="flex flex-col items-center gap-3 max-w-sm text-center">
           <p class="text-sm text-gray-700 dark:text-white/80">『{{ confirmText }}』でいいですか？</p>
@@ -241,7 +266,7 @@ watch(
       <!-- 会話中：メッセージ一覧 + 下部に小さな球体（タップで会話継続ダイアログ） -->
       <template v-else>
         <MessageList class="flex-1 min-h-0" :messages="messages" :draft-message="draftMessage" />
-        <div class="shrink-0 flex items-center justify-center py-4">
+        <div class="shrink-0 flex items-center justify-center gap-3 py-4">
           <div
             class="w-14 h-14 rounded-full overflow-hidden cursor-pointer transition-transform hover:scale-105"
             title="続けて話す"
@@ -254,6 +279,9 @@ watch(
               :show-status="false"
             />
           </div>
+          <!-- 生成中だけ球体の隣に出す。Lv5は最大32Kトークンあり、止める手段が無いと
+               待たされ続けたうえ共有キーの枠も1回分消える -->
+          <StopButton v-if="generating" @click="handleStop" />
         </div>
       </template>
     </main>
@@ -268,9 +296,11 @@ watch(
       :confirming="confirming"
       :confirm-text="confirmText"
       :error-msg="errorMsg"
+      :generating="generating"
       @toggle-mic="recording ? stop() : start()"
       @confirm-send="confirmSend"
       @redo="redo"
+      @stop="handleStop"
       @closed="cancelConfirm"
     />
 

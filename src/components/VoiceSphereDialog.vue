@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import VoiceSphere from './VoiceSphere.vue'
+import StopButton from './StopButton.vue'
 
 defineProps<{
   recording:     boolean
@@ -9,9 +10,10 @@ defineProps<{
   confirming:    boolean
   confirmText:   string
   errorMsg?:     string | null
+  generating?:   boolean
 }>()
 
-const emit = defineEmits<{ 'toggle-mic': []; 'confirm-send': []; redo: []; closed: [] }>()
+const emit = defineEmits<{ 'toggle-mic': []; 'confirm-send': []; redo: []; closed: []; stop: [] }>()
 
 const dialogRef = ref<HTMLDialogElement | null>(null)
 
@@ -64,6 +66,9 @@ defineExpose({ open, close })
               >もう一度話す</button>
             </div>
           </div>
+          <!-- このダイアログは副体が並列で考えている間ずっと開いたままなので、
+               「待つしかない」状態を作らないよう、ここからも止められるようにする -->
+          <StopButton v-else-if="generating" @click="emit('stop')" />
           <p v-else class="text-xs text-gray-400 dark:text-white/35 tracking-wide">球体をタップして話しかけてください</p>
         </div>
 

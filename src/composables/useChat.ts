@@ -61,7 +61,8 @@ async function authHeader(): Promise<Record<string, string>> {
 }
 
 const messages = ref<Message[]>([])
-const aiState = ref<'idle' | 'thinking' | 'synthesizing' | 'converging'>('idle');
+export type AiState = 'idle' | 'thinking' | 'synthesizing' | 'converging'
+const aiState = ref<AiState>('idle');
 
 export interface PendingBody { bodyIndex: number; name: string; provider: BodyProvider }
 // 三体モードで現在応答待ちの副体一覧（body_start〜body_doneの間だけ存在）
@@ -203,6 +204,22 @@ function stopGeneration(): void {
   inFlight = null
   aiState.value = 'idle'
   pendingBodies.value = []
+}
+
+// ユーザーが「停止」を押したとき用。中断に加えて、まだ一文字も書かれていない
+// 応答の器（空のアシスタントメッセージ）を画面から取り除く。
+// 取り除かないと発言者名だけのバブルが残り、しかも直前のユーザー発言が
+// 「応答済み」に見えるせいで送り直す導線（orphaned判定）も出てこない。
+//
+// stopGeneration 側でこれをやってはいけない。あちらは sendMessage が
+// 新しいメッセージをpushした直後にも呼ぶため、今まさに使う器を消してしまう
+function cancelGeneration(): void {
+  if (!inFlight) return
+  stopGeneration()
+
+  const last = messages.value.at(-1)
+  const written = last?.blocks.some(b => b.type === 'text' && b.content.length > 0)
+  if (last?.role === 'assistant' && !written) messages.value.pop()
 }
 
 async function switchConversation(id: string): Promise<void> {
@@ -561,7 +578,7 @@ export function useChat() {
   }
 
   return {
-    messages, sendMessage, stopGeneration, aiState, pendingBodies, openConversation, deleteMessage, retryMessage,
+    messages, sendMessage, stopGeneration, cancelGeneration, aiState, pendingBodies, openConversation, deleteMessage, retryMessage,
     conversations, currentConversationId, currentConversation,
     startNewConversation, deleteConversation, renameConversation,
   }

@@ -33,6 +33,25 @@ function abortAwareFetch() {
   )
 }
 
+// 指定のSSEを流したあと、中断されるまで閉じないfetch。
+// 「途中まで届いているところへ停止が入る」状況を作るために使う
+function hangingFetch(chunks: string[]) {
+  const encoder = new TextEncoder()
+  return vi.fn().mockImplementation((_url: string, init: RequestInit) =>
+    Promise.resolve(mockResponse({
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const chunk of chunks) controller.enqueue(encoder.encode(chunk))
+          // 本物の fetch と同じく、中断時は読み取り側を AbortError で失敗させる
+          init.signal!.addEventListener('abort', () => {
+            controller.error(new DOMException('Aborted', 'AbortError'))
+          })
+        },
+      }),
+    }))
+  )
+}
+
 function textBlock(msg: Message, index = 0) {
   return msg.blocks[index] as TextBlock
 }
@@ -247,6 +266,54 @@ describe('useChat', () => {
 
       expect(textBlock(messages.value.at(-1)!).content).toBe('2回目の応答')
       expect(aiState.value).toBe('idle')
+    })
+
+    // ユーザーが「停止」を押す経路。会話切替による中断と違い、画面はそのまま残るため、
+    // 中身の無い応答バブルが残らないこと・送り直せることまでが仕様
+    describe('cancelGeneration（ユーザーによる停止）', () => {
+      it('まだ何も書かれていない応答メッセージを取り除き、直前の発言を宙ぶらりんに戻す', async () => {
+        vi.stubGlobal('fetch', abortAwareFetch())
+
+        const { messages, sendMessage, cancelGeneration, aiState } = useChat()
+        const inFlight = sendMessage('hi')
+        expect(messages.value).toHaveLength(2)
+
+        cancelGeneration()
+        await inFlight
+
+        // 発言者名だけのバブルを残さない。ユーザー発言だけが残り、
+        // MessageList 側の orphaned 判定で「もう一度送信／削除する」が出る状態になる
+        expect(messages.value).toHaveLength(1)
+        expect(messages.value[0]?.role).toBe('user')
+        expect(aiState.value).toBe('idle')
+      })
+
+      it('途中まで書かれた応答は消さずに残す', async () => {
+        vi.stubGlobal('fetch', hangingFetch(['data: {"type":"text","content":"途中まで"}\n\n']))
+
+        const { messages, sendMessage, cancelGeneration } = useChat()
+        const inFlight = sendMessage('hi')
+        await vi.waitFor(() => expect(textBlock(messages.value[1]!).content).toBe('途中まで'))
+
+        cancelGeneration()
+        await inFlight
+
+        expect(messages.value).toHaveLength(2)
+        expect(textBlock(messages.value[1]!).content).toBe('途中まで')
+      })
+
+      it('生成していないときに押しても何も起きない', async () => {
+        const { messages, cancelGeneration } = useChat()
+        messages.value = [{
+          id: 'a1', role: 'assistant', timestamp: new Date(),
+          blocks: [{ type: 'text', content: '' }],
+        }]
+
+        cancelGeneration()
+
+        // inFlight が無いときは（空でも）既存のメッセージに触らない
+        expect(messages.value).toHaveLength(1)
+      })
     })
   })
 })

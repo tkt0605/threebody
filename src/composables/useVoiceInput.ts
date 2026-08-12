@@ -103,7 +103,18 @@ export function useVoiceInput(onFinish: (text: string) => void) {
     }
 
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // audio: true（既定まかせ）だと、スピーカーから出ている自分の応答音声を
+      // マイクが拾い直してしまう。ブラウザ既定でエコーキャンセルが入る環境も多いが、
+      // 明示しないと保証されない。バージイン（再生中の割り込み）を入れる前提として、
+      // まずここで「自分の声が返ってこない」状態を確定させる。
+      // 値はすべて ideal 扱いのため、対応していない端末でも例外にはならず無視される
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,   // 自分の応答音声の回り込みを消す（バージインの前提）
+          noiseSuppression: true,   // 定常ノイズを抑え、無音判定（SILENCE_MS）の精度を上げる
+          autoGainControl:  true,   // 声の大小による認識ムラを減らす
+        },
+      })
     } catch {
       errorMsg.value = 'マイクへのアクセスが拒否されました'
       return
