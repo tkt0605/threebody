@@ -59,6 +59,7 @@ Composables はモジュールレベルのシングルトンとして設計さ�
 - `useCapabilities.ts` — `sharedKey` / `ollama`（`GET /api/capabilities` の結果）を module-level `ref` として保持
 - `useTheme.ts` — `isDark` を module-level `ref` として保持し `localStorage` に永続化
 - `useAsideDrawer.ts` — `asideOpen`（サイドバー開閉）を module-level `ref` として保持
+- `useChatAnnouncer.ts` — スクリーンリーダーへ流す1行（`announcement`）を module-level `ref` として保持。`aiState` の変化と「応答が完成した瞬間」だけを流し、ストリーミング中の本文は流さない（毎トークンの読み直しを避けるため）
 
 ### 会話の永続化（Supabase）
 `conversations` → `messages` → `content_blocks` の3テーブル構成（`useChat.ts` 内で直接クエリ）：
@@ -123,6 +124,8 @@ Composables はモジュールレベルのシングルトンとして設計さ�
 - `EmptyBrainState.vue` — 脳（体）が未設定のときの空状態。共有キーの状態（`not_signed_in` / `limit_reached` / それ以外）でメッセージを出し分け、「未設定」と「無料枠を使い切った」を混同させない
 - `SettingsDialog.vue` — 設定（プロバイダー・モデル・三体設定）
 - `ThreeBodyLogo.vue` — 三体問題の軌道を模した SVG アニメーションロゴ
+- `StopButton.vue` — 生成中だけ出る「停止」。`ChatView` の3箇所（中央の球体・会話ログ下部・`VoiceSphereDialog`）から `cancelGeneration()` を呼ぶ
+- `ChatLiveRegion.vue` — 目に見えないライブリージョン（`role="status" aria-live="polite"`）。中身は `useChatAnnouncer` が組み立てる
 
 
 ## 音声機能
