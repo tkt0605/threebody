@@ -130,8 +130,9 @@ Composables はモジュールレベルのシングルトンとして設計さ�
 
 ## 音声機能
 
-- `useVoiceInput.ts` — Web Speech API で音声認識、コールバックで送信
-- `useWakeWord.ts` — 「アイリス」でウェイクワード検知 → 録音開始
-- `useTTS.ts` — SpeechSynthesis API でAI応答を読み上げ
+- `useVoiceInput.ts` — Web Speech API で音声認識、コールバックで送信。無音での自動送信までの待ち時間は固定値ではなく `lib/endpointing.ts` が認識文字列から決める（言い切り=900ms／フィラー=3000ms）
+- `useWakeWord.ts` — 「アイリス」でウェイクワード検知 → 録音開始。`barge-in` モードではウェイクワード無しでも発話を検知する
+- `useTTS.ts` — SpeechSynthesis API。`enqueue()` は積むだけ（`cancel()` しない）で、逐次読み上げのために文単位で呼ばれる
+- `useVoiceNarration.ts` — AIが喋る側の司令塔。`lib/splitSentences.ts` で完成した文だけを切り出して逐次読み上げし、三体モードでは副体ラウンド中に相槌（方針C）を挟む
 
-録音中はウェイクワード検知を停止し、同一マイクの競合を防ぐ（`ChatView.vue:91` の `watch(recording, ...)`）。
+マイクは1つしか無いため、誰が使うかは `ChatView.vue` の `syncListening()` 1箇所で決める（録音中=useVoiceInputが占有／音声ラウンド中=バージイン待ち／それ以外=ウェイクワード待機）。
