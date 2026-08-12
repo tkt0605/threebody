@@ -13,7 +13,7 @@ import ChatLiveRegion from '../components/ChatLiveRegion.vue'
 import { useChat } from '../composables/useChat'
 import { useVoiceInput } from '../composables/useVoiceInput'
 import { useWakeWord } from '../composables/useWakeWord'
-import { useTTS } from '../composables/useTTS'
+import { useVoiceNarration } from '../composables/useVoiceNarration'
 import { useSettings, isBodyUsable, hasOwnCloudKey } from '../composables/useSettings'
 import { useCapabilities } from '../composables/useCapabilities'
 import { useChatAnnouncer } from '../composables/useChatAnnouncer'
@@ -21,7 +21,6 @@ import { useAuth } from '../composables/useAuth'
 import type { Message } from '../types/message'
 
 const { messages, sendMessage, cancelGeneration, openConversation, aiState, currentConversationId } = useChat()
-const { speak, cancel: cancelSpeech } = useTTS()
 const { settings } = useSettings()
 const { sharedKey, ollama, refreshCapabilities } = useCapabilities()
 const { user } = useAuth()
@@ -51,6 +50,10 @@ watch(currentConversationId, (id) => {
 })
 
 const voiceActive = ref(false)
+
+// AIが喋る側。逐次読み上げ（文が完成するたび）と、副体が考えている間の相槌を受け持つ。
+// 読み上げが全部終わったら音声ラウンドの終了とみなす
+const narration = useVoiceNarration(() => { voiceActive.value = false })
 
 const voiceDialog = ref<InstanceType<typeof VoiceSphereDialog> | null>(null)
 const appAside = ref<InstanceType<typeof AppAside> | null>(null)
@@ -97,13 +100,23 @@ const usingSharedKey = computed(() =>
 // 生成中か（思考・統合・出力のいずれか）。停止ボタンの表示条件
 const generating = computed(() => aiState.value !== 'idle')
 
+const ttsLang = computed(() => settings.language === 'ja' ? 'ja-JP' : 'en-US')
+
+// いま何体で考えるか。相槌の文言（「三人で考えています」）と、
+// そもそも相槌を出すか（単体モードなら出さない）の判断に使う。
+// 共有キー経路はユーザーの設定に関係なくバックエンドが必ず三体で走る（routes/chat.ts）
+const activeBodyCount = computed(() => {
+  if (usingSharedKey.value) return 3
+  return settings.bodies.filter(b => b.provider === 'ollama' ? ollama.value.enabled : isBodyUsable(b)).length
+})
+
 // ユーザーが明示的に止めたときの後始末。
 // 読み上げ（TTS）まで止めないと、止めたはずの応答が声だけ続いてしまう。
 // voiceActive を先に落としてから中断するのは、中断で streaming が false になった瞬間に
 // 下の watch が「完成した」と見なして途中までの応答を読み上げてしまうため
 function handleStop() {
   voiceActive.value = false
-  cancelSpeech()
+  narration.stop()
   cancelGeneration()
   // 止めた結果は「何も起きなくなる」ことなので、音声だけで追っている人には
   // 明示的に伝えないと成功したのか分からない
@@ -114,6 +127,9 @@ function handleStop() {
 const { recording, finalText, interimText, bars, errorMsg, confirming, confirmText, start, stop, confirmSend, redo, cancelConfirm } =
   useVoiceInput((text) => {
     voiceActive.value = true
+    // 送信した瞬間から「AIが喋る側」の担当が始まる。
+    // 三体モードは副体の並列ラウンドぶんだけ無音が空くので、ここから相槌を用意する
+    narration.begin(activeBodyCount.value, ttsLang.value)
     sendMessage(text)
   })
 
@@ -130,27 +146,52 @@ function requestVoiceDialog() {
   voiceDialog.value?.open()
 }
 
-// 「アイリス」でウェイク → 録音開始
-const { listening: wakeListening, startListening, stopListening } = useWakeWord(() => {
+// 「アイリス」でウェイク → 録音開始。
+// AIが喋っている最中は、ウェイクワードを言い直させずに話し始めただけで割り込ませる
+const { listening: wakeListening, startListening, stopListening } = useWakeWord(
+  () => { requestStart() },
+  () => { handleBargeIn() },
+)
+
+// 人間の会話は割り込みで成立する。応答待ち〜読み上げの途中で話し始められたら、
+// 言い終わるのを待たずに黙って聞く側に回る。生成そのものも止める
+// （割り込まれた時点で、そのまま出てくる答えはもう用済みのため）。
+// なお、割り込みを検知した時点の一言は認識器を開き直すあいだに落ちるので、
+// 実際に送られるのは「割り込んだあとに話した内容」になる
+function handleBargeIn() {
+  narration.stop()
+  voiceActive.value = false
+  cancelGeneration()
   requestStart()
-})
+}
 
 // ユーザーが一度でも明示的にマイクを使ったかどうか
 const micEverUsed = ref(false)
 
-// 録音中はウェイクワード検知を停止（同一マイクの競合を防ぐ）
 watch(recording, (isRec) => {
   if (isRec) {
     micEverUsed.value = true
-    stopListening()
     if (messages.value.length === 0) firstExchangeInFlight.value = true
   }
 })
 
-// 音声インタラクション終了後にウェイクワード待機を再開（初回操作済みの場合のみ）
-watch(voiceActive, (active) => {
-  if (!active && !recording.value && micEverUsed.value) startListening()
-})
+// マイクは1つしかないので、いま誰が使うかを1箇所で決める。
+// 分散させると「録音中なのにウェイクワード検知も回っている」類の競合が必ず生まれる
+//   録音中          … useVoiceInput が占有する
+//   音声ラウンド中  … バージイン待ち（何か話し始めたら割り込み）
+//   それ以外        … ウェイクワード待機（一度マイクを使った後のみ）
+//
+// 「読み上げ中だけ」ではなく音声ラウンド全体で開けておく。読み上げは文ごとに
+// 途切れるため、speaking に追従させると認識器の開閉が細かく繰り返される。
+// また、応答を待っている無音の間にも割り込めたほうが会話として自然
+function syncListening() {
+  if (recording.value)   { stopListening(); return }
+  if (voiceActive.value) { startListening('barge-in'); return }
+  if (micEverUsed.value) { startListening('wake'); return }
+  stopListening()
+}
+
+watch([recording, voiceActive, micEverUsed], syncListening)
 
 // 会話継続ダイアログは録音中・thinking中（２〜３体が並列で考えている間）は開いたままにし、
 // 副体の見解が出揃って一体（主体）に収束した瞬間（thinking を抜けた瞬間）に自動で閉じて会話ログへ戻す。
@@ -182,14 +223,19 @@ const responseText = computed(() => {
   return block?.type === 'text' ? block.content : ''
 })
 
-// ストリーミング完了 → TTS読み上げ
+// 届いた本文を逐次読み上げへ。完成した文だけが読まれ、書きかけの文は次まで持ち越される。
+// 応答が完成するまで一言も喋らなかった従来の挙動（外部レビュー #4）はここで解消している
+watch(responseText, (text) => {
+  if (voiceActive.value) narration.feed(text, ttsLang.value)
+})
+
+// ストリーミング完了 → 句点で終わらなかった最後の断片まで読み切る。
+// 読み上げが尽きた時点で voiceActive が落ち（useVoiceNarration の onIdle）、
+// ウェイクワード待機に戻る
 watch(
   () => messages.value.at(-1)?.streaming,
   (streaming) => {
-    if (voiceActive.value && streaming === false) {
-      const lang = settings.language === 'ja' ? 'ja-JP' : 'en-US'
-      speak(responseText.value, lang, () => { voiceActive.value = false })
-    }
+    if (voiceActive.value && streaming === false) narration.end(responseText.value, ttsLang.value)
   }
 )
 

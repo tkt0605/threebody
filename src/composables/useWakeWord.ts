@@ -33,9 +33,18 @@ function matchesWakeWord(transcript: string): boolean {
   return WAKE_PATTERNS.some(p => lower.includes(p.toLowerCase()))
 }
 
-export function useWakeWord(onWake: () => void) {
+// 聞き方は2通りある。マイクは1つしか無いので、同時に両方は回さない
+//   wake      … ウェイクワードだけを待つ（待機中）
+//   barge-in  … AIが喋っている最中。ウェイクワードを言わなくても、話し始めたら割り込む
+export type ListeningMode = 'wake' | 'barge-in'
+
+// バージインの発火に必要な最低文字数。1文字だと物音や「あ」で誤爆する
+const BARGE_IN_MIN_CHARS = 2
+
+export function useWakeWord(onWake: () => void, onBargeIn?: (transcript: string) => void) {
   const listening = ref(false)
   const supported = ref(!!(window.SpeechRecognition ?? window.webkitSpeechRecognition))
+  const mode = ref<ListeningMode>('wake')
 
   let rec: SpeechRecognitionAPI | null = null
   let restartTimer: ReturnType<typeof setTimeout> | null = null
@@ -56,6 +65,15 @@ export function useWakeWord(onWake: () => void) {
         if (matchesWakeWord(transcript)) {
           stopListening()
           onWake()
+          return
+        }
+        // AIが喋っている間は、ウェイクワードを言い直させない。
+        // 人間の会話は割り込みで成立するので、何か話し始めた時点で黙る。
+        // 自分の声を拾って自分で自分を止めないよう、マイク側は
+        // echoCancellation を明示している（useVoiceInput）
+        if (mode.value === 'barge-in' && transcript.trim().length >= BARGE_IN_MIN_CHARS) {
+          stopListening()
+          onBargeIn?.(transcript.trim())
           return
         }
       }
@@ -83,9 +101,14 @@ export function useWakeWord(onWake: () => void) {
     }
   }
 
-  function startListening() {
-    if (listening.value) return
+  function startListening(nextMode: ListeningMode = 'wake') {
+    // 同じ聞き方で既に回っているなら何もしない。
+    // 聞き方だけが変わる場合は、走っている認識を畳んでから開き直す
+    if (listening.value && mode.value === nextMode) return
+    if (listening.value) stopListening()
     if (!(window.SpeechRecognition ?? window.webkitSpeechRecognition)) return
+
+    mode.value = nextMode
     listening.value = true
     spawn()
   }
@@ -99,5 +122,5 @@ export function useWakeWord(onWake: () => void) {
 
   onUnmounted(() => stopListening())
 
-  return { listening, supported, startListening, stopListening }
+  return { listening, supported, mode, startListening, stopListening }
 }

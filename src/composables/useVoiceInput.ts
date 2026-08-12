@@ -1,5 +1,6 @@
 import { ref, onUnmounted } from 'vue'
 import { useSettings } from './useSettings'
+import { endpointDelayMs } from '../lib/endpointing'
 
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList
@@ -56,7 +57,9 @@ export function useVoiceInput(onFinish: (text: string) => void) {
   let stream:        MediaStream          | null = null
   let raf:           number               | null = null
   let silenceTimer:  ReturnType<typeof setTimeout> | null = null
-  const SILENCE_MS = 2500  // 発話後この時間静かなら自動送信
+  // 発話後どれだけ静かなら自動送信するかは固定値ではなく、
+  // 直前に認識できた文字列から都度決める（lib/endpointing.ts）。
+  // 言い淀みで切られる／言い切っても待たされる、の両方を減らすため
 
   function drawBars() {
     if (!analyser || !audioCtx) return
@@ -85,7 +88,12 @@ export function useVoiceInput(onFinish: (text: string) => void) {
     const silent  = avgVol < 0.06
 
     if (hasText && silent) {
-      if (!silenceTimer) silenceTimer = setTimeout(() => stop(), SILENCE_MS)
+      if (!silenceTimer) {
+        // 無音に入った時点の文字列で待ち時間を決める。以降に声が出れば
+        // else 側でタイマーごと捨てられ、次の無音で測り直される
+        const delay = endpointDelayMs(finalText.value + interimText.value)
+        silenceTimer = setTimeout(() => stop(), delay)
+      }
     } else {
       if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null }
     }
