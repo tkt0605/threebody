@@ -4,6 +4,7 @@ import cors from 'cors'
 import chatRouter from './routes/chat'
 import capabilitiesRouter from './routes/capabilities'
 import healthRouter from './routes/health'
+import accountRouter from './routes/account'
 
 const app = express()
 // Render等のリバースプロキシ経由で動くため、req.ip は既定だとプロキシ自身のIPになり、
@@ -17,6 +18,7 @@ app.use(express.json())
 app.use('/api', chatRouter)
 app.use('/api', capabilitiesRouter)
 app.use('/api', healthRouter)
+app.use('/api', accountRouter)
 
 const PORT = Number(process.env.PORT ?? 3000)
 app.listen(PORT, () => {
