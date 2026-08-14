@@ -39,11 +39,13 @@ npx vitest run src/composables/__tests__/useChat.test.ts   # 単一ファイル
 - **ルーティング**: 
 - `src/router/index.ts` — `/`（要認証）、`/login`、`/signup`（`/login`にリダイレクト）、`/auth/callback`
 - `/c/:id` -（ChatView, requiresAuth）— 会話への直リンク用ルート
+- `/terms` / `/privacy` — 利用規約・プライバシーポリシー。**requiresAuth は付けない**（ログイン前に読めないと `LoginView` の同意文が成立せず、Google OAuth の審査も未ログインでの到達を前提にしている）
 - **認証**: Supabase Auth（Google OAuth, PKCEフロー）。`useAuth.ts` がセッションをモジュールレベルの singleton として保持し、`router.beforeEach` が `/` へのアクセスをガードする
 
 ### バックエンド (`backend/`)
 - Express サーバー。エントリポイントは `backend/index.ts`（`loadEnv.ts` で `.env` を読み込んでからルーターをマウントするだけ）。SSE（Server-Sent Events）形式でストリーミングレスポンスを返す
-- `backend/routes/` — `chat.ts`（`POST /api/chat`、三体モードのオーケストレーション含む）/ `capabilities.ts`（`GET /api/capabilities`）/ `health.ts`（`GET /api/health`）
+- `backend/routes/` — `chat.ts`（`POST /api/chat`、三体モードのオーケストレーション含む）/ `capabilities.ts`（`GET /api/capabilities`）/ `health.ts`（`GET /api/health`）/ `account.ts`（`DELETE /api/account`、退会）
+- 退会（`account.ts`）がバックエンドにあるのは、`auth.users` の行が anon key では消せず service_role でしか消せないため。会話単位の削除（`useChat.deleteConversation`）がフロント完結なのは、そちらが RLS の範囲内で完結する操作だから
 - `backend/llm/` — プロバイダー横断の型・設定・変換処理。`types.ts`（`Provider`/`BodyConfig`/`LevelConfig` 等）、`modelConfig.ts`（`M`/`LEVEL_CONFIG`）、`messageHelpers.ts`（メッセージ形式変換）、`textService.ts`（`streamBodyOAI`/`streamSecondaryBody` のプロバイダー横断オーケストレーション）
 - `backend/llm/providers/` — プロバイダーごとのストリーミング実装。`anthropic.ts` / `openaiCompat.ts`（openai/deepseek共通、`createOpenAICompatClient(body: BodyConfig)` に一本化）/ `ollama.ts`
 - `backend/utils/` — `errorSanitize.ts` / `jstDate.ts` など汎用の純関数
@@ -98,6 +100,7 @@ Composables はモジュールレベルのシングルトンとして設計さ�
 |---|---|
 | `POST /api/chat` | SSEチャット（三体モード対応） |
 | `GET /api/health` | ヘルスチェック |
+| `DELETE /api/account` | 退会。認証必須・service_role でアカウントと全データを削除（1時間5回まで） |
 
 ## 環境変数 (`.env`)
 
@@ -124,7 +127,10 @@ Composables はモジュールレベルのシングルトンとして設計さ�
 - `EmptyBrainState.vue` — 脳（体）が未設定のときの空状態。共有キーの状態（`not_signed_in` / `limit_reached` / それ以外）でメッセージを出し分け、「未設定」と「無料枠を使い切った」を混同させない
 - `SettingsDialog.vue` — 設定（プロバイダー・モデル・三体設定）
 - `ThreeBodyLogo.vue` — 三体問題の軌道を模した SVG アニメーションロゴ
+- `TextComposer.vue` — テキスト入力欄。`ChatView` の2箇所（中央の球体画面・会話ログ下部）に置く。音声と違い `useVoiceNarration` を起動しない（文字で打った人に読み上げを返さない）。Enter送信・Shift+Enter改行で、IME変換中のEnterは送信しない
 - `StopButton.vue` — 生成中だけ出る「停止」。`ChatView` の3箇所（中央の球体・会話ログ下部・`VoiceSphereDialog`）から `cancelGeneration()` を呼ぶ
+- `LegalPage.vue` — 規約・プライバシーポリシー共通の枠（見出し・戻る導線・条文の体裁）。中身だけ `TermsView` / `PrivacyView` がスロットで差し替える
+- `DeleteAccountDialog.vue` — 退会の確認。取り消せない操作なので「削除」と打たせる二段確認にしてある。マウント先は `AppAside.vue`
 - `ChatLiveRegion.vue` — 目に見えないライブリージョン（`role="status" aria-live="polite"`）。中身は `useChatAnnouncer` が組み立てる
 
 
