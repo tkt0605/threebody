@@ -8,6 +8,7 @@ import LimitReachedDialog from '../components/LimitReachedDialog.vue'
 import VoiceSphere from '../components/VoiceSphere.vue'
 import VoiceSphereDialog from '../components/VoiceSphereDialog.vue'
 import MessageList from '../components/MessageList.vue'
+import TextComposer from '../components/TextComposer.vue'
 import StopButton from '../components/StopButton.vue'
 import ChatLiveRegion from '../components/ChatLiveRegion.vue'
 import { useChat } from '../composables/useChat'
@@ -83,10 +84,11 @@ const hasActiveBody = computed(() =>
   || limitReached.value
 )
 
-// 実際に録音を開始してよいか（バックエンドが受け付けるかの事前チェック）。
+// 実際に送ってよいか（バックエンドが受け付けるかの事前チェック）。
 // hasActiveBody と違い上限到達は含めない。ここがfalseのときに録音を始めると、
-// 話し終えてから「上限到達」エラーで弾かれるだけなので、録音開始前にダイアログで止める
-const canRecord = computed(() =>
+// 話し終えてから「上限到達」エラーで弾かれるだけなので、録音開始前にダイアログで止める。
+// テキスト送信も同じ壁に当たるため、音声・文字の両方の入口でこれを見る
+const canSend = computed(() =>
   hasOwnCloudKey(settings.bodies) || sharedKey.value.allowed
 )
 
@@ -134,16 +136,25 @@ const { recording, finalText, interimText, bars, errorMsg, confirming, confirmTe
   })
 
 // 録音を始めるすべての入口（中央の球体・下部の球体・ウェイクワード）はここを通す。
-// canRecord が false なら実際には録音せず、ダイアログで「使えない」ことを先に伝える
+// canSend が false なら実際には録音せず、ダイアログで「使えない」ことを先に伝える
 // （録音・発話を終えてからエラーで弾かれる体験を避ける）
 function requestStart() {
-  if (!canRecord.value) { limitDialog.value?.open(); return }
+  if (!canSend.value) { limitDialog.value?.open(); return }
   start()
 }
 
 function requestVoiceDialog() {
-  if (!canRecord.value) { limitDialog.value?.open(); return }
+  if (!canSend.value) { limitDialog.value?.open(); return }
   voiceDialog.value?.open()
+}
+
+// テキスト入力からの送信。
+// narration.begin() を呼ばないのが音声経路との唯一の違いで、これは意図的：
+// 文字で打った人は画面を見ているので、答えを声で読み上げられると邪魔になる。
+// 声で始めた会話は声で返し、文字で始めた会話は文字で返す
+function handleTextSend(text: string) {
+  if (!canSend.value) { limitDialog.value?.open(); return }
+  sendMessage(text)
 }
 
 // 「アイリス」でウェイク → 録音開始。
@@ -307,27 +318,40 @@ watch(
             >もう一度話す</button>
           </div>
         </div>
+
+        <!-- 文字で始める入口。音声認識に対応しないブラウザ（Firefox等）ではここが唯一の入口になり、
+             対応ブラウザでも「声に出したくない・出せない」場面の逃げ道になる -->
+        <div class="w-full max-w-md space-y-1.5">
+          <TextComposer :disabled="generating" @send="handleTextSend" />
+          <p class="text-center text-[11px] text-gray-400 dark:text-white/25">
+            球体をタップで音声入力、またはテキストで送信
+          </p>
+        </div>
       </div>
 
       <!-- 会話中：メッセージ一覧 + 下部に小さな球体（タップで会話継続ダイアログ） -->
       <template v-else>
         <MessageList class="flex-1 min-h-0" :messages="messages" :draft-message="draftMessage" />
-        <div class="shrink-0 flex items-center justify-center gap-3 py-4">
-          <div
-            class="w-14 h-14 rounded-full overflow-hidden cursor-pointer transition-transform hover:scale-105"
-            title="続けて話す"
-            @click="requestVoiceDialog()"
-          >
-            <VoiceSphere
-              :recording="recording"
-              :bars="bars"
-              :wake-listening="wakeListening"
-              :show-status="false"
-            />
-          </div>
-          <!-- 生成中だけ球体の隣に出す。Lv5は最大32Kトークンあり、止める手段が無いと
+        <div class="shrink-0 flex flex-col items-center gap-2 px-4 py-3">
+          <!-- 生成中だけ入力欄の上に出す。Lv5は最大32Kトークンあり、止める手段が無いと
                待たされ続けたうえ共有キーの枠も1回分消える -->
           <StopButton v-if="generating" @click="handleStop" />
+          <div class="w-full max-w-2xl flex items-end gap-3">
+            <div
+              class="w-12 h-12 shrink-0 rounded-full overflow-hidden cursor-pointer transition-transform hover:scale-105"
+              title="続けて話す"
+              @click="requestVoiceDialog()"
+            >
+              <VoiceSphere
+                :recording="recording"
+                :bars="bars"
+                :wake-listening="wakeListening"
+                :show-status="false"
+              />
+            </div>
+            <!-- 会話の途中でも声と文字を混ぜられるようにする（片方に決め打たない） -->
+            <TextComposer class="flex-1 min-w-0" :disabled="generating" @send="handleTextSend" />
+          </div>
         </div>
       </template>
     </main>

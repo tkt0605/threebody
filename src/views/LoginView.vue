@@ -64,8 +64,10 @@ async function onGoogleLogin() {
           {{ loading ? 'リダイレクト中...' : 'Google で続行' }}
         </button>
 
+        <!-- 同意を求める以上、その場で全文を読めなければ同意は成立しない。
+             リンク先は requiresAuth 無しのため、ログインせずに開ける -->
         <p class="text-center text-[11px] text-white/30 leading-relaxed">
-          続行すると利用規約に同意したものとみなされます。
+          続行すると<router-link to="/terms" class="text-white/55 underline underline-offset-2 hover:text-white/80">利用規約</router-link>および<router-link to="/privacy" class="text-white/55 underline underline-offset-2 hover:text-white/80">プライバシーポリシー</router-link>に同意したものとみなされます。
         </p>
       </div>
     </div>

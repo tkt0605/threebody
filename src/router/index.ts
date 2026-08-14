@@ -2,6 +2,8 @@ import { createRouter, createWebHistory } from 'vue-router'
 import ChatView      from '../views/ChatView.vue'
 import LoginView     from '../views/LoginView.vue'
 import AuthCallback  from '../views/AuthCallback.vue'
+import TermsView     from '../views/TermsView.vue'
+import PrivacyView   from '../views/PrivacyView.vue'
 import { supabase }  from '../lib/supabase'
 
 const router = createRouter({
@@ -14,6 +16,11 @@ const router = createRouter({
     // Google 認証ではサインアップ/ログインの区別がないため /login に集約
     { path: '/signup',       redirect: '/login'      },
     { path: '/auth/callback', component: AuthCallback },
+    // 規約とプライバシーポリシーは requiresAuth を付けない。
+    // ログイン前に読めないと「同意して続行」の同意が成立せず、Google OAuth の
+    // 審査もこのURLへ未ログインで到達できることを前提にしている
+    { path: '/terms',        component: TermsView    },
+    { path: '/privacy',      component: PrivacyView  },
   ],
 })
 

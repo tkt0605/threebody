@@ -106,7 +106,10 @@ export function useVoiceInput(onFinish: (text: string) => void) {
 
     const SRAPI = window.SpeechRecognition ?? window.webkitSpeechRecognition
     if (!SRAPI) {
-      errorMsg.value = 'このブラウザは音声認識に対応していません'
+      // 行き止まりにしないため、代わりの入口（テキスト入力欄）まで文中で示す。
+      // Firefox はそもそも Web Speech API を実装していないので、ここは
+      // 「一時的な失敗」ではなく「このブラウザでは今後も使えない」の意味になる
+      errorMsg.value = 'このブラウザは音声入力に対応していません。下の入力欄から文字で送信できます'
       return
     }
 

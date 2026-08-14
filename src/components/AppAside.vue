@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import ThreeBodyLogo from './ThreeBodyLogo.vue'
 import SettingsDialog from './SettingsDialog.vue'
+import DeleteAccountDialog from './DeleteAccountDialog.vue'
 import { useAuth } from '../composables/useAuth'
 import { useChat } from '../composables/useChat'
 import { useAsideDrawer } from '../composables/useAsideDrawer'
@@ -14,6 +15,7 @@ const { conversations, currentConversationId, startNewConversation, deleteConver
 const { asideOpen, closeAside } = useAsideDrawer()
 
 const settingsDialog = ref<InstanceType<typeof SettingsDialog> | null>(null)
+const deleteAccountDialog = ref<InstanceType<typeof DeleteAccountDialog> | null>(null)
 
 const displayName = computed(() =>
   user.value?.user_metadata?.full_name ?? user.value?.user_metadata?.name ?? user.value?.email ?? 'ゲスト'
@@ -58,6 +60,17 @@ async function handleDeleteConversation(id: string) {
   const wasCurrent = id === currentConversationId.value
   await deleteConversation(id)
   if (wasCurrent) router.push('/')
+}
+
+function openDeleteAccount() {
+  closeAside()
+  deleteAccountDialog.value?.open()
+}
+
+// 削除が完了した時点でセッションは消えている。ログイン画面へ戻さないと、
+// 認証必須の画面に「消えたはずのユーザー」のまま留まることになる
+function onAccountDeleted() {
+  router.push('/login')
 }
 
 function onKeydown(e: KeyboardEvent) {
@@ -177,11 +190,26 @@ defineExpose({ openSettings })
           </svg>
         </button>
       </div>
+
+      <!-- 退会と規約類。ログアウトの隣ではなく一段下げて置く（押し間違いを避ける）。
+           プライバシーポリシーが「サイドバーの『アカウントを削除』から」と案内しているため、
+           場所を変えるときはそちらの記述も直すこと -->
+      <div class="mt-1 px-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-gray-400 dark:text-white/25">
+        <router-link to="/terms" class="hover:text-gray-600 dark:hover:text-white/50" @click="closeAside">利用規約</router-link>
+        <span aria-hidden="true">·</span>
+        <router-link to="/privacy" class="hover:text-gray-600 dark:hover:text-white/50" @click="closeAside">プライバシー</router-link>
+        <span aria-hidden="true">·</span>
+        <button
+          class="cursor-pointer hover:text-rose-500 dark:hover:text-rose-400"
+          @click="openDeleteAccount"
+        >アカウントを削除</button>
+      </div>
     </div>
   </aside>
   </Teleport>
 
   <SettingsDialog ref="settingsDialog" />
+  <DeleteAccountDialog ref="deleteAccountDialog" @deleted="onAccountDeleted" />
 </template>
 
 <style scoped>
