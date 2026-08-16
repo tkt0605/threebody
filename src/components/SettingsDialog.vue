@@ -52,11 +52,6 @@ function applyTemplate(text: string) {
 const LANGUAGES: { value: Language; label: string }[] = [
   { value: 'ja', label: '日本語' },
   { value: 'en', label: 'English' },
-  { value: 'zh', label: '中文' },
-  { value: 'ko', label: '한국어' },
-  { value: 'fr', label: 'Français' },
-  { value: 'es', label: 'Español' },
-  { value: 'de', label: 'Deutsch' },
 ]
 
 // 思考レベルは1〜5の5段階。バックエンドの LEVEL_CONFIG がモデル階層・maxTokens・

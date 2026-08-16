@@ -1,5 +1,5 @@
 import { ref, onUnmounted } from 'vue'
-import { useSettings } from './useSettings'
+import { useSettings, type Language } from './useSettings'
 import { endpointDelayMs } from '../lib/endpointing'
 
 interface SpeechRecognitionEvent extends Event {
@@ -27,14 +27,11 @@ declare global {
   }
 }
 
-const LANG_LOCALE: Record<string, string> = {
+// 対応言語は ja / en の2つ。ChatView の ttsLang（読み上げ）が元からこの2つしか
+// 持っておらず、他言語は認識だけ通って読み上げが英語になるという壊れ方をしていた
+const LANG_LOCALE: Record<Language, string> = {
   ja: 'ja-JP',
   en: 'en-US',
-  zh: 'zh-CN',
-  ko: 'ko-KR',
-  fr: 'fr-FR',
-  es: 'es-ES',
-  de: 'de-DE',
 }
 
 const BAR_COUNT = 32

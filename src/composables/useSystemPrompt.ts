@@ -1,4 +1,4 @@
-import type { Settings, VoiceStyle, BodyPersona } from './useSettings'
+import type { Settings, VoiceStyle, BodyPersona, Language } from './useSettings'
 import { BODY_PERSONA_INFO } from '../constants/bodyPersonas'
 
 // ── Step 1: ベース人格 ────────────────────────────────────────────────
@@ -64,14 +64,9 @@ const VOICE_STYLE: Record<VoiceStyle, string> = {
 }
 
 // ── 言語 ─────────────────────────────────────────────────────────────
-const LANGUAGE_PROMPT: Record<string, string> = {
+const LANGUAGE_PROMPT: Record<Language, string> = {
   ja: '日本語で話す。',
   en: 'Speak in English.',
-  zh: '用中文回答。',
-  ko: '한국어로 답변한다.',
-  fr: 'Réponds en français.',
-  es: 'Responde en español.',
-  de: 'Antworte auf Deutsch.',
 }
 
 

@@ -1,7 +1,12 @@
 import { reactive, watch } from 'vue'
 import { decryptText, encryptText, type EncryptedPayload } from '../lib/keyVault'
 
-export type Language = 'ja' | 'en' | 'zh' | 'ko' | 'fr' | 'es' | 'de'
+// 7言語から2言語へ縮小した。読み上げ（ChatView の ttsLang）が元から ja / en の
+// 2つしか持っておらず、中国語等を選ぶと「認識と本文は中国語・読み上げだけ英語」に
+// なっていたため。i18n に着手する際は、ここではなく LANG_LOCALE / LANGUAGE_PROMPT /
+// ttsLang の3つを揃えて戻すこと。
+const LANGUAGE_VALUES = ['ja', 'en'] as const
+export type Language = typeof LANGUAGE_VALUES[number]
 export type VoiceStyle = 'formal' | 'casual' | 'terse' | 'warm'
 export type ThinkingLevel = 1 | 2 | 3 | 4 | 5
 export type Provider = 'anthropic' | 'openai' | 'deepseek' | 'ollama'
@@ -47,8 +52,15 @@ function loadRaw(): Partial<StoredSettings> {
 
 const saved = loadRaw()
 
+// 保存済みの値は型アサーションを通るだけで実行時の検証がされない。
+// 7言語時代に 'zh' 等を選んだユーザーの localStorage がそのまま残っているため、
+// ホワイトリストに無い値は 'ja' へ落とす（型を狭めただけでは防げない）
+function toLanguage(v: unknown): Language {
+  return (LANGUAGE_VALUES as readonly string[]).includes(v as string) ? (v as Language) : 'ja'
+}
+
 const settings = reactive<Settings>({
-  language:      (saved.language      as Language)      ?? 'ja',
+  language:      toLanguage(saved.language),
   voiceStyle:    (saved.voiceStyle    as VoiceStyle)    ?? 'warm',
   thinkingLevel: (saved.thinkingLevel as ThinkingLevel) ?? 3,
   systemPrompt:  saved.systemPrompt                     ?? '',
