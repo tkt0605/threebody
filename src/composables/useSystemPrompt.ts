@@ -29,15 +29,6 @@ const BASE_PERSONA = `\
 英単語を不必要に日本語に混ぜない（「Specificな〜」「Uniqueな〜」「Complexな〜」のようなルー語は禁止）。
 他のAIやLLMの名前（Ollama、ChatGPT、Claude、DeepSeekなど）を無断で会話に持ち込まない。存在しない文脈やエピソードを作らない。`
 
-// ── Step 3: 思考レベル連動 ───────────────────────────────────────────
-const LEVEL_STYLE: Record<number, string> = {
-  1: '【応答スタイル】一言か二文に絞る。テンポよく、歯切れよく。',
-  2: '【応答スタイル】要点だけコンパクトに。リズムのある短文で。',
-  3: '【応答スタイル】適切な深さで、わかりやすく。',
-  4: '【応答スタイル】複数の視点から丁寧に掘り下げる。考えを丁寧に展開する。',
-  5: '【応答スタイル】あらゆる角度から徹底的に。論理と直感の両方を使って考え抜く。',
-}
-
 // ── Step 4: Voice Style ──────────────────────────────────────────────
 // 担当する軸は「口調（語彙・敬体）」の1つだけ。
 // 相槌を返すかどうかはBASE_PERSONAが決めるため、ここでは語彙の例を示すに留める。
@@ -78,10 +69,10 @@ export function buildSystemPrompt(settings: Settings): string {
 
   parts.push(VOICE_STYLE[settings.voiceStyle])
 
-  const levelStyle = LEVEL_STYLE[settings.thinkingLevel]
-  if (levelStyle) parts.push(levelStyle)
-
-  // プリセット層は廃止した。coding / creative の固有指示は SettingsDialog の
+  // thinkingLevel はプロンプトに何も足さない。文体の指示（旧 LEVEL_STYLE）は
+  // VOICE_STYLE の口調と競合していたため廃止し、レベルはモデル階層と maxTokens
+  // （backend の LEVEL_CONFIG）だけを決める軸に絞った。
+  // プリセット層も廃止し、coding / creative の固有指示は SettingsDialog の
   // PRESET_TEMPLATES から【追加指示】へ流し込む形に移してある（層を増やさないため）
   if (settings.systemPrompt?.trim()) {
     parts.push(`【追加指示】\n${settings.systemPrompt.trim()}`)

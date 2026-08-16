@@ -54,15 +54,22 @@ const LANGUAGES: { value: Language; label: string }[] = [
   { value: 'en', label: 'English' },
 ]
 
-// 思考レベルは1〜5の5段階。バックエンドの LEVEL_CONFIG がモデル階層・maxTokens・
-// thinking パラメータをこの値から決めるため、UIの選択肢と値は1対1で対応させる
+// UIは3択だが、送る値は backend の LEVEL_CONFIG のキー（1〜5）のまま。
+// Lv2 と Lv4 を選ばせるのをやめただけで、経路は消していない
+// （/api/chat は curl 等フロントを介さない生のリクエストでも叩けるため）。
+// 高を Lv4 ではなく Lv5 にしているのは、Lv4 の thinkingBudget が deprecated な機構で、
+// Lv5 の adaptive thinking がその後継にあたるから。
 const THINKING_LEVELS: { value: ThinkingLevel; label: string; desc: string; color: string }[] = [
   { value: 1, label: '速答', desc: '考えずに即答',     color: '#64748b' },
-  { value: 2, label: '概略', desc: '軽く推論',         color: '#0ea5e9' },
   { value: 3, label: '標準', desc: 'バランス思考',     color: '#6366f1' },
-  { value: 4, label: '深考', desc: '複雑な問題向け',   color: '#8b5cf6' },
   { value: 5, label: '限界', desc: '最大思考リソース', color: '#f43f5e' },
 ]
+
+// 保存済みの 2 / 4 は選択肢に無いため、最も近い段階へ寄せて表示する。
+// 値そのものは書き換えない（ユーザーが選び直すまで backend へはそのまま送る）
+const shownLevel = computed(() =>
+  THINKING_LEVELS.find(l => l.value === (draft.thinkingLevel <= 2 ? 1 : draft.thinkingLevel === 3 ? 3 : 5))!
+)
 
 const showAdvanced = ref(false)
 
@@ -170,8 +177,8 @@ defineExpose({ open })
           <div class="space-y-3">
             <div class="flex items-baseline justify-between">
               <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">思考レベル</label>
-              <span class="text-xs" :style="{ color: THINKING_LEVELS[draft.thinkingLevel - 1]!.color }">
-                Lv.{{ draft.thinkingLevel }} — {{ THINKING_LEVELS[draft.thinkingLevel - 1]!.desc }}
+              <span class="text-xs" :style="{ color: shownLevel.color }">
+                Lv.{{ draft.thinkingLevel }} — {{ shownLevel.desc }}
               </span>
             </div>
             <div class="flex gap-1.5">
@@ -179,13 +186,12 @@ defineExpose({ open })
                 v-for="lvl in THINKING_LEVELS"
                 :key="lvl.value"
                 class="flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl text-xs transition-all cursor-pointer border"
-                :style="draft.thinkingLevel === lvl.value
+                :style="shownLevel.value === lvl.value
                   ? { background: lvl.color + '22', borderColor: lvl.color + '99', color: lvl.color }
                   : inactiveBtnStyle"
                 @click="draft.thinkingLevel = lvl.value"
               >
-                <span class="font-bold text-sm">{{ lvl.value }}</span>
-                <span class="tracking-wide">{{ lvl.label }}</span>
+                <span class="tracking-wide font-semibold">{{ lvl.label }}</span>
               </button>
             </div>
           </div>
