@@ -3,7 +3,6 @@ import { decryptText, encryptText, type EncryptedPayload } from '../lib/keyVault
 
 export type Language = 'ja' | 'en' | 'zh' | 'ko' | 'fr' | 'es' | 'de'
 export type VoiceStyle = 'formal' | 'casual' | 'terse' | 'warm'
-export type Preset = 'general' | 'coding' | 'creative' | 'chat'
 export type ThinkingLevel = 1 | 2 | 3 | 4 | 5
 export type Provider = 'anthropic' | 'openai' | 'deepseek' | 'ollama'
 export type BodyProvider = 'ollama' | 'openai' | 'anthropic' | 'deepseek'
@@ -18,7 +17,6 @@ export interface BodyConfig {
 export interface Settings {
   language: Language
   voiceStyle: VoiceStyle
-  preset: Preset
   thinkingLevel: ThinkingLevel
   systemPrompt: string
   provider: Provider
@@ -52,7 +50,6 @@ const saved = loadRaw()
 const settings = reactive<Settings>({
   language:      (saved.language      as Language)      ?? 'ja',
   voiceStyle:    (saved.voiceStyle    as VoiceStyle)    ?? 'warm',
-  preset:        (saved.preset        as Preset)        ?? 'general',
   thinkingLevel: (saved.thinkingLevel as ThinkingLevel) ?? 3,
   systemPrompt:  saved.systemPrompt                     ?? '',
   provider:      (saved.provider      as Provider)      ?? 'ollama',

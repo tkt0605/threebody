@@ -21,7 +21,6 @@ function makeSettings(over: Partial<Settings> = {}): Settings {
   return {
     language:      'ja',
     voiceStyle:    'warm',
-    preset:        'general',
     thinkingLevel: 3,
     systemPrompt:  '',
     provider:      'ollama',
@@ -43,12 +42,13 @@ describe('buildSystemPrompt', () => {
       .toMatchSnapshot()
   })
 
-  it('preset: coding × language: en', () => {
-    expect(buildSystemPrompt(makeSettings({ preset: 'coding', language: 'en' })))
-      .toMatchSnapshot()
+  // 旧 preset 層の削除前は 'preset: coding × language: en' だったケース。
+  // preset が設定から消えたため、言語だけの確認に縮んでいる
+  it('language: en', () => {
+    expect(buildSystemPrompt(makeSettings({ language: 'en' }))).toMatchSnapshot()
   })
 
-  it('既定値（warm / general / ja / Lv3）', () => {
+  it('既定値（warm / ja / Lv3）', () => {
     expect(buildSystemPrompt(makeSettings())).toMatchSnapshot()
   })
 })

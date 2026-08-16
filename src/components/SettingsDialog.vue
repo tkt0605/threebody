@@ -1,12 +1,9 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
-// Provider / VoiceStyle / Preset は draft の型アサーションでのみ使っていたが、
+// Provider / VoiceStyle は draft の型アサーションでのみ使っていたが、
 // settings 側の型がそのまま通るためアサーション自体が不要になり、importも落とした
 import {  useSettings,  isBodyUsable,  type Language, type ThinkingLevel, type BodyProvider, type BodyConfig } from '../composables/useSettings'
-import { 
-  VOICE_STYLE_OPTIONS,
-  PRESET_OPTIONS
-} from '../composables/useSettingsOptions'
+import { VOICE_STYLE_OPTIONS } from '../composables/useSettingsOptions'
 import { useTheme } from '../composables/useTheme'
 import { BODY_PROVIDER_COLORS } from '../constants/bodyProviders'
 
@@ -36,6 +33,21 @@ const MODEL_PLACEHOLDERS: Record<BodyProvider, string> = {
 }
 
 const BODY_NAMES = ['一体', '二体', '三体'] as const
+
+// 旧プリセット（設定として保存され、プロンプトに1層足していた）の置き換え。
+// 選ぶと追加指示欄に文章が入り、ユーザーがその場で編集できる。設定は増えず、
+// プロンプトの層も増えない（追加指示は元から1層ある）。
+// general は元から中身が無く、chat は BASE_PERSONA の【会話の進め方】と重複するため落とした。
+const PRESET_TEMPLATES: { label: string; text: string }[] = [
+  { label: 'コード', text: 'コードは動作するものを優先。エラーは根本原因から説明する。' },
+  { label: '創作',   text: '創作の相談には積極的にアイデアを広げる。制約より可能性を語る。' },
+]
+
+// 既存の入力を消さないよう、空なら差し込み・そうでなければ改行して追記する
+function applyTemplate(text: string) {
+  const current = draft.systemPrompt.trim()
+  draft.systemPrompt = current ? `${current}\n${text}` : text
+}
 
 const LANGUAGES: { value: Language; label: string }[] = [
   { value: 'ja', label: '日本語' },
@@ -69,7 +81,6 @@ const isBodyActive = isBodyUsable
 const draft = reactive({
   language:      settings.language,
   voiceStyle:    settings.voiceStyle,
-  preset:        settings.preset,
   thinkingLevel: settings.thinkingLevel,
   systemPrompt:  settings.systemPrompt,
   provider:      settings.provider,
@@ -79,7 +90,6 @@ const draft = reactive({
 function open() {
   draft.language      = settings.language
   draft.voiceStyle    = settings.voiceStyle
-  draft.preset        = settings.preset
   draft.thinkingLevel = settings.thinkingLevel
   draft.systemPrompt  = settings.systemPrompt
   draft.provider      = settings.provider
@@ -94,7 +104,6 @@ function close() {
 function save() {
   settings.language      = draft.language
   settings.voiceStyle    = draft.voiceStyle
-  settings.preset        = draft.preset
   settings.thinkingLevel = draft.thinkingLevel
   settings.systemPrompt  = draft.systemPrompt
   draft.bodies.forEach((b, i) => {
@@ -208,33 +217,22 @@ defineExpose({ open })
               </button>
             </div>
           </div>
-          <!-- プリセット -->
-          <div class="space-y-3">
-            <div class="flex items-baseline justify-between">
-              <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">プリセット</label>
-              <span class="text-xs text-gray-400 dark:text-white/30">
-                {{ PRESET_OPTIONS.find(o => o.value === draft.preset)?.desc ?? '' }}
-              </span>
-            </div>
-            <div class="flex gap-1.5">
-              <button
-                v-for="opt in PRESET_OPTIONS"
-                :key="opt.value"
-                class="flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl text-xs transition-all cursor-pointer border"
-                :class="draft.preset === opt.value
-                  ? 'bg-indigo-500/10 border-indigo-500/60 text-indigo-500 dark:text-indigo-400'
-                  : ''"
-                :style="draft.preset !== opt.value ? inactiveBtnStyle : {}"
-                @click="draft.preset = opt.value"
-              >
-                <span class="font-semibold">{{ opt.label }}</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- 追加指示 -->
+          <!-- 追加指示（旧プリセットはここへ流し込むテンプレートになった） -->
           <div class="space-y-2">
-            <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">追加指示</label>
+            <div class="flex items-baseline justify-between">
+              <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">追加指示</label>
+              <div class="flex gap-1.5">
+                <button
+                  v-for="tpl in PRESET_TEMPLATES"
+                  :key="tpl.label"
+                  class="px-2.5 py-1 rounded-lg text-xs transition-all cursor-pointer border"
+                  :style="inactiveBtnStyle"
+                  @click="applyTemplate(tpl.text)"
+                >
+                  + {{ tpl.label }}
+                </button>
+              </div>
+            </div>
             <textarea
               v-model="draft.systemPrompt"
               rows="4"

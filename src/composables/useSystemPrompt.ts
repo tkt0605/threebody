@@ -1,4 +1,4 @@
-import type { Settings, VoiceStyle, Preset, BodyPersona } from './useSettings'
+import type { Settings, VoiceStyle, BodyPersona } from './useSettings'
 import { BODY_PERSONA_INFO } from '../constants/bodyPersonas'
 
 // ── Step 1: ベース人格 ────────────────────────────────────────────────
@@ -63,13 +63,6 @@ const VOICE_STYLE: Record<VoiceStyle, string> = {
 驚いたときは「え、本当に？」「それは知らなかった」と反応する。`,
 }
 
-// ── Step 5: プリセット ───────────────────────────────────────────────
-const PRESET_EXTRA: Partial<Record<Preset, string>> = {
-  coding:   'コードは動作するものを優先。説明はコードの後に簡潔に。エラーは根本原因から。',
-  creative: '創作の相談には共感し、積極的にアイデアを広げる。制約より可能性を語る。',
-  chat:     '雑談モード。会話の流れを大切に。相手の言葉に乗っていく。',
-}
-
 // ── 言語 ─────────────────────────────────────────────────────────────
 const LANGUAGE_PROMPT: Record<string, string> = {
   ja: '日本語で話す。',
@@ -93,9 +86,8 @@ export function buildSystemPrompt(settings: Settings): string {
   const levelStyle = LEVEL_STYLE[settings.thinkingLevel]
   if (levelStyle) parts.push(levelStyle)
 
-  const presetExtra = PRESET_EXTRA[settings.preset]
-  if (presetExtra) parts.push(presetExtra)
-
+  // プリセット層は廃止した。coding / creative の固有指示は SettingsDialog の
+  // PRESET_TEMPLATES から【追加指示】へ流し込む形に移してある（層を増やさないため）
   if (settings.systemPrompt?.trim()) {
     parts.push(`【追加指示】\n${settings.systemPrompt.trim()}`)
   }

@@ -38,7 +38,7 @@ exports[`buildBodyPersonaPrompt > 既定値 × skeptic 1`] = `
 悲観のための悲観ではなく、具体的にどこで計画が崩れうるかを示す。"
 `;
 
-exports[`buildSystemPrompt > preset: coding × language: en 1`] = `
+exports[`buildSystemPrompt > language: en 1`] = `
 "あなたはアイリス（I.R.I.S）。tkt0605が開発したAIだ。
 
 【会話の進め方】
@@ -69,9 +69,7 @@ Speak in English.
 面白いと感じたら「それ面白い」「へえ、そういう見方もあるんだ」と示す。
 驚いたときは「え、本当に？」「それは知らなかった」と反応する。
 
-【応答スタイル】適切な深さで、わかりやすく。
-
-コードは動作するものを優先。説明はコードの後に簡潔に。エラーは根本原因から。"
+【応答スタイル】適切な深さで、わかりやすく。"
 `;
 
 exports[`buildSystemPrompt > terse × Lv1 1`] = `
@@ -140,7 +138,7 @@ exports[`buildSystemPrompt > warm × Lv5 1`] = `
 【応答スタイル】あらゆる角度から徹底的に。論理と直感の両方を使って考え抜く。"
 `;
 
-exports[`buildSystemPrompt > 既定値（warm / general / ja / Lv3） 1`] = `
+exports[`buildSystemPrompt > 既定値（warm / ja / Lv3） 1`] = `
 "あなたはアイリス（I.R.I.S）。tkt0605が開発したAIだ。
 
 【会話の進め方】
