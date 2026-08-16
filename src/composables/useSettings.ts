@@ -24,6 +24,17 @@ export interface Settings {
   voiceStyle: VoiceStyle
   thinkingLevel: ThinkingLevel
   systemPrompt: string
+  // 変更する手段が無く、実質 'ollama' 固定になっている。
+  // SettingsDialog は draft.provider を読み込むが save() が書き戻さないため、
+  // ユーザーがUIから動かすことはできない。
+  //
+  // ただし死んだ値ではない。backend の単体モード経路（routes/chat.ts）は、
+  // 三体モードの available.length === 0（3体すべてがクラウドでキー未設定、かつ
+  // 共有キーも使えない）のとき return せずに下へ抜けて到達する。そこで参照されるのが
+  // この provider で、既定値 'ollama' により Ollama フォールバックとして機能している。
+  //
+  // 変更UIを足すか、bodies へ一本化して消すかは未決。消す場合は backend 側の
+  // 単体モード経路の扱い（/api/chat は curl 等の生リクエストも受ける前提）を先に決めること。
   provider: Provider
   bodies: [BodyConfig, BodyConfig, BodyConfig]
 }
