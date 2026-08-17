@@ -1,3 +1,5 @@
+import type { Modality, TurnSignals } from './intent'
+
 export type MessageRole = 'user' | 'assistant'
 
 export type TextBlock = {
@@ -46,4 +48,10 @@ export type Message = {
   blocks: ContentBlock[]
   timestamp: Date
   streaming?: boolean
+  // I0（記録）。ブロックではなくメッセージのメタデータなので content_blocks ではなく
+  // messages.signals（jsonb）へ入れる。シグナルが立っていないメッセージには付かない。
+  // `| undefined` を明示しているのは exactOptionalPropertyTypes が有効なため
+  // （無いと「キーを持たない」ことしか許されず、undefined の代入が型エラーになる）
+  signals?: TurnSignals | undefined,
+  modality: Modality
 }

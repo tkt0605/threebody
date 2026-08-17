@@ -18,7 +18,7 @@ function mockResponse(body: ReadableStream<Uint8Array>): Response {
 }
 
 function assistant(blocks: Message['blocks']): Message {
-  return { id: 'a1', role: 'assistant', timestamp: new Date(), blocks }
+  return { id: 'a1', role: 'assistant', timestamp: new Date(), modality: 'text', blocks }
 }
 
 describe('describeCompletedMessage', () => {
@@ -44,7 +44,7 @@ describe('describeCompletedMessage', () => {
   })
 
   it('ユーザーの発言は読み上げない（自分が話した内容のため）', () => {
-    const msg: Message = { id: 'u1', role: 'user', timestamp: new Date(), blocks: [{ type: 'text', content: 'やあ' }] }
+    const msg: Message = { id: 'u1', role: 'user', timestamp: new Date(), modality: 'text', blocks: [{ type: 'text', content: 'やあ' }] }
     expect(describeCompletedMessage(msg)).toBe('')
   })
 })

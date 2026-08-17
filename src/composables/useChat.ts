@@ -1,5 +1,6 @@
 import { ref, computed, watch } from 'vue'
 import type { Message, TextBlock, PerspectiveBlock } from '../types/message'
+import { hasSignal, type TurnSignals } from '../types/intent'
 import { useSettings, type BodyProvider, isBodyUsable } from './useSettings'
 import { buildSystemPrompt, buildBodyPersonaPrompt } from './useSystemPrompt'
 import { BODY_PERSONA_INFO } from '../constants/bodyPersonas'
@@ -7,6 +8,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useCapabilities } from './useCapabilities'
 import { redactText } from '../lib/redact'
+import type { Modality } from '../types/intent'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:3000'
 
@@ -129,7 +131,7 @@ async function ensureUserProfile(userId: string): Promise<void> {
 async function fetchMessages(conversationId: string): Promise<Message[]> {
   const { data, error } = await supabase
     .from('messages')
-    .select('id, role, timestamp, content_blocks(type, payload, sort_order)')
+    .select('id, role, timestamp, signals, modality, content_blocks(type, payload, sort_order)')
     .eq('conversation_id', conversationId)
     .order('timestamp', { ascending: true })
   if (error) { console.error(error); return [] }
@@ -138,9 +140,14 @@ async function fetchMessages(conversationId: string): Promise<Message[]> {
     id: row.id as string,
     role: row.role as Message['role'],
     timestamp: new Date(row.timestamp as string),
+    // 列が無い（ブロックD未適用）プロジェクトでも undefined になるだけで壊れない
+    signals: (row.signals as TurnSignals | null) ?? undefined,
     blocks: (row.content_blocks as { type: string; payload: { content: string }; sort_order: number }[])
       .sort((a, b) => a.sort_order - b.sort_order)
       .map((b) => ({ type: 'text', content: b.payload.content })),
+    // 列が無い（ブロックD未適用）プロジェクトや、列追加より前に保存された行では
+    // null になる。既定は 'text'（音声だったと誤認するより無難な側へ倒す）
+    modality: (row.modality as Modality | null) ?? 'text',
   }))
 }
 
@@ -354,6 +361,10 @@ async function persistMessage(message: Message): Promise<void> {
       conversation_id: convId,
       role:       message.role,
       content:    flattenText(message.blocks),
+      // シグナルが立っていないメッセージには書かない。全行に既定値を入れると
+      // 「何も起きなかった」と「まだ記録していない」が区別できなくなる
+      signals:    hasSignal(message.signals) ? message.signals : null,
+      modality:   message.modality,
       timestamp:  message.timestamp.toISOString(),
     })
     .select('id')
@@ -392,12 +403,13 @@ export function useChat() {
   const { settings } = useSettings()
   const { refreshCapabilities } = useCapabilities()
 
-  async function sendMessage(text: string) {
+  async function sendMessage(text: string, modality: Modality='text') {
     const userMsg: Message = {
       id: createId(),
       role: 'user',
       blocks: [{ type: 'text', content: text }],
       timestamp: new Date(),
+      modality,
     }
     messages.value.push(userMsg)
     persistMessage(userMsg).catch(err => console.error('メッセージの保存に失敗しました', err))
@@ -407,6 +419,9 @@ export function useChat() {
       role: 'assistant',
       blocks: [{ type: 'text', content: '' }],
       timestamp: new Date(),
+      // 応答側は入力と同じ経路で返す。声で聞かれたら読み上げ、文字で打たれたら
+      // 読み上げない（ChatView が TextComposer では useVoiceNarration を起動しない）
+      modality,
       streaming: true,
     })
 

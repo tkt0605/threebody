@@ -222,6 +222,8 @@ const draftMessage = computed<Message | null>(() => {
     role: 'user',
     blocks: [{ type: 'text', content: finalText.value + interimText.value }],
     timestamp: new Date(),
+    // 録音中にだけ出る下書きなので、経路は必ず音声
+    modality: 'voice',
     streaming: true,
   }
 })

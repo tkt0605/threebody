@@ -102,6 +102,7 @@ describe('useChat', () => {
         id:        `m${i}`,
         role:      i % 2 === 0 ? 'user' as const : 'assistant' as const,
         timestamp: new Date(),
+        modality:  'text' as const,
         blocks:    [{ type: 'text' as const, content: `古い発言${i}` }],
       }))
 
@@ -305,7 +306,7 @@ describe('useChat', () => {
       it('生成していないときに押しても何も起きない', async () => {
         const { messages, cancelGeneration } = useChat()
         messages.value = [{
-          id: 'a1', role: 'assistant', timestamp: new Date(),
+          id: 'a1', role: 'assistant', timestamp: new Date(), modality: 'text',
           blocks: [{ type: 'text', content: '' }],
         }]
 
