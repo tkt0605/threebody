@@ -76,11 +76,17 @@ create index conversations_user_id_updated_at_idx
 -- （src/composables/useChat.ts:110-125 の fetchMessages）。
 -- content は content_blocks.payload.content と二重管理になっており、どこからも
 -- 読まれていない可能性が高い（要確認・見直し候補）
+-- signals は I0（記録）で足した列。停止・言い直し・再質問といった「推論を挟まずに
+-- 観測できた事実」を1メッセージ1レコードで持つ（src/types/intent.ts の TurnSignals）。
+-- ブロックではなくメッセージのメタデータなので content_blocks ではなくここに置く。
+-- シグナルが立っていないメッセージでは null のまま（＝有無が読み取れる）
 create table public.messages (
   id               uuid primary key default gen_random_uuid(),
   conversation_id  uuid not null references public.conversations (id) on delete cascade,
   role             text not null check (role in ('user', 'assistant')),
   content          text not null,
+  signals          jsonb,
+  modality         text not null default 'text' check (modality in ('text', 'voice')),
   "timestamp"      timestamptz not null default now()
 );
 create index messages_conversation_id_timestamp_idx
@@ -360,6 +366,7 @@ grant execute on function public.release_global_quota(date) to service_role;
 -- 【ブロックB】は一度きり。Aだけを流し直したい場合はBを含めないこと。
 -- 【ブロックC】は何度流しても壊れない（冪等）。A・B適用済みのプロジェクトは
 --   これだけを追加で流せばよい。
+-- 【ブロックD】は何度流しても壊れない（冪等）。I0（記録）で追加。
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -474,3 +481,42 @@ grant execute on function public.release_global_quota(date) to service_role;
 --   select public.release_global_quota(date '1999-01-01');          -- 0 のまま（負にならない）
 --   select * from public.shared_key_global_usage where day = date '1999-01-01';
 --   delete from public.shared_key_global_usage where day = date '1999-01-01';
+
+-- ----------------------------------------------------------------------------
+-- ブロックD：意図シグナル（I0 記録）— 何度実行してもよい
+--
+-- messages に signals(jsonb) を足す。停止・言い直し・再質問といった、推論を挟まずに
+-- 観測できた事実だけを入れる（src/types/intent.ts の TurnSignals、3フィールド固定）。
+--
+-- 【なぜ content_blocks ではなく messages の列か】
+--   content_blocks は「画面に表示される中身」を持つテーブルで、type は enum('text')。
+--   シグナルは表示物ではなくメッセージのメタデータなので、enum を広げるより列で持つ方が
+--   意味論に合う。1メッセージ1レコードで済み、join も増えない。
+--
+-- 【なぜ null 許容か】
+--   シグナルが1つも立たなかったメッセージには書かない。全行に interrupted:false を
+--   入れると「何も起きなかった」と「まだ記録していない」が区別できなくなる。
+--
+-- 【貯め直しを避けるため、形はここで確定させる】
+--   記録は貯まるのに時間がかかる。使う側（I3）が要求する形が見えてから直すのでは遅い。
+-- ----------------------------------------------------------------------------
+
+alter table public.messages add column if not exists signals jsonb;
+
+-- modality は「どの経路で入力されたか」。signals（その回に何が起きたか）とは寿命も
+-- 意味も違うため、jsonb に同居させず独立した列にする。
+-- 既存行は 'text' で埋まる（音声だったと誤認するより無難な側へ倒す）
+alter table public.messages add column if not exists modality text not null default 'text';
+
+-- 制約は IF NOT EXISTS を書けないため、存在確認してから足す（何度流してもよい）
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'messages_modality_check') then
+    alter table public.messages
+      add constraint messages_modality_check check (modality in ('text', 'voice'));
+  end if;
+end $$;
+
+-- 動作確認（任意）
+--   select id, role, modality, signals from public.messages
+--   order by "timestamp" desc limit 20;
