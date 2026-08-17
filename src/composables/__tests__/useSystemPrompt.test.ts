@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { buildSystemPrompt, buildBodyPersonaPrompt } from '../useSystemPrompt'
 import type { Settings, BodyConfig } from '../useSettings'
 
-// 設定層を6層から4層へ削る作業の「変更前」を固定するためのテスト。
-// buildSystemPrompt は BASE_PERSONA + LANGUAGE + VOICE_STYLE + LEVEL_STYLE +
-// PRESET_EXTRA + 追加指示 を積む。層が減ったこと・口調の指示が VOICE_STYLE の
-// 1箇所へ寄ったことを、スナップショットの差分として目視できる状態にしておく。
+// 設定層を6層から4層へ削る作業のために置いたテスト。
+// 着手前の buildSystemPrompt は BASE_PERSONA + LANGUAGE + VOICE_STYLE + LEVEL_STYLE +
+// PRESET_EXTRA + 追加指示 の6層を積んでいた。現在は LEVEL_STYLE と PRESET_EXTRA が
+// 廃止され、BASE_PERSONA + LANGUAGE + VOICE_STYLE + 追加指示 の4層になっている。
+// 以降も層の増減がスナップショットの差分として目視できる状態を保つ。
 //
 // 出力そのものが仕様なので、期待値を書き下すのではなくスナップショットで固定する。
 
