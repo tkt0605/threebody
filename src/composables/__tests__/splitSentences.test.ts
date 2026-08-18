@@ -27,9 +27,20 @@ describe('takeCompleteSentences', () => {
     expect(rest).toContain('```python')
   })
 
-  it('閉じたコードブロックはそのまま通す（読み上げ時にstripMarkdownが落とす）', () => {
-    const { sentences } = takeCompleteSentences('例です。\n```js\nx=1\n```\n')
-    expect(sentences[0]).toBe('例です。')
+  // stripMarkdown（useTTS）に任せるのでは間に合わない。\n が文の切れ目なので、
+  // ここを通過した時点でコードは1行ずつの「文」になり、断片に ``` が残らず消せなくなる
+  it('閉じたコードブロックは文に割る前に落とす（1行ずつ読み上げてしまうため）', () => {
+    const { sentences } = takeCompleteSentences('例です。\n```js\nconst x = 1;\nconsole.log(x);\n```\n続きます。')
+    expect(sentences).toEqual(['例です。', '続きます。'])
+    expect(sentences.join('')).not.toContain('const x')
+    expect(sentences.join('')).not.toContain('console.log')
+  })
+
+  it('コードブロックを落としても、次に読む位置（rest）はずれない', () => {
+    const text = '前置き。\n```py\nprint(1)\n```\nまだ途中'
+    const { rest } = takeCompleteSentences(text)
+    // 未確定の末尾だけが rest に残る＝消費した長さにコードブロックが含まれる
+    expect(rest).toBe('まだ途中')
   })
 
   // 逐次読み上げは「前回の続き」を切り出すため、消費した長さが合わないと

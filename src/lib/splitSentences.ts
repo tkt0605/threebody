@@ -25,14 +25,31 @@ function dropUnclosedCodeFence(text: string): { body: string; dropped: string } 
   return { body: text.slice(0, lastFence), dropped: text.slice(lastFence) }
 }
 
+// 閉じ終わったコードフェンスを丸ごと落とす。
+//
+// stripMarkdown（useTTS）も同じ正規表現を持っているが、あちらでは間に合わない。
+// SENTENCE_END が \n を含むため、ここを通過した時点でコードは1行ずつ「完成した文」に
+// 割られ、`app = Flask(__name__)` のような断片には ``` が残らないので消せなくなる。
+// 落とすなら文に割る前でなければならない。
+//
+// 落とした跡に改行を残すのは、コードの前後の文が地続きに繋がって
+// 1つの文として読まれるのを防ぐため
+function dropClosedCodeFences(text: string): string {
+  return text.replace(/```[\s\S]*?```/g, '\n')
+}
+
 // text のうち、文として完成している部分と、まだ途中の部分に分ける
 export function takeCompleteSentences(text: string): SentenceCut {
   const { body, dropped } = dropUnclosedCodeFence(text)
+  // rest は「まだ確定していない末尾」だけを表せばよく、呼び出し側（useVoiceNarration.feed）は
+  // 消費した長さを pending.length - rest.length で数える。body から中身を削っても
+  // 末尾の断片は変わらないため、読み上げ位置の計算はずれない
+  const readable = dropClosedCodeFences(body)
 
   const sentences: string[] = []
   let buffer = ''
 
-  for (const char of body) {
+  for (const char of readable) {
     buffer += char
     if (SENTENCE_END.test(char)) {
       if (buffer.trim()) sentences.push(buffer.trim())
