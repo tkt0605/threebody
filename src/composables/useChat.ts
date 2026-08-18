@@ -200,13 +200,25 @@ async function createConversation(): Promise<string> {
 // 会話の切り替えや次の送信で、前のストリームを確実に止められるようにする。
 // 止められないと (1) 破棄したはずのmessageへ書き込みが続く (2) Lv5は最大32Kトークンを
 // 生成し切ってしまう (3) 共有キー利用時はその1回分のクォータが戻らない、の3つが起きる
-let inFlight: AbortController | null = null
+let inFlight: StoppableController | null = null
+
+// 中断の理由。同じ「中断」でも、保存してよいものと絶対に保存してはいけないものがある。
+//   user   … 停止ボタン・バージイン。ユーザーが明示的に止めた
+//   switch … 会話切替・新規会話。止めた先は別の会話なので、ここで保存すると
+//            切り替え先の会話へ誤って書き込む
+//   resend … 次の送信による自己中断。同じ器に新しい応答が入るので保存は不要
+export type AbortReason = 'user' | 'switch' | 'resend'
+
+// 理由は「中断されたリクエスト自身」に持たせる。モジュール変数に置くと、
+// 古いリクエストのcatchが走る前に次のstopGenerationが理由を上書きしうる
+type StoppableController = AbortController & { abortReason?: AbortReason }
 
 // 進行中の応答があれば中断する。無ければ何もしない。
 // UIの状態もここで戻す。中断されたリクエスト自身のfinallyに任せると、
 // 「新しい送信が始まった直後に古い方のfinallyがidleへ戻す」競合が起きる
-function stopGeneration(): void {
+function stopGeneration(reason: AbortReason): void {
   if (!inFlight) return
+  inFlight.abortReason = reason
   inFlight.abort()
   inFlight = null
   aiState.value = 'idle'
@@ -222,7 +234,7 @@ function stopGeneration(): void {
 // 新しいメッセージをpushした直後にも呼ぶため、今まさに使う器を消してしまう
 function cancelGeneration(): void {
   if (!inFlight) return
-  stopGeneration()
+  stopGeneration('user')
 
   const last = messages.value.at(-1)
   const written = last?.blocks.some(b => b.type === 'text' && b.content.length > 0)
@@ -232,7 +244,7 @@ function cancelGeneration(): void {
 async function switchConversation(id: string): Promise<void> {
   // 切り替え前に止める。止めないと、前の会話のストリームが
   // 新しい会話の画面へ書き込みを続ける
-  stopGeneration()
+  stopGeneration('switch')
   currentConversationId.value = id
   messages.value = await fetchMessages(id)
 }
@@ -244,7 +256,7 @@ let pendingNewConversation = false
 // 画面をまっさらな状態に戻すだけで、conversationsテーブルへの書き込みは行わない。
 // 実際に会話が作られるのは、ここから最初のメッセージが送信されたタイミング（persistMessage経由）
 function startNewConversation(): void {
-  stopGeneration()
+  stopGeneration('switch')
   currentConversationId.value = null
   messages.value = []
   pendingNewConversation = true
@@ -351,7 +363,12 @@ async function persistMessage(message: Message): Promise<void> {
   if (!user.value) return
 
   const textBlocks = message.blocks.filter((b): b is TextBlock => b.type === 'text')
-  if (textBlocks.length === 0) return
+
+  // 本文が無くても、シグナルが立っていれば保存する。
+  // 一文字も書かれないうちに停止されたケースは「答えが要らなかった」という最も強い
+  // シグナルであり、ここで捨てると I0 が一番拾いたい情報を取りこぼす。
+  // 本文もシグナルも無いものだけが、記録する価値のない空メッセージ
+  if (textBlocks.length === 0 && !hasSignal(message.signals)) return
 
   const convId = await ensureConversation(user.value.id)
 
@@ -378,8 +395,12 @@ async function persistMessage(message: Message): Promise<void> {
     sort_order: i,
   }))
 
-  const { error: blocksErr } = await supabase.from('content_blocks').insert(blockRows)
-  if (blocksErr) throw blocksErr
+  // 0文字で停止された場合、textBlocks は空になる（本文は無く signals だけが残る）。
+  // 空配列を insert する意味は無いので送らない
+  if (blockRows.length > 0) {
+    const { error: blocksErr } = await supabase.from('content_blocks').insert(blockRows)
+    if (blocksErr) throw blocksErr
+  }
 
   // 会話一覧を最終更新順に保つため、conversations.updated_at も更新する
   const updatedAt = new Date()
@@ -430,10 +451,14 @@ export function useChat() {
     const block = reactiveMsg.blocks[0] as TextBlock
 
     // 前の応答がまだ流れていれば止めてから始める（多重ストリームを作らない）
-    stopGeneration()
-    const controller = new AbortController()
+    stopGeneration('resend')
+    const controller: StoppableController = new AbortController()
     inFlight = controller
+    // aborted は「中断されたか」、abortReason は「なぜ中断されたか」。
+    // 2つに分けているのは、理由が取れないケース（null）でも中断自体は成立するため。
+    // 1つにまとめると null が「中断されていない」と見分けられなくなる
     let aborted = false
+    let abortReason: AbortReason | null = null
 
     try {
       aiState.value = 'thinking';
@@ -534,11 +559,16 @@ export function useChat() {
     } catch (err) {
       if (!block.content) reactiveMsg.blocks.splice(reactiveMsg.blocks.indexOf(block), 1)
 
-      // 中断はユーザー起因（会話切替・新規会話・次の送信）なのでエラーではない。
-      // ここで抜けることで、エラーブロックの表示と、切り替え先の会話への
-      // 誤った永続化（下のfinally）の両方を避ける
+      // 中断はユーザー起因（停止・バージイン・会話切替・新規会話・次の送信）なので
+      // エラーではない。ここで抜けることで、エラーブロックの表示と、切り替え先の
+      // 会話への誤った永続化（下のfinally）の両方を避ける。
+      //
+      // どの理由で止まったかは中断されたリクエスト自身が持っている（StoppableController）。
+      // 理由が取れないのは stopGeneration を経由しない中断だけで、その場合は
+      // 保存しない側（現状維持）へ倒す
       if (err instanceof DOMException && err.name === 'AbortError') {
         aborted = true
+        abortReason = controller.abortReason ?? null
         return
       }
 
@@ -575,9 +605,18 @@ export function useChat() {
         pendingBodies.value = []
       }
 
-      // 中断時は保存しない。ensureConversation は「現在の会話」を返すため、
-      // 会話切替による中断だと切り替え先へ書き込んでしまう
-      if (!aborted) {
+      // 中断されたぶんを保存してよいのは「ユーザーが明示的に止めた」ときだけ。
+      //
+      // persistMessage → ensureConversation は「今表示している会話」を返すため、
+      // 会話切替('switch')による中断でここを通すと、切り替え先の会話へ前の会話の
+      // 応答を書き込む。理由が取れない(null)場合も同じ事故を避けて保存しない。
+      // 'resend' は同じ器に新しい応答が入るので保存する意味がない。
+      //
+      // 'user' が安全なのは、止めた時点で会話が切り替わっていないため。
+      // これで「停止 → リロードで応答が消える」が解消する（途中まで書かれた本文は残る。
+      // 一文字も書かれていなければ catch が空ブロックを外すので persistMessage が
+      // 早期 return し、発言者名だけの空バブルはDBに残らない）
+      if (!aborted || abortReason === 'user') {
         persistMessage(reactiveMsg).catch(err => console.error('メッセージの保存に失敗しました', err))
         // 共有キーを使った場合、残り回数がここで変わる。UIの表示を最新に保つ
         void refreshCapabilities()

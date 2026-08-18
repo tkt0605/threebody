@@ -241,7 +241,7 @@ describe('useChat', () => {
       const inFlight = sendMessage('hi')
       await vi.waitFor(() => expect(abortSignal).toBeDefined())
 
-      stopGeneration()
+      stopGeneration('user')
       await inFlight
 
       expect(abortSignal!.aborted).toBe(true)
@@ -255,7 +255,7 @@ describe('useChat', () => {
 
       const { sendMessage, stopGeneration, aiState } = useChat()
       const first = sendMessage('1回目')
-      stopGeneration()
+      stopGeneration('user')
       await first
       expect(aiState.value).toBe('idle')
 
