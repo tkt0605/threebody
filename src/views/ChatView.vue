@@ -203,6 +203,15 @@ function handleBargeIn() {
 // ユーザーが一度でも明示的にマイクを使ったかどうか
 const micEverUsed = ref(false)
 
+// 初回画面の案内文。ウェイクワードの待機は micEverUsed が true になるまで始まらない
+// （syncListening 参照）。マイクの許可がまだ無いためで、そこを飛ばして
+// 「アイリスと呼んで」と案内すると、呼んでも何も起きない体験になる。
+// 許可が取れた時点で「手を使わなくてよい」ことを初めて伝える
+const startHint = computed(() => micEverUsed.value
+  ? '「アイリス」と呼びかけるだけで話せます。文字でも送れます'
+  : '球体をタップして話しかけてください（初回だけマイクの許可が要ります）'
+)
+
 watch(recording, (isRec) => {
   if (isRec) {
     micEverUsed.value = true
@@ -344,7 +353,7 @@ watch(
         <div class="w-full max-w-md space-y-1.5">
           <TextComposer :disabled="generating" @send="handleTextSend" />
           <p class="text-center text-[11px] text-gray-400 dark:text-white/25">
-            球体をタップで音声入力、またはテキストで送信
+            {{ startHint }}
           </p>
         </div>
       </div>
