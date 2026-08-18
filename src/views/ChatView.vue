@@ -156,24 +156,40 @@ function handleStop() {
   announce('生成を停止しました')
 }
 
-// 読み上げ中に球体へ触れたら、まず黙らせる。
+// 答えは残したまま、声だけ黙らせる。
 //
 // 生成そのものは止めない。読み上げだけが邪魔な場面（長いコードの解説を声で
-// 聞かされている等）と、答えごと要らない場面（StopButton）は別の要求なので分ける。
+// 聞かされている等）と、答えごと要らない場面（handleStop）は別の要求なので分ける。
 // voiceActive を落とすことで、以降のストリーミング分も読み上げに回らなくなる
-// （watch(responseText) と watch(streaming) がどちらも voiceActive を見ている）。
+// （watch(responseText) と watch(streaming) がどちらも voiceActive を見ている）
+function handleStopNarration(): void {
+  narration.stop()
+  voiceActive.value = false
+  announce('読み上げを停止しました')
+}
+
+// 読み上げ中に球体へ触れたら、まず黙らせる。
 //
 // 止めた勢いで録音まで始めない。1タップで2つのことが起きると、
 // 黙らせたかっただけの人がマイクを開かれる
 function handleSphereTap(fallback: () => void): void {
   if (narration.speaking.value) {
-    narration.stop()
-    voiceActive.value = false
-    announce('読み上げを停止しました')
+    handleStopNarration()
     return
   }
   fallback()
 }
+
+// 読み上げだけが残っている区間か。
+//
+// StopButton は元々 generating の間しか出ていなかったが、TTS はキューを消化するため
+// aiState が idle に戻った後も喋り続ける。長い回答だとその区間が20〜30秒あり、
+// 「一番黙ってほしい瞬間に画面上の停止手段が何も無い」状態になっていた
+// （球体タップは効くが、それを知る手がかりがどこにも出ていない）。
+//
+// generating を優先して二重には出さない。生成中は handleStop が読み上げごと止めるため、
+// ボタンを2つ並べても選ぶ理由が無く、迷わせるだけになる
+const narrating = computed(() => !generating.value && narration.speaking.value)
 
 // 音声認識完了 → 確認を経て送信
 const { recording, finalText, interimText, bars, errorMsg, start, stop } =
@@ -407,6 +423,7 @@ watch(
 
         <!-- 最初の発話は収束するまでこの画面に留まるため、停止ボタンもここに要る -->
         <StopButton v-if="generating" @click="handleStop" />
+        <StopButton v-else-if="narrating" mode="narration" @click="handleStopNarration" />
 
 
         <!-- 文字で始める入口。音声認識に対応しないブラウザ（Firefox等）ではここが唯一の入口になり、
@@ -426,6 +443,9 @@ watch(
           <!-- 生成中だけ入力欄の上に出す。Lv5は最大32Kトークンあり、止める手段が無いと
                待たされ続けたうえ共有キーの枠も1回分消える -->
           <StopButton v-if="generating" @click="handleStop" />
+          <!-- 生成が終わっても読み上げは続く。この区間は球体タップ以外に止める手段が
+               無かったので、同じ位置にボタンを出して「触れば止まる」ことを学習させる -->
+          <StopButton v-else-if="narrating" mode="narration" @click="handleStopNarration" />
           <div class="w-full max-w-2xl flex items-end gap-3">
             <div
               class="w-12 h-12 shrink-0 rounded-full overflow-hidden cursor-pointer transition-transform hover:scale-105"
@@ -455,8 +475,10 @@ watch(
       :wake-listening="wakeListening"
       :error-msg="errorMsg"
       :generating="generating"
+      :narrating="narrating"
       @toggle-mic="handleSphereTap(() => recording ? stop() : start())"
       @stop="handleStop"
+      @stop-narration="handleStopNarration"
     />
 
     <LimitReachedDialog ref="limitDialog" :reason="sharedKey.reason" @open-settings="appAside?.openSettings()" />

@@ -9,9 +9,11 @@ defineProps<{
   wakeListening: boolean
   errorMsg?:     string | null
   generating?:   boolean
+  // 生成は終わったが読み上げだけ続いている状態。ChatView 側で判定して渡す
+  narrating?:    boolean
 }>()
 
-const emit = defineEmits<{ 'toggle-mic': []; closed: []; stop: [] }>()
+const emit = defineEmits<{ 'toggle-mic': []; closed: []; stop: []; 'stop-narration': [] }>()
 
 const dialogRef = ref<HTMLDialogElement | null>(null)
 
@@ -52,6 +54,9 @@ defineExpose({ open, close })
           <!-- このダイアログは副体が並列で考えている間ずっと開いたままなので、
                「待つしかない」状態を作らないよう、ここからも止められるようにする -->
           <StopButton v-if="generating" @click="emit('stop')" />
+          <!-- この画面は読み上げを聞くために開きっぱなしにされる場所なので、
+               生成後の「声だけ止めたい」が最も起きやすい -->
+          <StopButton v-else-if="narrating" mode="narration" @click="emit('stop-narration')" />
           <p v-else class="text-xs text-gray-400 dark:text-white/35 tracking-wide">球体をタップして話しかけてください</p>
         </div>
 
