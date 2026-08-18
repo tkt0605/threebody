@@ -314,6 +314,42 @@ describe('useChat', () => {
 
         // inFlight が無いときは（空でも）既存のメッセージに触らない
         expect(messages.value).toHaveLength(1)
+        expect(messages.value[0]?.signals).toBeUndefined()
+      })
+
+      // I0（記録）。停止とバージインは ChatView の handleStop / handleBargeIn から
+      // どちらもここへ来るため、interrupted はこの1箇所で立つ
+      it('途中まで書かれた応答に interrupted を立てる', async () => {
+        vi.stubGlobal('fetch', hangingFetch(['data: {"type":"text","content":"途中まで"}\n\n']))
+
+        const { messages, sendMessage, cancelGeneration } = useChat()
+        const inFlight = sendMessage('hi')
+        await vi.waitFor(() => expect(textBlock(messages.value[1]!).content).toBe('途中まで'))
+
+        cancelGeneration()
+        await inFlight
+
+        expect(messages.value[1]!.signals?.interrupted).toBe(true)
+      })
+
+      // 0文字で止められた応答は画面から取り除かれるが、「答えが要らなかった」という
+      // 最も強いシグナルなので、器そのものは signals を持ったまま残る（persistMessage が拾う）
+      it('0文字で止めても、取り除いた器に interrupted が残っている', async () => {
+        vi.stubGlobal('fetch', abortAwareFetch())
+
+        const { messages, sendMessage, cancelGeneration } = useChat()
+        const assistantMsg = (() => {
+          const p = sendMessage('hi')
+          return { promise: p, msg: messages.value[1]! }
+        })()
+
+        cancelGeneration()
+        await assistantMsg.promise
+
+        // 画面上は取り除かれている
+        expect(messages.value).toHaveLength(1)
+        // 取り除かれた器には記録が残っている
+        expect(assistantMsg.msg.signals?.interrupted).toBe(true)
       })
     })
   })

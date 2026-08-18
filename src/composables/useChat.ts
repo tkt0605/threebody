@@ -1,6 +1,6 @@
 import { ref, computed, watch } from 'vue'
 import type { Message, TextBlock, PerspectiveBlock } from '../types/message'
-import { hasSignal, type TurnSignals } from '../types/intent'
+import { hasSignal, NO_SIGNALS, type TurnSignals } from '../types/intent'
 import { useSettings, type BodyProvider, isBodyUsable } from './useSettings'
 import { buildSystemPrompt, buildBodyPersonaPrompt } from './useSystemPrompt'
 import { BODY_PERSONA_INFO } from '../constants/bodyPersonas'
@@ -231,12 +231,26 @@ function stopGeneration(reason: AbortReason): void {
 // 「応答済み」に見えるせいで送り直す導線（orphaned判定）も出てこない。
 //
 // stopGeneration 側でこれをやってはいけない。あちらは sendMessage が
-// 新しいメッセージをpushした直後にも呼ぶため、今まさに使う器を消してしまう
+// 新しいメッセージをpushした直後にも呼ぶため、今まさに使う器を消してしまう。
+//
+// バージイン（AIが喋っている最中に話しかける）も ChatView の handleBargeIn 経由で
+// ここへ来る。どちらも「今の答えは要らなかった」という同じ事実なので、
+// interrupted は区別せず1つに寄せる（I0：推論を挟まず観測できた事実だけを記録する）
 function cancelGeneration(): void {
   if (!inFlight) return
-  stopGeneration('user')
 
   const last = messages.value.at(-1)
+
+  // 止める「前」に刻む。stopGeneration の後だと、中断の catch → finally →
+  // persistMessage が走る順序に依存することになる
+  if (last?.role === 'assistant') {
+    last.signals = { ...(last.signals ?? NO_SIGNALS), interrupted: true }
+  }
+
+  stopGeneration('user')
+
+  // 画面からは取り除くが、器そのものは sendMessage 側が参照を持ったままなので
+  // persistMessage には届く（本文が無くても signals があれば保存される）
   const written = last?.blocks.some(b => b.type === 'text' && b.content.length > 0)
   if (last?.role === 'assistant' && !written) messages.value.pop()
 }
