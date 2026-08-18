@@ -114,6 +114,11 @@ function stripCodeBlocks(text: string): string {
   return body.replace(/\n{3,}/g, '\n\n').trim()
 }
 
+// これを下回る見解しか集まらなかったら統合しない（＝単体モードに縮退）。
+// 挨拶や相槌は副体2体を足しても100文字に届かず、逆に中身のある質問なら
+// 副体は secondaryMaxTokens 近くまで書くため、この境界で綺麗に分かれる
+const SYNTHESIS_MIN_CHARS = 120
+
 // 副体（二体・三体）を並列取得 → 見解をシステムプロンプトに注入 → 主体が統合回答をストリーミング、
 // という三体モードの一連の流れ。`allBodies` は SSE の bodyIndex を求めるための元配列
 // （通常モードでは req.body.bodies、共有キーモードでは available と同一の配列）
@@ -146,26 +151,35 @@ export async function orchestrateMultiBody(
   )
 
   const secrets = collectSecrets({ bodies: allBodies })
-  const perspectives = settled
-    .map((result, i) => {
-      const b    = secondaries[i]!
-      const name = b.name ?? '副体'
-      if (result.status === 'rejected') {
-        // 失敗した体は見解から除外して統合を続ける。キーがエラー本文へ
-        // echo back されることがあるため、ログに出す前に必ず伏せ字化する
-        console.error(`[三体] ${name}(${b.provider}) の応答に失敗しました:`, sanitizeErrorMessage(result.reason, secrets))
-        return null
-      }
-      const view = stripCodeBlocks(result.value)
-      if (!view.trim()) return null
-      return `【${name}（${b.provider}）の見解】\n${view}`
-    })
-    .filter(Boolean)
-    .join('\n\n')
+  // flatMap にしているのは、null を挟んでから filter するより型が素直に通るため
+  const views = settled.flatMap((result, i) => {
+    const b    = secondaries[i]!
+    const name = b.name ?? '副体'
+    if (result.status === 'rejected') {
+      // 失敗した体は見解から除外して統合を続ける。キーがエラー本文へ
+      // echo back されることがあるため、ログに出す前に必ず伏せ字化する
+      console.error(`[三体] ${name}(${b.provider}) の応答に失敗しました:`, sanitizeErrorMessage(result.reason, secrets))
+      return []
+    }
+    const view = stripCodeBlocks(result.value)
+    if (!view.trim()) return []
+    return [{ name, provider: b.provider, view }]
+  })
+
+  // 見出し（【○体（provider）の見解】）を除いた、中身そのものの分量
+  const contentChars = views.reduce((n, v) => n + v.view.length, 0)
+  const perspectives = views.map(v => `【${v.name}（${v.provider}）の見解】\n${v.view}`).join('\n\n')
 
   // 副体が全滅した場合、空の見解を「以下は他の体の見解です」に続けて注入すると
-  // 主体が存在しない見解について語り出す。単体モードに縮退させる
-  if (!perspectives) {
+  // 主体が存在しない見解について語り出す。単体モードに縮退させる。
+  //
+  // 見解が短すぎる場合も同じく縮退させる。「おはよう」のような挨拶では副体2体が
+  // ほぼ同じ一言を返し、統合すべき差分が存在しない。それでも統合を走らせると、
+  // 主体は組み立てる材料が無いので隣の2文を継ぎ接ぎする（実測: 「どんなことで
+  // 頭がいっぱい？」＋「どんなことを話したい？」→「どんなことで頭のなかにある？」と、
+  // 助詞だけ引き写して述語が入れ替わった壊れた文になった）。
+  // 統合する中身が無いなら、主体に普通に答えさせるほうが日本語として正しい
+  if (!perspectives || contentChars < SYNTHESIS_MIN_CHARS) {
     res.write(`data: ${JSON.stringify({ type: 'synthesis_start', bodyIndex: allBodies.indexOf(primary) })}\n\n`)
     await streamBodyOAI(primary, messages, config, systemPrompt, res)
     return
@@ -188,7 +202,10 @@ ${perspectives}
 - 見解に対する感想・謝辞・論評を書かない。見解の存在に言及しない。
 - ユーザーが具体物（コード・手順・文章）を求めているなら、まずそれ自体を出す。
   確認や質問は出したあとに1つだけ添えてよい。何も出さずに問い返して終わらない。
-- 見解が誤っている・質問とずれている場合は、黙って捨てて自分で正しい答えを書く。`
+- 見解が誤っている・質問とずれている場合は、黙って捨てて自分で正しい答えを書く。
+- 見解の言い回しを切り貼りしない。助詞や語尾だけ残して述語を差し替えると文が壊れる。
+  受け取るのは中身だけにして、文は必ず最初から自分で組み立てる。
+- 出す前に、日本語として助詞の係り受けが通っているか読み返す。`
 
   res.write(`data: ${JSON.stringify({ type: 'synthesis_start', bodyIndex: allBodies.indexOf(primary) })}\n\n`)
 

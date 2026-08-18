@@ -37,6 +37,8 @@ router.post('/chat', chatRateLimit, async (req, res) => {
     bodies,
     model,
     apiKey,
+    // 未指定なら true。curl 等の生リクエストや古いフロントの挙動を変えないため
+    useSharedKey  = true,
   } = req.body as {
     messages:      Anthropic.MessageParam[]
     thinkingLevel: number
@@ -45,6 +47,7 @@ router.post('/chat', chatRateLimit, async (req, res) => {
     bodies?:       BodyConfig[]
     model?:        string
     apiKey?:       string
+    useSharedKey?: boolean
   }
 
   // 認証は必須。トークンが無い・検証に失敗したリクエストはここで終わる。
@@ -81,8 +84,12 @@ router.post('/chat', chatRateLimit, async (req, res) => {
 
   try {
     // ── 共有キーへのフォールバック ─────────────────────────────────────────────
-    // 自分のクラウド系キーを1つも設定していないユーザーだけがここに入る
-    if (!hasOwnCloudKey({ bodies, provider, apiKey, model })) {
+    // 自分のクラウド系キーを1つも設定していないユーザーだけがここに入る。
+    //
+    // useSharedKey が false のときはこのブロックごと飛ばす。予約（reserveSharedAllowance）
+    // にも触れないので、OFF にしている間は無料枠が1回も減らない。そのまま下の
+    // 三体モード / 単体モードへ抜け、ユーザーの bodies 設定（＝Ollama）が使われる
+    if (useSharedKey && !hasOwnCloudKey({ bodies, provider, apiKey, model })) {
       // 実際にLLMを呼ぶ経路なので、判定と同時に全体枠を1つ予約する側を呼ぶ
       const allowance = await reserveSharedAllowance(userId)
 

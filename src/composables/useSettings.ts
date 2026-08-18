@@ -36,6 +36,13 @@ export interface Settings {
   // 変更UIを足すか、bodies へ一本化して消すかは未決。消す場合は backend 側の
   // 単体モード経路の扱い（/api/chat は curl 等の生リクエストも受ける前提）を先に決めること。
   provider: Provider
+  // 共有キー（無料お試し枠）に乗るか。既定は true。
+  //
+  // OFF を用意したのは、バックエンドが「自分のクラウドキーが無ければ共有キー」を
+  // 無条件で優先するため（routes/chat.ts）、ローカルLLMで話したい人が枠を使い切るまで
+  // Ollama に降りられなかったから。OFF にすると共有キー経路を丸ごと飛ばし、
+  // bodies の設定（＝三体モード / Ollama）がそのまま使われる
+  useSharedKey: boolean
   bodies: [BodyConfig, BodyConfig, BodyConfig]
 }
 
@@ -76,6 +83,9 @@ const settings = reactive<Settings>({
   thinkingLevel: (saved.thinkingLevel as ThinkingLevel) ?? 3,
   systemPrompt:  saved.systemPrompt                     ?? '',
   provider:      (saved.provider      as Provider)      ?? 'ollama',
+  // ?? ではなく !== false で見る。保存前のユーザー（undefined）は ON 側に倒したいが、
+  // 明示的に false を保存した人の OFF は必ず維持する
+  useSharedKey:  saved.useSharedKey !== false,
   bodies:        ([0, 1, 2] as number[]).map(i => ({
     ...DEFAULT_BODIES[i],
     ...saved.bodies?.[i],

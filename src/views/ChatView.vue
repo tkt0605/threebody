@@ -74,13 +74,20 @@ const firstExchangeInFlight = ref(false)
 // 「今日はもう使えない」なので、全画面差し替え（EmptyBrainState）の対象からは外す。
 // not_signed_in / not_permitted / unavailable はそもそも使う手段が無い状態なので、
 // 従来どおり全画面差し替えのまま
+// 設定で共有キーをOFFにしている間は、枠が残っていても使わない（backend も同じ判定で
+// ブロックごと飛ばす）。以降の判定は sharedKey.allowed ではなく必ずこちらを見る。
+// 直接 sharedKey.allowed を見ると、OFF なのに「共有キーで利用中」と出たり、
+// Ollama 未設定でも送信できるように見えたりして、UIとバックエンドの挙動がずれる
+const sharedAllowed = computed(() => settings.useSharedKey && sharedKey.value.allowed)
+
 const limitReached = computed(() =>
-  sharedKey.value.reason === 'limit_reached' || sharedKey.value.reason === 'global_limit_reached'
+  settings.useSharedKey
+  && (sharedKey.value.reason === 'limit_reached' || sharedKey.value.reason === 'global_limit_reached')
 )
 
 const hasActiveBody = computed(() =>
   settings.bodies.some(b => b.provider === 'ollama' ? ollama.value.enabled : isBodyUsable(b))
-  || sharedKey.value.allowed
+  || sharedAllowed.value
   || limitReached.value
 )
 
@@ -101,14 +108,14 @@ const ollamaUsable = computed(() =>
 // ここに ollamaUsable を足さないと「Ollamaだけ設定したユーザー」が枠の有無に関わらず
 // 一度も送信できない
 const canSend = computed(() =>
-  hasOwnCloudKey(settings.bodies) || ollamaUsable.value || sharedKey.value.allowed
+  hasOwnCloudKey(settings.bodies) || ollamaUsable.value || sharedAllowed.value
 )
 
 // 自分のキーを設定せず共有キーに乗っている状態か（上限到達で allowed:false になった後も含む）。
 // allowed だけで判定すると、上限到達の瞬間に「今どれだけ使ったか」が一番知りたいのに
 // バッジごと消えてしまう。can_use_shared_key 自体は生きている上限到達はここに含める
 const usingSharedKey = computed(() =>
-  !hasOwnCloudKey(settings.bodies) && (sharedKey.value.allowed || limitReached.value)
+  !hasOwnCloudKey(settings.bodies) && (sharedAllowed.value || limitReached.value)
 )
 
 // いまバックエンドが実際にローカルLLM（Ollama）で答える状態か。
@@ -118,7 +125,7 @@ const usingSharedKey = computed(() =>
 // 「共有キーが尽きた（limit_reached）」だけでなく unavailable / not_signed_in /
 // not_permitted でも Ollama に落ちるため、条件は reason ではなく allowed の否定で見る
 const usingLocalLLM = computed(() =>
-  !hasOwnCloudKey(settings.bodies) && !sharedKey.value.allowed && ollamaUsable.value
+  !hasOwnCloudKey(settings.bodies) && !sharedAllowed.value && ollamaUsable.value
 )
 
 // 生成中か（思考・統合・出力のいずれか）。停止ボタンの表示条件

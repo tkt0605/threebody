@@ -2,13 +2,20 @@
 import { ref, reactive, computed } from 'vue'
 // Provider / VoiceStyle は draft の型アサーションでのみ使っていたが、
 // settings 側の型がそのまま通るためアサーション自体が不要になり、importも落とした
-import {  useSettings,  isBodyUsable,  type Language, type ThinkingLevel, type BodyProvider, type BodyConfig } from '../composables/useSettings'
+import {  useSettings,  isBodyUsable,  hasOwnCloudKey,  type Language, type ThinkingLevel, type BodyProvider, type BodyConfig } from '../composables/useSettings'
 import { VOICE_STYLE_OPTIONS } from '../composables/useSettingsOptions'
 import { useTheme } from '../composables/useTheme'
+import { useCapabilities } from '../composables/useCapabilities'
 import { BODY_PROVIDER_COLORS } from '../constants/bodyProviders'
 
 const { settings } = useSettings()
 const { isDark } = useTheme()
+const { sharedKey } = useCapabilities()
+
+// 自分のクラウドキーを1つでも入れている人は、そもそも共有キー経路に入らない
+// （backend の hasOwnCloudKey が先に効く）。トグルを出しても効かないので隠す。
+// draft ではなく settings を見るのは、保存前の編集中に出たり消えたりさせないため
+const hasOwnKey = computed(() => hasOwnCloudKey(settings.bodies))
 
 const inactiveBtnStyle = computed(() => ({
   background: 'transparent',
@@ -86,6 +93,7 @@ const draft = reactive({
   thinkingLevel: settings.thinkingLevel,
   systemPrompt:  settings.systemPrompt,
   provider:      settings.provider,
+  useSharedKey:  settings.useSharedKey,
   bodies:        settings.bodies.map(cloneBody) as [BodyConfig, BodyConfig, BodyConfig],
 })
 
@@ -95,6 +103,7 @@ function open() {
   draft.thinkingLevel = settings.thinkingLevel
   draft.systemPrompt  = settings.systemPrompt
   draft.provider      = settings.provider
+  draft.useSharedKey  = settings.useSharedKey
   draft.bodies        = settings.bodies.map(cloneBody) as [BodyConfig, BodyConfig, BodyConfig]
   dialogRef.value?.showModal()
 }
@@ -108,6 +117,7 @@ function save() {
   settings.voiceStyle    = draft.voiceStyle
   settings.thinkingLevel = draft.thinkingLevel
   settings.systemPrompt  = draft.systemPrompt
+  settings.useSharedKey  = draft.useSharedKey
   draft.bodies.forEach((b, i) => {
     settings.bodies[i]!.provider = b.provider
     settings.bodies[i]!.apiKey   = b.apiKey
@@ -242,6 +252,43 @@ defineExpose({ open })
                      bg-gray-50 border border-black/8 text-gray-900 placeholder-black/25 focus:border-black/20
                      dark:bg-white/5 dark:border-white/8 dark:text-white/90 dark:placeholder-white/20 dark:focus:border-white/20"
             />
+          </div>
+
+          <!-- 共有キー（無料お試し枠）。ローカルLLMで話したい人はここをOFFにする。
+               自分のクラウドキーを持っている人には元から関係のない設定なので出さない -->
+          <div v-if="!hasOwnKey" class="space-y-2">
+            <div class="flex items-center justify-between gap-4">
+              <label
+                for="shared-key-toggle"
+                class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50 cursor-pointer"
+              >無料お試し枠</label>
+              <button
+                id="shared-key-toggle"
+                type="button"
+                role="switch"
+                :aria-checked="draft.useSharedKey"
+                class="relative h-6 w-11 shrink-0 rounded-full transition-colors cursor-pointer"
+                :class="draft.useSharedKey
+                  ? 'bg-indigo-500'
+                  : 'bg-gray-300 dark:bg-white/15'"
+                @click="draft.useSharedKey = !draft.useSharedKey"
+              >
+                <span
+                  class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform"
+                  :class="draft.useSharedKey ? 'translate-x-5' : 'translate-x-0'"
+                />
+              </button>
+            </div>
+            <p class="text-xs leading-relaxed text-gray-400 dark:text-white/30">
+              <template v-if="draft.useSharedKey">
+                キー未設定のとき、共有キーで三体モードを試せます（1日{{ sharedKey.dailyLimit }}回）。
+                ローカルLLMを使いたい場合はOFFにしてください。
+              </template>
+              <template v-else>
+                OFF。共有キーは使わず、下の三体接続の設定（Ollama等）でそのまま会話します。
+                枠は消費されません。
+              </template>
+            </p>
           </div>
 
           <!-- 詳細設定（プロバイダー/モデル/思考レベルの生の値） -->

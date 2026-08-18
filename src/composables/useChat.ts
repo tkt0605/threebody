@@ -561,6 +561,7 @@ export function useChat() {
           thinkingLevel: settings.thinkingLevel,
           systemPrompt: buildSystemPrompt(settings),
           provider: settings.provider,
+          useSharedKey: settings.useSharedKey,
           bodies: settings.bodies.map(b => ({
             provider: b.provider,
             apiKey: b.apiKey,

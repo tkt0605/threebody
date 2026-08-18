@@ -25,6 +25,7 @@ function makeSettings(over: Partial<Settings> = {}): Settings {
     thinkingLevel: 3,
     systemPrompt:  '',
     provider:      'ollama',
+    useSharedKey:  true,
     bodies:        BODIES,
     ...over,
   }

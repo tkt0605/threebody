@@ -44,6 +44,13 @@ function bodies(): BodyConfig[] {
   ]
 }
 
+// 見解が短すぎると統合せず単体モードに縮退する（SYNTHESIS_MIN_CHARS）ため、
+// 「統合が走ること」を見たいテストの見解は、中身のある回答と同じ分量まで伸ばす。
+// 短い見解そのものの挙動は専用のテストで見る
+function long(head: string): string {
+  return `${head}\n${'方針としては段階的に進めるのが良いと考えます。'.repeat(6)}`
+}
+
 // モデル名ごとに「正常に喋る」か「throwする」かを決める
 function mockByModel(behavior: Record<string, string | Error>) {
   vi.mocked(streamOllamaNative).mockImplementation(
@@ -65,7 +72,7 @@ describe('orchestrateMultiBody', () => {
     // Promise.all のままだと、ここで三体の見解も主体の統合もまるごと失われていた
     mockByModel({
       'secondary-a': new Error('provider is down'),
-      'secondary-b': '三体の見解です',
+      'secondary-b': long('三体の見解です'),
       'primary-model': '統合された回答',
     })
     const { res, events } = fakeRes()
@@ -97,7 +104,7 @@ describe('orchestrateMultiBody', () => {
   it('失敗した副体の見解は統合プロンプトに混ぜない', async () => {
     mockByModel({
       'secondary-a': new Error('boom'),
-      'secondary-b': '三体の見解です',
+      'secondary-b': long('三体の見解です'),
       'primary-model': '統合',
     })
     const { res } = fakeRes()
@@ -130,10 +137,35 @@ describe('orchestrateMultiBody', () => {
     expect(JSON.stringify(primaryCall[1])).not.toContain('【統合タスク】')
   })
 
+  // 挨拶に副体2体を回すと、ほぼ同じ一言が2つ並ぶ。統合すべき差分が無いのに統合させると、
+  // 主体は組み立てる材料が無く隣の2文を継ぎ接ぎして日本語を壊す
+  // （実測:「どんなことで頭がいっぱい？」＋「どんなことを話したい？」
+  //  →「どんなことで頭のなかにある？」と助詞だけ引き写して述語が入れ替わった）
+  it('見解が短すぎるとき（挨拶など）は統合せず、主体にそのまま答えさせる', async () => {
+    mockByModel({
+      'secondary-a': 'おはよう。今日はどんなことで頭がいっぱい？',
+      'secondary-b': 'おはよう。今日はどんなことを話したい？',
+      'primary-model': 'おはよう。今日はどんなことが頭のなかにある？',
+    })
+    const { res, events } = fakeRes()
+    const all = bodies()
+
+    await orchestrateMultiBody(all, all, MESSAGES, CONFIG, 'システム', res)
+
+    // 副体は走る（球体の分裂と見解カードは出る）
+    expect(events.filter(e => e.type === 'body_start')).toHaveLength(2)
+
+    // が、主体には見解を渡さない
+    const primaryCall = vi.mocked(streamOllamaNative).mock.calls.find(c => c[0] === 'primary-model')!
+    const sent = JSON.stringify(primaryCall[1])
+    expect(sent).not.toContain('【統合タスク】')
+    expect(sent).not.toContain('頭がいっぱい')
+  })
+
   it('全副体が成功する通常ケースでは、両方の見解が統合に渡る', async () => {
     mockByModel({
-      'secondary-a': '二体の見解です',
-      'secondary-b': '三体の見解です',
+      'secondary-a': long('二体の見解です'),
+      'secondary-b': long('三体の見解です'),
       'primary-model': '統合',
     })
     const { res, events } = fakeRes()
@@ -151,8 +183,8 @@ describe('orchestrateMultiBody', () => {
   // personaPrompt の「コードを書くな」は小さいモデルが守らない回がある。
   // 依頼ではなく処理で落としていることを固定する
   it('副体が書いたコードブロックは統合へ渡らない', () => {
-    const withCode = '方針はこうです。\n```python\nprint(1)\n```\n以上です。'
-    const truncated = '途中まで書きます。\n```js\nconst a = 1;\nconst b ='   // 生成が切れて閉じていない
+    const withCode = `${long('方針はこうです。')}\n\`\`\`python\nprint(1)\n\`\`\`\n以上です。`
+    const truncated = `${long('途中まで書きます。')}\n\`\`\`js\nconst a = 1;\nconst b =`   // 生成が切れて閉じていない
 
     mockByModel({ 'secondary-a': withCode, 'secondary-b': truncated, 'primary-model': '統合' })
     const { res } = fakeRes()
@@ -176,8 +208,8 @@ describe('orchestrateMultiBody', () => {
   // 置き場所そのものを固定する
   it('見解は system 側に入り、user ターンは元の質問のまま渡る', async () => {
     mockByModel({
-      'secondary-a': '二体の見解です',
-      'secondary-b': '三体の見解です',
+      'secondary-a': long('二体の見解です'),
+      'secondary-b': long('三体の見解です'),
       'primary-model': '統合',
     })
     const { res } = fakeRes()
