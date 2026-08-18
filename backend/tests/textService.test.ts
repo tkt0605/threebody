@@ -125,9 +125,9 @@ describe('orchestrateMultiBody', () => {
 
     expect(events.filter(e => e.type === 'text').map(e => e.content).join('')).toBe('単体としての回答')
 
-    // 「以下は他の体の見解です」という空振りの指示を主体に渡していないこと
+    // 存在しない見解について語り出させる【統合タスク】ブロックを渡していないこと
     const primaryCall = vi.mocked(streamOllamaNative).mock.calls.find(c => c[0] === 'primary-model')!
-    expect(JSON.stringify(primaryCall[1])).not.toContain('他の体（LLM）の見解')
+    expect(JSON.stringify(primaryCall[1])).not.toContain('【統合タスク】')
   })
 
   it('全副体が成功する通常ケースでは、両方の見解が統合に渡る', async () => {
@@ -146,5 +146,33 @@ describe('orchestrateMultiBody', () => {
     const sentText = JSON.stringify(primaryCall[1])
     expect(sentText).toContain('二体の見解です')
     expect(sentText).toContain('三体の見解です')
+  })
+
+  // 「見解が渡ること」は上で見ているが、「どこに渡るか」は誰も見ていなかった。
+  // user ターンへ連結していたことが、主体が質問に答えず資料に論評する原因だったため、
+  // 置き場所そのものを固定する
+  it('見解は system 側に入り、user ターンは元の質問のまま渡る', async () => {
+    mockByModel({
+      'secondary-a': '二体の見解です',
+      'secondary-b': '三体の見解です',
+      'primary-model': '統合',
+    })
+    const { res } = fakeRes()
+    const all = bodies()
+
+    await orchestrateMultiBody(all, all, MESSAGES, CONFIG, 'システム', res)
+
+    const primaryCall = vi.mocked(streamOllamaNative).mock.calls.find(c => c[0] === 'primary-model')!
+    const sent = primaryCall[1] as { role: string; content: string }[]
+
+    // toOllamaMessages が systemPrompt を role:'system' の先頭要素として積む
+    expect(sent[0]!.role).toBe('system')
+    expect(sent[0]!.content).toContain('二体の見解です')
+    expect(sent[0]!.content).toContain('三体の見解です')
+
+    // user ターンに見解が混ざっていないこと（これが不具合の正体だった）
+    const userTurns = sent.filter(m => m.role === 'user')
+    expect(userTurns.length).toBeGreaterThan(0)
+    expect(userTurns.some(m => m.content.includes('見解です'))).toBe(false)
   })
 })

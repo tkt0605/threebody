@@ -152,18 +152,62 @@ export async function orchestrateMultiBody(
     return
   }
 
-  const synthesisSystemPrompt = systemPrompt
-    + '\n\n以下は他の体（LLM）の見解です。これらを踏まえて、より包括的かつ統合的な最終回答を生成してください。'
+  // 見解は system 側に置く。user ターンへ連結すると「ユーザーが資料を提示してきた」と
+  // 読まれ、主体が質問に答える側ではなく資料に感想を述べる側に回る。
+  // （実測: 見解をuserに入れていた頃の出力が「提示された複数の回答を見ると…」で始まり、
+  //  求められたコードを出さずに問い返して終わっていた）
+  const synthesisSystemPrompt = `${systemPrompt}
 
-  const lastUserMsg = messages[messages.length - 1]
-  const synthesisMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-    ...messages.slice(0, -1),
-    {
-      role: 'user',
-      content: `${extractTextContent(lastUserMsg?.content)}\n\n---\n${perspectives}`,
-    },
-  ]
+【統合タスク】
+以下は、同じ質問に対する他のLLM（体）の見解です。
+これはユーザーの発言ではなく、あなただけが見ている参考資料です。
+
+${perspectives}
+
+【厳守】
+- ユーザーの元の質問に、あなた自身の言葉で直接答える。
+- 見解に対する感想・謝辞・論評を書かない。見解の存在に言及しない。
+- ユーザーが具体物（コード・手順・文章）を求めているなら、まずそれ自体を出す。
+  確認や質問は出したあとに1つだけ添えてよい。何も出さずに問い返して終わらない。
+- 見解が誤っている・質問とずれている場合は、黙って捨てて自分で正しい答えを書く。`
 
   res.write(`data: ${JSON.stringify({ type: 'synthesis_start', bodyIndex: allBodies.indexOf(primary) })}\n\n`)
-  await streamBodyOAI(primary, synthesisMessages, config, synthesisSystemPrompt, res)
+
+  // 統合に何が渡ったかを見る窓。三体モードの不具合は「主体が受け取った内容」を見ないと、
+  // プロンプトの組み方・副体の出力・モデルの能力のどれが原因か切り分けられない。
+  //
+  // 既定は要約（数行）だけにする。全文を毎ターン流すとターミナルが数百行で埋まり、
+  // 肝心の判定行が流れて読めなくなる（出力コスト自体は推論時間に比べて無視できるが、
+  // 読めないログは無いのと同じ）。全文が要るときだけ DEBUG_SYNTHESIS=full にする。
+  // bodies / apiKey は絶対に出さないこと
+  const debugLevel = process.env.DEBUG_SYNTHESIS?.trim().toLowerCase()
+  if (debugLevel === 'true' || debugLevel === 'full') {
+    settled.forEach((r, i) => {
+      const b    = secondaries[i]
+      const name = b?.name ?? '副体'
+      if (r.status === 'rejected') { console.info(`[統合] ${name}: 失敗`); return }
+      // 副体が指示を無視したのか、そもそも新しい指示が届いていないのかを切り分ける。
+      // personaPrompt はフロント（constants/bodyPersonas.ts）で組まれて送られてくるため、
+      // ブラウザが古いバンドルのままだと旧文面が届き続ける
+      const 指示到達 = b?.personaPrompt?.includes('具体物を作るのは統合役の仕事') ? '到達' : '未到達'
+      const コード   = r.value.includes('```') ? 'コードあり' : 'コードなし'
+      console.info(`[統合] ${name}: ${r.value.length}文字 / ${コード} / 「書くな」指示=${指示到達}`)
+    })
+
+    // 本丸の検証。見解が user ターンへ漏れていないことを毎ターン確かめる
+    const 漏れ = messages.some(m =>
+      m.role === 'user' && extractTextContent(m.content).includes('の見解】')
+    )
+    console.info(`[統合] userターンへの見解の漏れ: ${漏れ ? '★あり（バグ再発）' : 'なし'} / 履歴${messages.length}件`)
+
+    if (debugLevel === 'full') {
+      console.info(`[統合] systemPrompt:\n${synthesisSystemPrompt}`)
+      messages.forEach(m =>
+        console.info(`[統合] [${m.role}] ${JSON.stringify(extractTextContent(m.content).slice(0, 200))}`)
+      )
+    }
+  }
+
+  // ユーザーターンは元の質問のまま渡す（加工しない）
+  await streamBodyOAI(primary, messages, config, synthesisSystemPrompt, res)
 }
