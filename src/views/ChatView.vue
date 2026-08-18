@@ -84,12 +84,24 @@ const hasActiveBody = computed(() =>
   || limitReached.value
 )
 
+// Ollamaを自分の手段として数えてよいか。
+// isBodyUsable は provider==='ollama' を無条件trueにするため、このデプロイで実際に
+// 到達できるかは capabilities.ollama.enabled でしか判定できない（hasActiveBody と同じ理由）
+const ollamaUsable = computed(() =>
+  ollama.value.enabled && settings.bodies.some(b => b.provider === 'ollama')
+)
+
 // 実際に送ってよいか（バックエンドが受け付けるかの事前チェック）。
 // hasActiveBody と違い上限到達は含めない。ここがfalseのときに録音を始めると、
 // 話し終えてから「上限到達」エラーで弾かれるだけなので、録音開始前にダイアログで止める。
-// テキスト送信も同じ壁に当たるため、音声・文字の両方の入口でこれを見る
+// テキスト送信も同じ壁に当たるため、音声・文字の両方の入口でこれを見る。
+//
+// Ollamaを含めるのは、共有キーの枠が尽きても自前のローカルLLMがあれば会話は成立するため。
+// hasOwnCloudKey は ollama を明示的に除外する（＝共有キーに乗ってよいかの判定）ので、
+// ここに ollamaUsable を足さないと「Ollamaだけ設定したユーザー」が枠の有無に関わらず
+// 一度も送信できない
 const canSend = computed(() =>
-  hasOwnCloudKey(settings.bodies) || sharedKey.value.allowed
+  hasOwnCloudKey(settings.bodies) || ollamaUsable.value || sharedKey.value.allowed
 )
 
 // 自分のキーを設定せず共有キーに乗っている状態か（上限到達で allowed:false になった後も含む）。
@@ -97,6 +109,16 @@ const canSend = computed(() =>
 // バッジごと消えてしまう。can_use_shared_key 自体は生きている上限到達はここに含める
 const usingSharedKey = computed(() =>
   !hasOwnCloudKey(settings.bodies) && (sharedKey.value.allowed || limitReached.value)
+)
+
+// いまバックエンドが実際にローカルLLM（Ollama）で答える状態か。
+// routes/chat.ts の分岐と同じ優先順位で判定する：自分のクラウドキーが最優先、
+// 無ければ共有キー、それも使えなければ Ollama へ落ちる。
+//
+// 「共有キーが尽きた（limit_reached）」だけでなく unavailable / not_signed_in /
+// not_permitted でも Ollama に落ちるため、条件は reason ではなく allowed の否定で見る
+const usingLocalLLM = computed(() =>
+  !hasOwnCloudKey(settings.bodies) && !sharedKey.value.allowed && ollamaUsable.value
 )
 
 // 生成中か（思考・統合・出力のいずれか）。停止ボタンの表示条件
@@ -107,8 +129,10 @@ const ttsLang = computed(() => settings.language === 'ja' ? 'ja-JP' : 'en-US')
 // いま何体で考えるか。相槌の文言（「三人で考えています」）と、
 // そもそも相槌を出すか（単体モードなら出さない）の判断に使う。
 // 共有キー経路はユーザーの設定に関係なくバックエンドが必ず三体で走る（routes/chat.ts）
+// Ollamaへ落ちている場合は共有キーの三体では走らないため、実際に動く体の数を数える。
+// ここを 3 のままにすると「三人で考えています」と相槌を打った後に一体しか答えない
 const activeBodyCount = computed(() => {
-  if (usingSharedKey.value) return 3
+  if (usingSharedKey.value && !usingLocalLLM.value) return 3
   return settings.bodies.filter(b => b.provider === 'ollama' ? ollama.value.enabled : isBodyUsable(b)).length
 })
 
@@ -261,17 +285,26 @@ watch(
     <AppHeader />
 
     <main class="flex-1 min-h-0 flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950 ">
-                <!-- 共有キーで会話中：使用状況を表示（上限到達後もここで「使い切った」ことが分かるようにする） -->
+                <!-- いまどのキーで答えているか。共有キーの使用状況と、Ollamaへ落ちている
+                     ことの表示を1つの帯にまとめる（上限到達後もここで「使い切った」ことが分かる） -->
           <div
-            v-if="usingSharedKey"
+            v-if="usingLocalLLM || usingSharedKey"
             class="shrink-0 text-center text-xs py-1.5"
-            :class="limitReached
-              ? 'text-amber-600/90 bg-amber-500/10 dark:text-amber-300/90 dark:bg-amber-400/10'
-              : 'text-indigo-600/80 bg-indigo-600/8 dark:text-indigo-300/80 dark:bg-indigo-500/10'"
+            :class="usingLocalLLM
+              ? 'text-emerald-700/90 bg-emerald-600/8 dark:text-emerald-300/80 dark:bg-emerald-400/10'
+              : limitReached
+                ? 'text-amber-600/90 bg-amber-500/10 dark:text-amber-300/90 dark:bg-amber-400/10'
+                : 'text-indigo-600/80 bg-indigo-600/8 dark:text-indigo-300/80 dark:bg-indigo-500/10'"
           >
+          <!-- Ollamaを最優先で判定する。共有キーが尽きた状態は usingSharedKey と
+               usingLocalLLM が同時に真になるが、実際に答えるのはOllamaなので、
+               「上限に達しました」だけを出すと答えが返ってくる事実と食い違う -->
+          <template v-if="usingLocalLLM">
+            ローカルLLMを使用中<template v-if="limitReached">（無料お試し枠は本日ぶん終了）</template>
+          </template>
           <!-- 全体枠で止まっている場合、このユーザーの使用回数は0回のこともある。
                個人枠の「3/3回」を出すと事実と違う表示になるため文言ごと分ける -->
-          <template v-if="sharedKey.reason === 'global_limit_reached'">
+          <template v-else-if="sharedKey.reason === 'global_limit_reached'">
             本日ぶんの無料お試し枠（全体）が終了しました。明日また使えます。
           </template>
           <template v-else-if="sharedKey.reason === 'limit_reached'">

@@ -19,7 +19,7 @@ const inactiveBtnStyle = computed(() => ({
 const dialogRef = ref<HTMLDialogElement | null>(null)
 
 const BODY_PROVIDERS: { value: BodyProvider; label: string; color: string }[] = [
-  { value: 'ollama',    label: 'Ollama',    color: BODY_PROVIDER_COLORS.ollama },
+  { value: 'ollama',    label: '共有/ローカル',    color: BODY_PROVIDER_COLORS.ollama },
   { value: 'openai',    label: 'GPT',       color: BODY_PROVIDER_COLORS.openai },
   { value: 'anthropic', label: 'Claude',    color: BODY_PROVIDER_COLORS.anthropic },
   { value: 'deepseek',  label: 'DeepSeek',  color: BODY_PROVIDER_COLORS.deepseek },
