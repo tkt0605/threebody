@@ -44,10 +44,6 @@ export function useVoiceInput(onFinish: (text: string) => void) {
   const bars       = ref<number[]>(Array(BAR_COUNT).fill(0))
   const errorMsg   = ref<string | null>(null)
 
-  // 認識確定後、即送信せず「この内容でいいか」を確認させる状態
-  const confirming  = ref(false)
-  const confirmText = ref('')
-
   let recognition:   SpeechRecognitionAPI | null = null
   let audioCtx:      AudioContext         | null = null
   let analyser:      AnalyserNode         | null = null
@@ -176,38 +172,20 @@ export function useVoiceInput(onFinish: (text: string) => void) {
     bars.value = Array(BAR_COUNT).fill(0)
   }
 
-  // 認識確定 → 即送信ではなく確認状態に入る（誤認識をそのまま送ってしまうのを防ぐ）
+  // 認識確定 → そのまま送信する。
+  //
+  // 以前はここで確認状態（『◯◯でいいですか？』）に入っていたが、抜けるのに画面の
+  // タップが必要で、声だけで一往復が閉じなかった。送信は取り消せる操作なので、
+  // 「可逆なら推測して実行し、不可逆なら訊く」の原則に従って確認を外している。
+  // 誤認識したときは、アイリスが答え始めたところへ割り込んで（バージイン）言い直す。
+  // 人間同士の会話と同じく、送信そのものは取り消さない
   function stop() {
     errorMsg.value = null
     const text = (finalText.value + interimText.value).trim()
     finalText.value = ''
     interimText.value = ''
     cleanup()
-    if (text) {
-      confirmText.value = text
-      confirming.value = true
-    }
-  }
-
-  // 確認内容でよければ送信する
-  function confirmSend() {
-    const text = confirmText.value
-    confirming.value = false
-    confirmText.value = ''
     if (text) onFinish(text)
-  }
-
-  // 確認を破棄してもう一度話し直す
-  function redo() {
-    confirming.value = false
-    confirmText.value = ''
-    start()
-  }
-
-  // 確認状態を破棄するだけ（ダイアログを閉じた場合など）
-  function cancelConfirm() {
-    confirming.value = false
-    confirmText.value = ''
   }
 
   // onFinish を呼ばずに録音だけ終了する（手動送信時など）
@@ -222,7 +200,6 @@ export function useVoiceInput(onFinish: (text: string) => void) {
 
   return {
     recording, finalText, interimText, bars, errorMsg, BAR_COUNT,
-    confirming, confirmText,
-    start, stop, cancel, confirmSend, redo, cancelConfirm,
+    start, stop, cancel,
   }
 }

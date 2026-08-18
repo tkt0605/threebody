@@ -7,13 +7,11 @@ defineProps<{
   recording:     boolean
   bars:          number[]
   wakeListening: boolean
-  confirming:    boolean
-  confirmText:   string
   errorMsg?:     string | null
   generating?:   boolean
 }>()
 
-const emit = defineEmits<{ 'toggle-mic': []; 'confirm-send': []; redo: []; closed: []; stop: [] }>()
+const emit = defineEmits<{ 'toggle-mic': []; closed: []; stop: [] }>()
 
 const dialogRef = ref<HTMLDialogElement | null>(null)
 
@@ -51,24 +49,9 @@ defineExpose({ open, close })
             {{ errorMsg }}
           </p>
 
-          <!-- 認識結果の確認：誤認識のまま送らないよう、送信前に一度確認を挟む -->
-          <div v-if="confirming" class="flex flex-col items-center gap-3 max-w-sm text-center">
-            <p class="text-sm text-gray-700 dark:text-white/80">『{{ confirmText }}』でいいですか？</p>
-            <div class="flex gap-3">
-              <button
-                class="px-4 py-2 rounded-full text-sm font-medium bg-cyan-500 text-white hover:bg-cyan-400 transition-colors cursor-pointer"
-                @click="emit('confirm-send')"
-              >送信</button>
-              <button
-                class="px-4 py-2 rounded-full text-sm font-medium border border-black/10 text-gray-600 hover:bg-gray-200/60
-                       dark:border-white/15 dark:text-white/70 dark:hover:bg-white/8 transition-colors cursor-pointer"
-                @click="emit('redo')"
-              >もう一度話す</button>
-            </div>
-          </div>
           <!-- このダイアログは副体が並列で考えている間ずっと開いたままなので、
                「待つしかない」状態を作らないよう、ここからも止められるようにする -->
-          <StopButton v-else-if="generating" @click="emit('stop')" />
+          <StopButton v-if="generating" @click="emit('stop')" />
           <p v-else class="text-xs text-gray-400 dark:text-white/35 tracking-wide">球体をタップして話しかけてください</p>
         </div>
 

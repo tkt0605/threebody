@@ -150,7 +150,7 @@ function handleStop() {
 }
 
 // 音声認識完了 → 確認を経て送信
-const { recording, finalText, interimText, bars, errorMsg, confirming, confirmText, start, stop, confirmSend, redo, cancelConfirm } =
+const { recording, finalText, interimText, bars, errorMsg, start, stop } =
   useVoiceInput((text) => {
     voiceActive.value = true
     // 送信した瞬間から「AIが喋る側」の担当が始まる。
@@ -338,21 +338,6 @@ watch(
         <!-- 最初の発話は収束するまでこの画面に留まるため、停止ボタンもここに要る -->
         <StopButton v-if="generating" @click="handleStop" />
 
-        <!-- 認識結果の確認：誤認識のまま送らないよう、送信前に一度確認を挟む -->
-        <div v-if="confirming" class="flex flex-col items-center gap-3 max-w-sm text-center">
-          <p class="text-sm text-gray-700 dark:text-white/80">『{{ confirmText }}』でいいですか？</p>
-          <div class="flex gap-3">
-            <button
-              class="px-4 py-2 rounded-full text-sm font-medium bg-cyan-500 text-white hover:bg-cyan-400 transition-colors cursor-pointer"
-              @click="confirmSend"
-            >送信</button>
-            <button
-              class="px-4 py-2 rounded-full text-sm font-medium border border-black/10 text-gray-600 hover:bg-gray-200/60
-                     dark:border-white/15 dark:text-white/70 dark:hover:bg-white/8 transition-colors cursor-pointer"
-              @click="redo"
-            >もう一度話す</button>
-          </div>
-        </div>
 
         <!-- 文字で始める入口。音声認識に対応しないブラウザ（Firefox等）ではここが唯一の入口になり、
              対応ブラウザでも「声に出したくない・出せない」場面の逃げ道になる -->
@@ -398,15 +383,10 @@ watch(
       :recording="recording"
       :bars="bars"
       :wake-listening="wakeListening"
-      :confirming="confirming"
-      :confirm-text="confirmText"
       :error-msg="errorMsg"
       :generating="generating"
       @toggle-mic="recording ? stop() : start()"
-      @confirm-send="confirmSend"
-      @redo="redo"
       @stop="handleStop"
-      @closed="cancelConfirm"
     />
 
     <LimitReachedDialog ref="limitDialog" :reason="sharedKey.reason" @open-settings="appAside?.openSettings()" />
