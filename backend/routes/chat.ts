@@ -8,7 +8,7 @@ import { toOllamaMessages } from '../llm/messageHelpers'
 import { streamBodyOAI, orchestrateMultiBody } from '../llm/textService'
 import { streamAnthropic } from '../llm/providers/anthropic'
 import { streamOpenAICompat } from '../llm/providers/openaiCompat'
-import { streamOllamaNative } from '../llm/providers/ollama'
+import { streamOllamaNative, ollamaEnabled } from '../llm/providers/ollama'
 import { collectSecrets, sanitizeErrorMessage } from '../utils/errorSanitize'
 import { resolveUserId } from '../auth'
 import {
@@ -118,7 +118,13 @@ router.post('/chat', chatRateLimit, async (req, res) => {
           res.write('data: [DONE]\n\n')
           return
         }
-      } else if (allowance.reason === 'limit_reached' || allowance.reason === 'global_limit_reached') {
+      } else if (
+        (allowance.reason === 'limit_reached' || allowance.reason === 'global_limit_reached')
+        // Ollamaが使えるなら上限到達はエラーではなく、ただの経路の切り替えでしかない。
+        // ここで return すると下の三体モード（bodies）・単体モードへ落ちられず、
+        // ローカルLLMを持っているユーザーまで「今日はもう使えません」で止まる
+        && !(ollamaEnabled() && (bodies ?? []).some(b => b.provider === 'ollama'))
+      ) {
         // 既存のerrorイベント形式に乗せる。フロントはこれをそのまま描画できる。
         // code はバグではなく仕様どおりの制限であることの印で、フロント側は
         // 「問題を報告する」ボタン（本物のエラー用UI）を出さない判別に使う。
