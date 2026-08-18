@@ -200,6 +200,11 @@ async function createConversation(): Promise<string> {
 // 会話の切り替えや次の送信で、前のストリームを確実に止められるようにする。
 // 止められないと (1) 破棄したはずのmessageへ書き込みが続く (2) Lv5は最大32Kトークンを
 // 生成し切ってしまう (3) 共有キー利用時はその1回分のクォータが戻らない、の3つが起きる
+// このセッションで最後に送った user メッセージのid と、その保存/更新の promise。
+// 言い直しで同じ行を書き換えるときに「対象がこれでよいか」「書き込みが終わったか」を見る
+let lastSentUserId: string | null = null
+let lastUserWrite: Promise<unknown> | null = null
+
 let inFlight: StoppableController | null = null
 
 // 中断の理由。同じ「中断」でも、保存してよいものと絶対に保存してはいけないものがある。
@@ -371,6 +376,41 @@ async function openConversation(id?: string): Promise<string | null> {
   }
 }
 
+// 保存済みのメッセージを、言い直しで置き換えるときに使う。
+//
+// prevWrite は「その行を作った insert」。まだ終わっていないうちに UPDATE を投げると
+// 対象行がまだ存在せず0件ヒットになり、古い本文が残る。必ず待ってから書き換える
+async function updatePersistedMessage(message: Message, prevWrite: Promise<unknown> | null): Promise<void> {
+  const { user } = useAuth()
+  if (!user.value) return
+
+  await prevWrite?.catch(() => undefined)
+
+  const { error: msgErr } = await supabase
+    .from('messages')
+    .update({
+      content:   flattenText(message.blocks),
+      signals:   hasSignal(message.signals) ? message.signals : null,
+      modality:  message.modality,
+      timestamp: message.timestamp.toISOString(),
+    })
+    .eq('id', message.id)
+  if (msgErr) throw msgErr
+
+  // user メッセージの本文は text ブロック1つなので、部分更新より入れ替えのほうが単純。
+  // 差分を取る価値が出るのは複数ブロックを持つ assistant 側だが、そちらは書き換えない
+  const { error: delErr } = await supabase.from('content_blocks').delete().eq('message_id', message.id)
+  if (delErr) throw delErr
+
+  const blockRows = message.blocks
+    .filter((b): b is TextBlock => b.type === 'text')
+    .map((b, i) => ({ message_id: message.id, type: 'text' as const, payload: { content: b.content }, sort_order: i }))
+  if (blockRows.length > 0) {
+    const { error: insErr } = await supabase.from('content_blocks').insert(blockRows)
+    if (insErr) throw insErr
+  }
+}
+
 // エラーブロックは一時的な表示のみ。DBのblock_type enumに'error'が無いため永続化しない
 async function persistMessage(message: Message): Promise<void> {
   const { user } = useAuth()
@@ -389,6 +429,10 @@ async function persistMessage(message: Message): Promise<void> {
   const { data: inserted, error: msgErr } = await supabase
     .from('messages')
     .insert({
+      // クライアントで採番した id をそのまま主キーにする。
+      // DB の gen_random_uuid() に任せると画面上の Message と DB 行が別idになり、
+      // あとから「あの発言を書き換える」ができない（言い直しの反映に必要）
+      id:         message.id,
       conversation_id: convId,
       role:       message.role,
       content:    flattenText(message.blocks),
@@ -439,15 +483,46 @@ export function useChat() {
   const { refreshCapabilities } = useCapabilities()
 
   async function sendMessage(text: string, modality: Modality='text') {
-    const userMsg: Message = {
-      id: createId(),
-      role: 'user',
-      blocks: [{ type: 'text', content: text }],
-      timestamp: new Date(),
-      modality,
+    // 直前が user のまま＝その発言に応答が付いていない（バージインや停止で捨てられた）。
+    // このとき次の発話は「新しい問い」ではなく「言い直し」なので、並べずに置き換える。
+    // 並べると同じ主旨の断片が2つ残り、履歴としても次のリクエストの文脈としても壊れる。
+    //
+    // 連結ではなく置換にしているのは、人は言い直すとき最初から言い直すため。
+    // 連結すると必ず重複した文が残る。
+    //
+    // このセッションで自分が送ったものに限る（lastSentUserId）。リロード直後に残って
+    // いた古い孤立メッセージまで書き換えると、無関係な過去の質問が消える
+    const last = messages.value.at(-1)
+    const orphan = last?.role === 'user' && last.id === lastSentUserId ? last : null
+
+    let userMsg: Message
+    if (orphan) {
+      const prevWrite = lastUserWrite
+      orphan.blocks = [{ type: 'text', content: text }]
+      orphan.timestamp = new Date()
+      orphan.modality = modality
+      // 失われた1回目の本文は残さないが、「言い直した」という事実だけは記録する。
+      // I0 の rephrased はこのために用意した列
+      orphan.signals = {
+        ...(orphan.signals ?? NO_SIGNALS),
+        rephrased: (orphan.signals?.rephrased ?? 0) + 1,
+      }
+      userMsg = orphan
+      lastUserWrite = updatePersistedMessage(orphan, prevWrite)
+        .catch(err => console.error('メッセージの更新に失敗しました', err))
+    } else {
+      userMsg = {
+        id: createId(),
+        role: 'user',
+        blocks: [{ type: 'text', content: text }],
+        timestamp: new Date(),
+        modality,
+      }
+      messages.value.push(userMsg)
+      lastUserWrite = persistMessage(userMsg)
+        .catch(err => console.error('メッセージの保存に失敗しました', err))
     }
-    messages.value.push(userMsg)
-    persistMessage(userMsg).catch(err => console.error('メッセージの保存に失敗しました', err))
+    lastSentUserId = userMsg.id
 
     messages.value.push({
       id: createId(),

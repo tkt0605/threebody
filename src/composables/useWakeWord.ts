@@ -41,13 +41,35 @@ export type ListeningMode = 'wake' | 'barge-in'
 // バージインの発火に必要な最低文字数。1文字だと物音や「あ」で誤爆する
 const BARGE_IN_MIN_CHARS = 2
 
+// ウェイクワード待機を、何も起きないまま続ける上限。
+//
+// 待機中は SpeechRecognition を 350ms ごとに開き直し続け、Chrome ではその間ずっと
+// 音声が Google へ送られる。タブを裏に回した場合は visibilitychange で落とせるが、
+// 「タブを表にしたまま離席した」は document.hidden にならないため検知できない。
+// そこで、呼ばれないまま一定時間が過ぎたら自分から降りる。
+//
+// 短すぎると会話の合間に切れて「呼んでも反応しない」になり、長すぎると放置対策に
+// ならない。8分は「席を外した」と言い切れて、かつ考え込む間には切れない長さ
+// const WAKE_IDLE_MS = 8 * 60 * 1000
+const WAKE_IDLE_MS = 10 * 1000
+
 export function useWakeWord(onWake: () => void, onBargeIn?: (transcript: string) => void) {
   const listening = ref(false)
   const supported = ref(!!(window.SpeechRecognition ?? window.webkitSpeechRecognition))
   const mode = ref<ListeningMode>('wake')
 
+  // 呼ばれないまま待機し続けた結果、自分から降りた状態。
+  // 復帰は明示的な操作（球体タップ＝録音開始）に限る。visibilitychange で自動的に
+  // 戻すと、タブを行き来するだけでマイクが復活してしまう
+  const idle = ref(false)
+
   let rec: SpeechRecognitionAPI | null = null
   let restartTimer: ReturnType<typeof setTimeout> | null = null
+  let idleTimer: ReturnType<typeof setTimeout> | null = null
+
+  function clearIdleTimer() {
+    if (idleTimer !== null) { clearTimeout(idleTimer); idleTimer = null }
+  }
 
   function spawn() {
     if (!listening.value) return
@@ -110,11 +132,28 @@ export function useWakeWord(onWake: () => void, onBargeIn?: (transcript: string)
 
     mode.value = nextMode
     listening.value = true
+
+    // barge-in はAIが喋っている間だけの短命なモードなので対象外。
+    // 呼ばれずに時間切れになったときだけ idle を立てる
+    clearIdleTimer()
+    if (nextMode === 'wake') {
+      idleTimer = setTimeout(() => {
+        idle.value = true
+        stopListening()
+      }, WAKE_IDLE_MS)
+    }
+
     spawn()
+  }
+
+  // 明示的な操作があったので待機を再開してよい、と伝える
+  function resetIdle() {
+    idle.value = false
   }
 
   function stopListening() {
     listening.value = false
+    clearIdleTimer()
     if (restartTimer !== null) { clearTimeout(restartTimer); restartTimer = null }
     rec?.abort()
     rec = null
@@ -122,5 +161,5 @@ export function useWakeWord(onWake: () => void, onBargeIn?: (transcript: string)
 
   onUnmounted(() => stopListening())
 
-  return { listening, supported, mode, startListening, stopListening }
+  return { listening, supported, mode, idle, startListening, stopListening, resetIdle }
 }

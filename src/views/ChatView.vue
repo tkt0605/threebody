@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppAside from '../components/AppAside.vue'
 import AppHeader from '../components/AppHeader.vue'
@@ -183,7 +183,7 @@ function handleTextSend(text: string) {
 
 // 「アイリス」でウェイク → 録音開始。
 // AIが喋っている最中は、ウェイクワードを言い直させずに話し始めただけで割り込ませる
-const { listening: wakeListening, startListening, stopListening } = useWakeWord(
+const { listening: wakeListening, idle: wakeIdle, startListening, stopListening, resetIdle } = useWakeWord(
   () => { requestStart() },
   () => { handleBargeIn() },
 )
@@ -203,18 +203,40 @@ function handleBargeIn() {
 // ユーザーが一度でも明示的にマイクを使ったかどうか
 const micEverUsed = ref(false)
 
+// ウェイクワード待機を許してよいか。
+//
+// 待機中は SpeechRecognition を 350ms ごとに開き直し続ける（useWakeWord の onend）。
+// Chrome ではその間ずっと音声が Google へ送られるため、「聞く理由が無い状態」では
+// 必ず落とす。理由は今後増える想定なので、判定はこの1つの ref に集約しておく：
+//   ① タブが見えているか（実装済み）
+//   ② 一定時間なにも起きていないか（未実装。タブを表にしたまま離席した場合を拾う）
+//   ③ ユーザーの手動トグル（未実装）
+// 個別に startListening/stopListening を呼ぶ実装にすると、②③を足したときに
+// 「トグルはオフなのに visibility で復帰する」といった competing な状態が生まれる
+const pageVisible = ref(!document.hidden)
+function handleVisibility() { pageVisible.value = !document.hidden }
+onMounted(() => document.addEventListener('visibilitychange', handleVisibility))
+onUnmounted(() => document.removeEventListener('visibilitychange', handleVisibility))
+
+const wakeEnabled = computed(() => pageVisible.value && !wakeIdle.value)
+
 // 初回画面の案内文。ウェイクワードの待機は micEverUsed が true になるまで始まらない
 // （syncListening 参照）。マイクの許可がまだ無いためで、そこを飛ばして
 // 「アイリスと呼んで」と案内すると、呼んでも何も起きない体験になる。
 // 許可が取れた時点で「手を使わなくてよい」ことを初めて伝える
-const startHint = computed(() => micEverUsed.value
-  ? '「アイリス」と呼びかけるだけで話せます。文字でも送れます'
-  : '球体をタップして話しかけてください（初回だけマイクの許可が要ります）'
-)
+const startHint = computed(() => {
+  // 時間切れで待機を降りた状態は必ず伝える。黙って止めると
+  // 「アイリスと呼んでも反応しない」という壊れた見え方になる
+  if (wakeIdle.value) return 'しばらく操作が無かったのでマイクを切りました。球体をタップで再開します'
+  if (micEverUsed.value) return '「アイリス」と呼びかけるだけで話せます。文字でも送れます'
+  return '球体をタップして話しかけてください（初回だけマイクの許可が要ります）'
+})
 
 watch(recording, (isRec) => {
   if (isRec) {
     micEverUsed.value = true
+    // 球体をタップした＝また使う意思表示なので、時間切れで降りた待機を戻す
+    resetIdle()
     if (messages.value.length === 0) firstExchangeInFlight.value = true
   }
 })
@@ -230,12 +252,15 @@ watch(recording, (isRec) => {
 // また、応答を待っている無音の間にも割り込めたほうが会話として自然
 function syncListening() {
   if (recording.value)   { stopListening(); return }
+  // 聞いてよい状態でなければ、AIが喋っている最中（barge-in）でも開かない。
+  // 見えていない画面のために音声を送り続ける理由が無い
+  if (!wakeEnabled.value) { stopListening(); return }
   if (voiceActive.value) { startListening('barge-in'); return }
   if (micEverUsed.value) { startListening('wake'); return }
   stopListening()
 }
 
-watch([recording, voiceActive, micEverUsed], syncListening)
+watch([recording, voiceActive, micEverUsed, wakeEnabled], syncListening)
 
 // 会話継続ダイアログは録音中・thinking中（２〜３体が並列で考えている間）は開いたままにし、
 // 副体の見解が出揃って一体（主体）に収束した瞬間（thinking を抜けた瞬間）に自動で閉じて会話ログへ戻す。

@@ -332,6 +332,27 @@ describe('useChat', () => {
         expect(messages.value[1]!.signals?.interrupted).toBe(true)
       })
 
+      // 割り込みで応答が捨てられた直後の発話は「新しい問い」ではなく「言い直し」。
+      // 並べると同じ主旨の断片が2つ残り、履歴も次のリクエストの文脈も壊れる
+      it('応答が捨てられた直後の発話は、前の発言を置き換える', async () => {
+        vi.stubGlobal('fetch', abortAwareFetch())
+
+        const { messages, sendMessage, cancelGeneration } = useChat()
+        const first = sendMessage('そうだね えっと 例えば僕がね')
+        cancelGeneration()
+        await first
+        expect(messages.value).toHaveLength(1)
+
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse({ body: sseStream(['data: [DONE]\n\n']) })))
+        await sendMessage('明日の天気を教えて')
+
+        // user メッセージは増えない（置き換わっている）
+        expect(messages.value.filter(m => m.role === 'user')).toHaveLength(1)
+        expect(textBlock(messages.value[0]!).content).toBe('明日の天気を教えて')
+        // 失われた1回目の本文は残さないが、言い直した事実は記録する
+        expect(messages.value[0]!.signals?.rephrased).toBe(1)
+      })
+
       // 0文字で止められた応答は画面から取り除かれるが、「答えが要らなかった」という
       // 最も強いシグナルなので、器そのものは signals を持ったまま残る（persistMessage が拾う）
       it('0文字で止めても、取り除いた器に interrupted が残っている', async () => {
