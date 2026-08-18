@@ -96,6 +96,24 @@ export async function streamBodyOAI(
   await streamOpenAICompat(oaiClient, model, res, messages, config.maxTokens, systemPrompt)
 }
 
+// 副体の見解からコードブロックを落とす。
+//
+// personaPrompt でも「コードを書くな」と頼んでいるが、小さいローカルモデルは守る回と
+// 守らない回がある（実測で、同じ設定のまま片方の回だけ従った）。依頼ではなく処理で落とす。
+//
+// 落とす理由は分量だけではない。副体は secondaryMaxTokens しか持たないため、コードは
+// たいてい途中で切れる。書きかけのコードを資料として渡すと、主体はそれを直そうとするか、
+// 半端なまま引き写す。方針だけ受け取って主体が最初から書くほうが結果が良い。
+//
+// 閉じていないフェンス（生成が途中で切れた場合）も末尾ごと落とす
+function stripCodeBlocks(text: string): string {
+  const closed = text.replace(/```[\s\S]*?```/g, '\n（コード略）\n')
+  const open   = closed.indexOf('```')
+  const body   = open === -1 ? closed : `${closed.slice(0, open)}\n（コード略）\n`
+  // 落とした跡に空行が固まるので、3行以上の連続改行は2行に畳む
+  return body.replace(/\n{3,}/g, '\n\n').trim()
+}
+
 // 副体（二体・三体）を並列取得 → 見解をシステムプロンプトに注入 → 主体が統合回答をストリーミング、
 // という三体モードの一連の流れ。`allBodies` は SSE の bodyIndex を求めるための元配列
 // （通常モードでは req.body.bodies、共有キーモードでは available と同一の配列）
@@ -138,8 +156,9 @@ export async function orchestrateMultiBody(
         console.error(`[三体] ${name}(${b.provider}) の応答に失敗しました:`, sanitizeErrorMessage(result.reason, secrets))
         return null
       }
-      if (!result.value.trim()) return null
-      return `【${name}（${b.provider}）の見解】\n${result.value}`
+      const view = stripCodeBlocks(result.value)
+      if (!view.trim()) return null
+      return `【${name}（${b.provider}）の見解】\n${view}`
     })
     .filter(Boolean)
     .join('\n\n')

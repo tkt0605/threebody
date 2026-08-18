@@ -148,6 +148,29 @@ describe('orchestrateMultiBody', () => {
     expect(sentText).toContain('三体の見解です')
   })
 
+  // personaPrompt の「コードを書くな」は小さいモデルが守らない回がある。
+  // 依頼ではなく処理で落としていることを固定する
+  it('副体が書いたコードブロックは統合へ渡らない', () => {
+    const withCode = '方針はこうです。\n```python\nprint(1)\n```\n以上です。'
+    const truncated = '途中まで書きます。\n```js\nconst a = 1;\nconst b ='   // 生成が切れて閉じていない
+
+    mockByModel({ 'secondary-a': withCode, 'secondary-b': truncated, 'primary-model': '統合' })
+    const { res } = fakeRes()
+    const all = bodies()
+
+    return orchestrateMultiBody(all, all, MESSAGES, CONFIG, 'システム', res).then(() => {
+      const primaryCall = vi.mocked(streamOllamaNative).mock.calls.find(c => c[0] === 'primary-model')!
+      const sent = JSON.stringify(primaryCall[1])
+
+      expect(sent).toContain('方針はこうです。')
+      expect(sent).toContain('以上です。')
+      expect(sent).not.toContain('print(1)')
+      // 閉じていないフェンス以降も落とす（書きかけのコードを資料にしない）
+      expect(sent).not.toContain('const a = 1')
+      expect(sent).not.toContain('```')
+    })
+  })
+
   // 「見解が渡ること」は上で見ているが、「どこに渡るか」は誰も見ていなかった。
   // user ターンへ連結していたことが、主体が質問に答えず資料に論評する原因だったため、
   // 置き場所そのものを固定する
