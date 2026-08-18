@@ -21,7 +21,7 @@ import { useChatAnnouncer } from '../composables/useChatAnnouncer'
 import { useAuth } from '../composables/useAuth'
 import type { Message } from '../types/message'
 
-const { messages, sendMessage, cancelGeneration, openConversation, aiState, currentConversationId } = useChat()
+const { messages, sendMessage, cancelGeneration, openConversation, aiState, pendingBodies, currentConversationId } = useChat()
 const { settings } = useSettings()
 const { sharedKey, ollama, refreshCapabilities } = useCapabilities()
 const { user } = useAuth()
@@ -262,9 +262,19 @@ function syncListening() {
 
 watch([recording, voiceActive, micEverUsed, wakeEnabled], syncListening)
 
+// 副体が喋り始めた瞬間に会話ログへ移す。
+// 全副体の完了（thinking を抜ける瞬間）まで待つと、perspective ブロックが逐次流れている
+// 一番見せたい時間を中央の球体が覆い隠すことになる。最初の1往復だけの問題だが、
+// 三体モードでは副体の並列ラウンドがそのまま待ち時間になるので体感差が大きい
+watch(() => pendingBodies.value.length, (n, prev) => {
+  if (prev === 0 && n > 0) firstExchangeInFlight.value = false
+})
+
 // 会話継続ダイアログは録音中・thinking中（２〜３体が並列で考えている間）は開いたままにし、
 // 副体の見解が出揃って一体（主体）に収束した瞬間（thinking を抜けた瞬間）に自動で閉じて会話ログへ戻す。
-// 中央の球体からの最初の発話も同様に、収束の瞬間までチャットログへの画面遷移を遅らせる
+//
+// firstExchangeInFlight をここでも下ろすのは必須。単体モードでは body_start が一度も
+// 飛ばず、上の watch が発火しないため、こちらを消すと球体画面から抜けられなくなる
 watch(aiState, (state, prevState) => {
   if (prevState === 'thinking' && state !== 'thinking') {
     voiceDialog.value?.close()

@@ -50,8 +50,8 @@ const BARGE_IN_MIN_CHARS = 2
 //
 // 短すぎると会話の合間に切れて「呼んでも反応しない」になり、長すぎると放置対策に
 // ならない。8分は「席を外した」と言い切れて、かつ考え込む間には切れない長さ
-// const WAKE_IDLE_MS = 8 * 60 * 1000
-const WAKE_IDLE_MS = 10 * 1000
+const WAKE_IDLE_MS = 8 * 60 * 1000
+// const WAKE_IDLE_MS = 10 * 1000
 
 export function useWakeWord(onWake: () => void, onBargeIn?: (transcript: string) => void) {
   const listening = ref(false)
