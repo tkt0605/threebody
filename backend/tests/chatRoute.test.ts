@@ -97,6 +97,19 @@ describe('POST /api/chat — 共有キーの枠', () => {
     expect(releaseGlobalQuota).not.toHaveBeenCalled()
   })
 
+  // 共有キー経路の personaPrompt はここで直に組み立てるため、フロントの
+  // NO_ARTIFACT（src/constants/bodyPersonas.ts）が届かず素通しになっていた。
+  // 運営がトークンを負担する経路でこそ、副体に具体物を書かせたくない
+  it('共有キー経路の副体にも「具体物を書くな」が届く', async () => {
+    await post(NO_OWN_KEY)
+
+    const [bodies] = vi.mocked(orchestrateMultiBody).mock.calls[0]!
+    // 一体（主体）は具体物を出す側なので、この制約を持たない
+    expect(bodies[0]!.personaPrompt).toBeUndefined()
+    expect(bodies[1]!.personaPrompt).toContain('具体物を作るのは統合役の仕事')
+    expect(bodies[2]!.personaPrompt).toContain('具体物を作るのは統合役の仕事')
+  })
+
   // 自分のキーで動くユーザーは運営のコストを一切使わない。
   // ここで予約が走ると、BYOKユーザーがページを使うだけで全体枠が減る
   it('自分のクラウドキーがあれば共有キーの判定自体を行わない', async () => {
