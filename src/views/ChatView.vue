@@ -149,6 +149,25 @@ function handleStop() {
   announce('生成を停止しました')
 }
 
+// 読み上げ中に球体へ触れたら、まず黙らせる。
+//
+// 生成そのものは止めない。読み上げだけが邪魔な場面（長いコードの解説を声で
+// 聞かされている等）と、答えごと要らない場面（StopButton）は別の要求なので分ける。
+// voiceActive を落とすことで、以降のストリーミング分も読み上げに回らなくなる
+// （watch(responseText) と watch(streaming) がどちらも voiceActive を見ている）。
+//
+// 止めた勢いで録音まで始めない。1タップで2つのことが起きると、
+// 黙らせたかっただけの人がマイクを開かれる
+function handleSphereTap(fallback: () => void): void {
+  if (narration.speaking.value) {
+    narration.stop()
+    voiceActive.value = false
+    announce('読み上げを停止しました')
+    return
+  }
+  fallback()
+}
+
 // 音声認識完了 → 確認を経て送信
 const { recording, finalText, interimText, bars, errorMsg, start, stop } =
   useVoiceInput((text) => {
@@ -370,7 +389,7 @@ watch(
             :recording="recording"
             :bars="bars"
             :wake-listening="wakeListening"
-            @click="recording ? stop() : requestStart()"
+            @click="handleSphereTap(() => recording ? stop() : requestStart())"
           />
         </div>
 
@@ -404,7 +423,7 @@ watch(
             <div
               class="w-12 h-12 shrink-0 rounded-full overflow-hidden cursor-pointer transition-transform hover:scale-105"
               title="続けて話す"
-              @click="requestVoiceDialog()"
+              @click="handleSphereTap(() => requestVoiceDialog())"
             >
               <VoiceSphere
                 :recording="recording"
@@ -429,7 +448,7 @@ watch(
       :wake-listening="wakeListening"
       :error-msg="errorMsg"
       :generating="generating"
-      @toggle-mic="recording ? stop() : start()"
+      @toggle-mic="handleSphereTap(() => recording ? stop() : start())"
       @stop="handleStop"
     />
 
