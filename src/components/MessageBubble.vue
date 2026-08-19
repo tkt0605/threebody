@@ -170,6 +170,14 @@ function handleCopyClick(event: MouseEvent) {
           </div>
         </div>
       </template>
+      <!-- 応答が消えた理由を先に書く。ボタン2つだけだと「なぜ送り直す必要があるのか」が
+           分からず、押してよいのかも判断できない。
+           応答がDBに書かれない経路は2つあり（ストリーミング中のリロード / 1文字も
+           届かないうちのエラー）、リロード後のDBからは両者を区別できないため、
+           文言はどちらにも当てはまる範囲に留める -->
+      <p v-if="orphaned" class="pt-1 text-xs leading-relaxed text-gray-400 dark:text-white/35">
+        応答は保存されていません。リロードや通信エラーで途切れた可能性があります。
+      </p>
       <div v-if="orphaned && !readonly" class="flex gap-2 pt-1">
         <button
           class="text-xs px-3 py-1.5 rounded-lg transition-colors cursor-pointer

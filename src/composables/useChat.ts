@@ -128,6 +128,30 @@ async function ensureUserProfile(userId: string): Promise<void> {
   if (error) throw error
 }
 
+// 応答が付かなかった質問を、末尾の1件だけ残して掃除する。
+//
+// 応答がDBに書かれない経路は2つある（ストリーミング中のリロード / 1文字も届かないうちの
+// エラー）。どちらもリロードのたびに質問だけが1行積み上がり、同じ問いが3つ4つと並ぶ。
+// 見た目が壊れるだけでなく、次のリクエストの文脈としても同じ問いを繰り返し送ることになる。
+//
+// 末尾の1件を残すのは、それが「まだ答えを待っている質問」だから。ここまで消すと
+// 送信した文面ごと黙って消え、MessageBubble の「もう一度送信」も出せなくなる
+async function pruneOrphanedMessages(msgs: Message[]): Promise<Message[]> {
+  const orphanIds = msgs
+    .filter((m, i) => m.role === 'user' && msgs[i + 1] !== undefined && msgs[i + 1]!.role !== 'assistant')
+    .map(m => m.id)
+  if (orphanIds.length === 0) return msgs
+
+  try {
+    await supabase.from('content_blocks').delete().in('message_id', orphanIds)
+    await supabase.from('messages').delete().in('id', orphanIds)
+  } catch (err) {
+    // 消せなくても表示から外す。残しても次回のロードで再挑戦される
+    console.error('宙に浮いた質問の削除に失敗しました', err)
+  }
+  return msgs.filter(m => !orphanIds.includes(m.id))
+}
+
 async function fetchMessages(conversationId: string): Promise<Message[]> {
   const { data, error } = await supabase
     .from('messages')
@@ -136,7 +160,7 @@ async function fetchMessages(conversationId: string): Promise<Message[]> {
     .order('timestamp', { ascending: true })
   if (error) { console.error(error); return [] }
 
-  return (data ?? []).map((row): Message => ({
+  const loaded = (data ?? []).map((row): Message => ({
     id: row.id as string,
     role: row.role as Message['role'],
     timestamp: new Date(row.timestamp as string),
@@ -149,6 +173,8 @@ async function fetchMessages(conversationId: string): Promise<Message[]> {
     // null になる。既定は 'text'（音声だったと誤認するより無難な側へ倒す）
     modality: (row.modality as Modality | null) ?? 'text',
   }))
+
+  return pruneOrphanedMessages(loaded)
 }
 
 // サイドバーに表示する会話一覧を読み込む（最終更新が新しい順）
@@ -206,6 +232,11 @@ let lastSentUserId: string | null = null
 let lastUserWrite: Promise<unknown> | null = null
 
 let inFlight: StoppableController | null = null
+
+// ストリーミング中に応答を保存し直す最短間隔。
+// 1回の保存で messages の UPDATE と content_blocks の入れ替えが走るため、短くするほど
+// 往復が増える。リロードで失う量（最大この長さぶん）との釣り合いで決めている
+const STREAM_SAVE_INTERVAL_MS = 2000
 
 // 中断の理由。同じ「中断」でも、保存してよいものと絶対に保存してはいけないものがある。
 //   user   … 停止ボタン・バージイン。ユーザーが明示的に止めた
@@ -376,10 +407,13 @@ async function openConversation(id?: string): Promise<string | null> {
   }
 }
 
-// 保存済みのメッセージを、言い直しで置き換えるときに使う。
+// 保存済みのメッセージを書き換える。用途は2つ。
+//   1. 言い直しで user の本文を置き換える
+//   2. ストリーミング中の assistant を、伸びた本文で上書きする（途中保存）
 //
 // prevWrite は「その行を作った insert」。まだ終わっていないうちに UPDATE を投げると
 // 対象行がまだ存在せず0件ヒットになり、古い本文が残る。必ず待ってから書き換える
+// （呼び出し側で既に直列化してある場合は null でよい）
 async function updatePersistedMessage(message: Message, prevWrite: Promise<unknown> | null): Promise<void> {
   const { user } = useAuth()
   if (!user.value) return
@@ -397,8 +431,8 @@ async function updatePersistedMessage(message: Message, prevWrite: Promise<unkno
     .eq('id', message.id)
   if (msgErr) throw msgErr
 
-  // user メッセージの本文は text ブロック1つなので、部分更新より入れ替えのほうが単純。
-  // 差分を取る価値が出るのは複数ブロックを持つ assistant 側だが、そちらは書き換えない
+  // 差分を取らず、毎回まるごと入れ替える。text ブロックは user なら1つ、assistant でも
+  // 統合後の本文1つだけ（perspective / error は永続化対象外）なので、差分計算に見合わない
   const { error: delErr } = await supabase.from('content_blocks').delete().eq('message_id', message.id)
   if (delErr) throw delErr
 
@@ -528,7 +562,13 @@ export function useChat() {
       id: createId(),
       role: 'assistant',
       blocks: [{ type: 'text', content: '' }],
-      timestamp: new Date(),
+      // new Date() ではなく「質問の1ミリ秒後」。
+      //
+      // 履歴の並びは fetchMessages の order('timestamp') だけで決まる。ここを new Date()
+      // にすると、上の userMsg 生成との間に await が1つも無いため同じミリ秒に落ちることが
+      // あり、同着になった瞬間にDB側の返す順序が保証されなくなる（実測で、応答が質問の
+      // 上に表示された）。1ms 足して、必ず質問の後ろに来ることを値で保証する
+      timestamp: new Date(userMsg.timestamp.getTime() + 1),
       // 応答側は入力と同じ経路で返す。声で聞かれたら読み上げ、文字で打たれたら
       // 読み上げない（ChatView が TextComposer では useVoiceNarration を起動しない）
       modality,
@@ -548,6 +588,47 @@ export function useChat() {
     // 1つにまとめると null が「中断されていない」と見分けられなくなる
     let aborted = false
     let abortReason: AbortReason | null = null
+
+    // ── 応答の途中保存 ────────────────────────────────────────────────────────
+    // 応答の保存が finally 一点しか無いと、ストリーミング中にリロードされた瞬間に
+    // 画面に出ていた本文が丸ごと消える（JSコンテキストごと落ちるので finally は走らない）。
+    // 質問の行だけがDBに残り、MessageList.isOrphaned で宙に浮く。
+    //
+    // savedRow は「DBに行を作ったか」。1回目は insert、2回目以降は id を指す update。
+    // pendingWrite に繋いで直列化しているのは、insert の完了前に2回目が走ると
+    // 同じ主キーで二重 insert になるため（awaitを跨いで savedRow を読ませない）
+    let savedRow    = false
+    let savedLength = 0
+    let pendingWrite: Promise<unknown> | null = null
+    let saveTimer: ReturnType<typeof setTimeout> | null = null
+
+    function saveProgress(): void {
+      const prev = pendingWrite
+      pendingWrite = (async () => {
+        await prev?.catch(() => undefined)
+        const content = block.content
+        // 一文字も届いていないうちは行を作らない（空バブルをDBに残さない）。
+        // 前回から伸びていなければ書く意味も無い
+        if (!content || content.length === savedLength) return
+        if (savedRow) await updatePersistedMessage(reactiveMsg, null)
+        else { await persistMessage(reactiveMsg); savedRow = true }
+        savedLength = content.length
+      })().catch(err => console.error('応答の保存に失敗しました', err))
+    }
+
+    // 先頭で即保存し、そのあとを間引く（leading edge のスロットリング）。
+    //
+    // 後追いだけにすると、最初の1回が来るまでの間はリロードで丸ごと消える。三体モードは
+    // 副体ラウンドの間 block.content が空のままなので、体感の「長い応答」のうち
+    // 保存が一度も走らない区間がかなり長い。行さえ先に作れば以降は update で追いつける。
+    //
+    // デバウンスではなくスロットリングなのは、デバウンスだとトークンが途切れず届く間は
+    // タイマーが延び続けて一度も保存されない（＝長い応答ほど守られない）ため
+    function scheduleSave(): void {
+      if (saveTimer !== null) return
+      saveProgress()
+      saveTimer = setTimeout(() => { saveTimer = null; saveProgress() }, STREAM_SAVE_INTERVAL_MS)
+    }
 
     try {
       aiState.value = 'thinking';
@@ -637,6 +718,7 @@ export function useChat() {
             }
             if (parsed.type === 'text' && parsed.content){
               block.content += parsed.content
+              scheduleSave()
               if (aiState.value !== 'converging') aiState.value = 'converging'
             }
             if (parsed.type === 'error') throw new ChatStreamError(parsed.message, parsed.code)
@@ -706,11 +788,17 @@ export function useChat() {
       // これで「停止 → リロードで応答が消える」が解消する（途中まで書かれた本文は残る。
       // 一文字も書かれていなければ catch が空ブロックを外すので persistMessage が
       // 早期 return し、発言者名だけの空バブルはDBに残らない）
-      if (!aborted || abortReason === 'user') {
-        persistMessage(reactiveMsg).catch(err => console.error('メッセージの保存に失敗しました', err))
-        // 共有キーを使った場合、残り回数がここで変わる。UIの表示を最新に保つ
-        void refreshCapabilities()
-      }
+      if (saveTimer !== null) { clearTimeout(saveTimer); saveTimer = null }
+
+      // 行をまだ作っていない場合だけ、上のルールが効く。
+      // 既に途中保存で行がある場合は理由に関わらず最後の状態へ揃える。update は id で
+      // 引くので、会話が切り替わっていても書き込み先を間違えない（insert と違って
+      // ensureConversation を通らない）。ここで揃えないと、DBには2秒前の途中までが
+      // 残り、画面に出ている最後の数文が永久に欠ける
+      const mayInsert = !aborted || abortReason === 'user'
+      if (mayInsert || savedRow) saveProgress()
+      // 共有キーを使った場合、残り回数がここで変わる。UIの表示を最新に保つ
+      if (mayInsert) void refreshCapabilities()
     }
   }
 
