@@ -16,6 +16,7 @@
 --   1. テーブル — 定義・index・RLSポリシーをテーブルごとにまとめる
 --   2. 関数（RPC） — 共有キーのクォータ操作。service_role からのみ呼ぶ
 --   3. 適用履歴 — 本番へ流し終えた変更の一覧
+--   4. 本番との差分 — pg_policies と突き合わせて見つかった未整理（要判断）
 
 
 -- ############################################################################
@@ -24,6 +25,11 @@
 -- フロントは anon key + ユーザーのJWTで直接テーブルを叩き（src/lib/supabase.ts）、
 -- バックエンドの service_role は RLS を完全にバイパスする（backend/supabaseAdmin.ts）。
 -- ＝ 以下のポリシーが縛るのは「フロントからの直接アクセス」だけ。
+--
+-- ポリシー名と条件は本番の pg_policies に合わせてある（2026-08-19 突き合わせ）。
+-- update に with check を書いていないのも本番どおりで、省くと Postgres が using を
+-- 検査にも流用する（自分の会話の行を他人の会話へ付け替える、が塞がる）。
+-- ただし対象ロールは未確認のため、この文書では authenticated としている[要確認]。
 --
 -- 依存の都合で、この順序のまま上から実行すること
 -- （user_setting → conversations → messages → content_blocks / feedback）。
@@ -57,14 +63,19 @@ comment on column public.user_setting.can_use_shared_key is
 
 alter table public.user_setting enable row level security;
 
-create policy "user_setting: select own" on public.user_setting for select
-  to authenticated using (id = auth.uid());
+create policy user_setting_select_own on public.user_setting for select
+  to authenticated using (auth.uid() = id);
 
-create policy "user_setting: insert own" on public.user_setting for insert
-  to authenticated with check (id = auth.uid());
+create policy user_setting_insert_own on public.user_setting for insert
+  to authenticated with check (auth.uid() = id);
 
-create policy "user_setting: update own" on public.user_setting for update
-  to authenticated using (id = auth.uid()) with check (id = auth.uid());
+create policy user_setting_update_own on public.user_setting for update
+  to authenticated using (auth.uid() = id);
+
+-- 退会は service_role が行う（auth.users を消せるのが service_role だけのため。
+-- backend/routes/account.ts）。フロントから自分の行を消す経路は無いが、本番には有る
+create policy user_setting_delete_own on public.user_setting for delete
+  to authenticated using (auth.uid() = id);
 
 -- 行ポリシーとは独立した列単位の防御。これが無いと、update own を根拠に
 -- 自分の can_use_shared_key を自称 true へ書き換えられてしまう
@@ -104,17 +115,17 @@ create index conversations_user_id_updated_at_idx
 
 alter table public.conversations enable row level security;
 
-create policy "conversations: select own" on public.conversations for select
-  to authenticated using (user_id = auth.uid());
+create policy conversations_select_own on public.conversations for select
+  to authenticated using (auth.uid() = user_id);
 
-create policy "conversations: insert own" on public.conversations for insert
-  to authenticated with check (user_id = auth.uid());
+create policy conversations_insert_own on public.conversations for insert
+  to authenticated with check (auth.uid() = user_id);
 
-create policy "conversations: update own" on public.conversations for update
-  to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy conversations_update_own on public.conversations for update
+  to authenticated using (auth.uid() = user_id);
 
-create policy "conversations: delete own" on public.conversations for delete
-  to authenticated using (user_id = auth.uid());
+create policy conversations_delete_own on public.conversations for delete
+  to authenticated using (auth.uid() = user_id);
 
 -- ----------------------------------------------------------------------------
 -- messages — 発言。所有者判定は親の conversations 経由
@@ -144,33 +155,34 @@ create index messages_conversation_id_timestamp_idx
 
 alter table public.messages enable row level security;
 
-create policy "messages: select own" on public.messages for select
+create policy messages_select_own on public.messages for select
   to authenticated
   using (exists (
     select 1 from public.conversations c
     where c.id = messages.conversation_id and c.user_id = auth.uid()
   ));
 
-create policy "messages: insert own" on public.messages for insert
+create policy messages_insert_own on public.messages for insert
   to authenticated
   with check (exists (
     select 1 from public.conversations c
     where c.id = messages.conversation_id and c.user_id = auth.uid()
   ));
 
-create policy "messages: delete own" on public.messages for delete
+-- 途中保存と言い直しで本文を書き換える（useChat.ts の updatePersistedMessage）ため必要
+create policy messages_update_own on public.messages for update
   to authenticated
   using (exists (
     select 1 from public.conversations c
     where c.id = messages.conversation_id and c.user_id = auth.uid()
   ));
 
--- [要判断] update ポリシーがここに無い。アプリは messages を更新している
---   （useChat.ts の updatePersistedMessage＝途中保存と言い直し、pruneOrphanedMessages の
---   signals 書き換え）。RLS 下で update ポリシーが1つも無ければ更新は0行になるため、
---   本番には別途 update ポリシーが存在するはずで、このファイルの取りこぼしと思われる。
---   本番を確認し、あれば下に書き足す:
---     select policyname, cmd from pg_policies where tablename = 'messages';
+create policy messages_delete_own on public.messages for delete
+  to authenticated
+  using (exists (
+    select 1 from public.conversations c
+    where c.id = messages.conversation_id and c.user_id = auth.uid()
+  ));
 
 -- ----------------------------------------------------------------------------
 -- content_blocks — 本文の正本。所有者判定は message → conversation 経由
@@ -194,8 +206,7 @@ create index content_blocks_message_id_sort_order_idx
 
 alter table public.content_blocks enable row level security;
 
--- 更新ポリシーは意図的に無い。書き換えは「全削除 → 入れ直し」で行う（useChat.ts）
-create policy "content_blocks: select own" on public.content_blocks for select
+create policy content_blocks_select_own on public.content_blocks for select
   to authenticated
   using (exists (
     select 1 from public.messages m
@@ -203,7 +214,7 @@ create policy "content_blocks: select own" on public.content_blocks for select
     where m.id = content_blocks.message_id and c.user_id = auth.uid()
   ));
 
-create policy "content_blocks: insert own" on public.content_blocks for insert
+create policy content_blocks_insert_own on public.content_blocks for insert
   to authenticated
   with check (exists (
     select 1 from public.messages m
@@ -211,7 +222,17 @@ create policy "content_blocks: insert own" on public.content_blocks for insert
     where m.id = content_blocks.message_id and c.user_id = auth.uid()
   ));
 
-create policy "content_blocks: delete own" on public.content_blocks for delete
+-- アプリは update を使わない（書き換えは「全削除 → 入れ直し」。useChat.ts）が、
+-- 本番には存在するので合わせてある
+create policy content_blocks_update_own on public.content_blocks for update
+  to authenticated
+  using (exists (
+    select 1 from public.messages m
+    join public.conversations c on c.id = m.conversation_id
+    where m.id = content_blocks.message_id and c.user_id = auth.uid()
+  ));
+
+create policy content_blocks_delete_own on public.content_blocks for delete
   to authenticated
   using (exists (
     select 1 from public.messages m
@@ -223,7 +244,8 @@ create policy "content_blocks: delete own" on public.content_blocks for delete
 -- feedback — エラー報告（src/composables/useFeedback.ts）
 --
 -- 書き込み専用で、閲覧・集計手段はアプリ側に未実装（運営が Supabase 側で直接見る）。
--- そのため select は自分の投稿を読み返せる範囲に留め、他人の報告は見せない
+-- ポリシーも insert 1つだけ。＝ 投稿者本人であっても自分の報告を読み返せない。
+-- 名前だけ他と揃っていない（"insert own feedback"）が、本番の実態に合わせてある
 -- ----------------------------------------------------------------------------
 create table public.feedback (
   id               uuid primary key default gen_random_uuid(),
@@ -241,11 +263,8 @@ create index feedback_user_id_idx on public.feedback (user_id);
 
 alter table public.feedback enable row level security;
 
-create policy "feedback: insert own" on public.feedback for insert
-  to authenticated with check (user_id = auth.uid());
-
-create policy "feedback: select own" on public.feedback for select
-  to authenticated using (user_id = auth.uid());
+create policy "insert own feedback" on public.feedback for insert
+  to authenticated with check (auth.uid() = user_id);
 
 
 -- ############################################################################
@@ -358,6 +377,20 @@ grant execute on function public.release_global_quota(date) to service_role;
 --        release_global_quota
 --   5. 意図シグナル（I0 記録）
 --        messages.signals / messages.modality + messages_modality_check
+--   6. 未使用テーブルの削除（2026-08-19）
+--        drop table face_descriptors / intents_log。どちらもアプリからの参照が無く、
+--        行数も0だった。face_descriptors は顔認識の試作、intents_log は I0 の先行案が
+--        残ったものと見られる。列定義は控えを取る前に落としたため残っていない
+--        （0行・未参照のため、記録として惜しむ内容は無いと判断した）
+--   7. 重複ポリシーの削除（2026-08-19）
+--        drop policy user_setting_self / messages_owner / content_blocks_owner。
+--        いずれも cmd = ALL で、各テーブルに揃っている *_select_own 等4つと条件が
+--        等価だった（in と exists の書き方違いのみ）。permissive ポリシーは OR で
+--        評価されるため許可範囲は変わらず、「個別を直したのに ALL が残っていて効かない」
+--        という事故の種だけが減る。削除後に select / insert / update / delete を
+--        画面から一度ずつ通して確認済み。
+--        ＝ 以降、messages と content_blocks と user_setting の許可範囲は
+--        章1に書いてある個別ポリシーだけが決めている
 --
 -- 【確認クエリ】SQL Editor のタブは使い捨てにし、これらだけ手元に残しておけばよい。
 --   select can_use_shared_key, count(*) from public.user_setting group by 1;
@@ -367,3 +400,20 @@ grant execute on function public.release_global_quota(date) to service_role;
 --   select public.release_global_quota(date '1999-01-01');          -- count = 0
 --   delete from public.shared_key_global_usage where day = date '1999-01-01';
 -- ############################################################################
+
+
+-- ############################################################################
+-- 4. 本番との差分 — 未整理（2026-08-19、pg_policies との突き合わせで判明）
+--
+-- 章1〜3 は本番に合わせて直してある。ここに残すのは「本番にあるが、消すか残すかを
+-- まだ決めていないもの」。決めたら実行し、この節から消して章1〜3 に反映する。
+-- ############################################################################
+
+-- ----------------------------------------------------------------------------
+-- 4-1. feedback に select ポリシーが無い
+--
+-- 本番のポリシーは "insert own feedback"（INSERT）1つだけ。投稿者本人も自分の報告を
+-- 読み返せない。書き込み専用と割り切るならこのままでよいが、アプリに履歴表示を
+-- 付けるなら下を足す。付けないなら、この節ごと消してよい
+--   create policy feedback_select_own on public.feedback for select
+--     to authenticated using (auth.uid() = user_id);
