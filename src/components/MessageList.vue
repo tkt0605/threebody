@@ -30,12 +30,31 @@ watch(() => props.draftMessage, scrollToBottom, { deep: true })
 // ここで落とすことで、記録は残しつつ画面には出さない。
 const visibleMessages = computed(() => props.messages.filter(m => m.blocks.length > 0))
 
-// リロード等でAIの返答が保存される前に途切れ、応答が欠けたまま宙ぶらりんになったユーザー発言かどうか。
-// 空の応答を除外した後の並びで見るため、0文字で停止された質問は「送り直せる」状態に戻る
-function isOrphaned(msg: Message, index: number): boolean {
-  if (msg.role !== 'user') return false
-  const next = visibleMessages.value[index + 1]
-  return !next || next.role !== 'assistant'
+// 答えの付いていないユーザー発言に、何が起きたのかを添える。
+//
+//   'stopped' … ユーザーが自分で止めた（停止ボタン・バージイン）
+//   'lost'    … 応答が届かなかった（エラー、保存前の離脱）
+//   null      … 孤立していない
+//
+// 判定に visibleMessages を使ってはいけない。一文字も出ないうちに終わった応答は
+// 0ブロックなのでそこから除外されており、その行こそが signals.interrupted という
+// 理由を持っているため。除外前の props.messages を見る必要がある
+type OrphanReason = 'stopped' | 'lost' | null
+
+function orphanReason(msg: Message): OrphanReason {
+  if (msg.role !== 'user') return null
+
+  const all  = props.messages
+  const next = all[all.indexOf(msg) + 1]
+
+  // 中身のある応答が続いていれば孤立ではない
+  if (next?.role === 'assistant' && next.blocks.length > 0) return null
+
+  // 応答の器すら無い＝保存される前に失われた
+  if (!next || next.role !== 'assistant') return 'lost'
+
+  // 器はあるが中身が無い。止めたのなら interrupted が立っている（useChat.cancelGeneration）
+  return next.signals?.interrupted ? 'stopped' : 'lost'
 }
 </script>
 
@@ -58,10 +77,10 @@ function isOrphaned(msg: Message, index: number): boolean {
       </div>
     <div class="max-w-3xl mx-auto px-4 space-y-3">
       <MessageBubble
-        v-for="(msg, idx) in visibleMessages"
+        v-for="msg in visibleMessages"
         :key="msg.id"
         :message="msg"
-        :orphaned="isOrphaned(msg, idx)"
+        :orphan-reason="orphanReason(msg)"
       />
       <MessageBubble v-if="draftMessage" :message="draftMessage" />
     </div>

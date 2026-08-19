@@ -7,7 +7,13 @@ import type { Message } from '../types/message'
 import DOMPurify from 'dompurify'
 import { BODY_ROLE_COLORS } from '../constants/bodyProviders'
 import { useChat } from '../composables/useChat'
-defineProps<{ message: Message; orphaned?: boolean; readonly?: boolean }>()
+// orphanReason は「答えが付いていない理由」。判定は MessageList が持つ
+// （0ブロックの応答は描画対象から外れており、その行が理由を持っているため）
+defineProps<{
+  message: Message
+  orphanReason?: 'stopped' | 'lost' | null
+  readonly?: boolean
+}>()
 
 const { retryMessage, deleteMessage } = useChat()
 const { reportError } = useFeedback()
@@ -170,26 +176,30 @@ function handleCopyClick(event: MouseEvent) {
           </div>
         </div>
       </template>
-      <!-- 応答が消えた理由を先に書く。ボタン2つだけだと「なぜ送り直す必要があるのか」が
-           分からず、押してよいのかも判断できない。
-           応答がDBに書かれない経路は2つあり（ストリーミング中のリロード / 1文字も
-           届かないうちのエラー）、リロード後のDBからは両者を区別できないため、
-           文言はどちらにも当てはまる範囲に留める -->
-      <p v-if="orphaned" class="pt-1 text-xs leading-relaxed text-gray-400 dark:text-white/35">
-        応答は保存されていません。リロードや通信エラーで途切れた可能性があります。
-      </p>
-      <div v-if="orphaned && !readonly" class="flex gap-2 pt-1">
-        <button
-          class="text-xs px-3 py-1.5 rounded-lg transition-colors cursor-pointer
-                 bg-gray-100 hover:bg-gray-200/70 text-gray-600
-                 dark:bg-white/6 dark:hover:bg-white/10 dark:text-white/60"
-          @click="retryMessage(message)"
-        >もう一度送信</button>
-        <button
-          class="text-xs px-3 py-1.5 rounded-lg transition-colors cursor-pointer
-                 bg-red-500/10 hover:bg-red-500/15 text-red-400"
-          @click="deleteMessage(message.id)"
-        >削除する</button>
+      <!-- 答えが付いていない理由を先に書く。ボタン2つだけだと「なぜ送り直す必要が
+           あるのか」が分からず、押してよいのかも判断できない。
+           原因を断定しないこと。自分で止めた場合を「エラーで途切れた」と書くと、
+           起きていない障害を報告することになる。断定できるのは stopped だけで、
+           それ以外は「届かなかった」という観測事実に留める -->
+      <div v-if="orphanReason && !readonly" class="pt-1 space-y-1.5">
+        <p class="text-xs leading-relaxed text-gray-400 dark:text-white/35">
+          {{ orphanReason === 'stopped'
+            ? '答えが出る前に停止しました。'
+            : '応答が届きませんでした。' }}
+        </p>
+        <div class="flex gap-2">
+          <button
+            class="text-xs px-3 py-1.5 rounded-lg transition-colors cursor-pointer
+                   bg-gray-100 hover:bg-gray-200/70 text-gray-600
+                   dark:bg-white/6 dark:hover:bg-white/10 dark:text-white/60"
+            @click="retryMessage(message)"
+          >もう一度送信</button>
+          <button
+            class="text-xs px-3 py-1.5 rounded-lg transition-colors cursor-pointer
+                   bg-red-500/10 hover:bg-red-500/15 text-red-400"
+            @click="deleteMessage(message.id)"
+          >削除する</button>
+        </div>
       </div>
     </div>
   </div>
