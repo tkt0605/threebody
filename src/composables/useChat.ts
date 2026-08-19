@@ -2,8 +2,7 @@ import { ref, computed, watch } from 'vue'
 import type { Message, TextBlock, PerspectiveBlock, ContentBlock, BodyPerspective } from '../types/message'
 import { hasSignal, NO_SIGNALS, type TurnSignals } from '../types/intent'
 import { useSettings, type BodyProvider, isBodyUsable } from './useSettings'
-import { buildSystemPrompt, buildBodyPersonaPrompt } from './useSystemPrompt'
-import { BODY_PERSONA_INFO } from '../constants/bodyPersonas'
+import { buildSystemPrompt } from './useSystemPrompt'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useCapabilities } from './useCapabilities'
@@ -722,8 +721,9 @@ export function useChat() {
             provider: b.provider,
             apiKey: b.apiKey,
             model: b.model,
-            name: BODY_PERSONA_INFO[b.role].name,
-            personaPrompt: buildBodyPersonaPrompt(settings, b.role),
+            // 副体の指示文と表示名は backend が role から組む（llm/secondaryPrompt.ts）。
+            // ここで文面を作って送ると、共有キー経路との二重管理に戻る
+            role: b.role,
           })),
           model:  settings.bodies.find(b => b.provider === settings.provider)?.model,
           apiKey: settings.bodies.find(b => b.provider === settings.provider)?.apiKey,

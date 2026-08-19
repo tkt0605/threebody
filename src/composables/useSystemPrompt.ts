@@ -1,5 +1,4 @@
-import type { Settings, VoiceStyle, BodyPersona, Language } from './useSettings'
-import { BODY_PERSONA_INFO } from '../constants/bodyPersonas'
+import type { Settings, VoiceStyle, Language } from './useSettings'
 
 // ── Step 1: ベース人格 ────────────────────────────────────────────────
 // 担当する軸は「振る舞い」と「出力形式」。どんな語彙で話すか（＝口調）はVOICE_STYLEに委譲する。
@@ -81,6 +80,6 @@ export function buildSystemPrompt(settings: Settings): string {
   return parts.filter(Boolean).join('\n\n')
 }
 
-export function buildBodyPersonaPrompt(settings: Settings, role: BodyPersona): string {
-  return `${buildSystemPrompt(settings)}\n\n${BODY_PERSONA_INFO[role].personaPrompt}`
-}
+// 副体のプロンプトはここでは組まない。会話人格（BASE_PERSONA）を副体に渡すと
+// 指示どおり「なるほど」で受けて普通に回答してしまうため、副体用の文面は backend の
+// llm/secondaryPrompt.ts が role から組む。フロントは role を送るだけ

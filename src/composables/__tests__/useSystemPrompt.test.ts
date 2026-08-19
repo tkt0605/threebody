@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildSystemPrompt, buildBodyPersonaPrompt } from '../useSystemPrompt'
+import { buildSystemPrompt } from '../useSystemPrompt'
 import type { Settings, BodyConfig } from '../useSettings'
 
 // 設定層を6層から4層へ削る作業のために置いたテスト。
@@ -52,13 +52,5 @@ describe('buildSystemPrompt', () => {
 
   it('既定値（warm / ja / Lv3）', () => {
     expect(buildSystemPrompt(makeSettings())).toMatchSnapshot()
-  })
-})
-
-describe('buildBodyPersonaPrompt', () => {
-  // 副体は buildSystemPrompt の出力の上に視点レイヤーを重ねる。
-  // 土台が変われば副体も変わるため、こちらも固定しておく
-  it('既定値 × skeptic', () => {
-    expect(buildBodyPersonaPrompt(makeSettings(), 'skeptic')).toMatchSnapshot()
   })
 })
