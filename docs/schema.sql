@@ -130,9 +130,39 @@ create policy conversations_delete_own on public.conversations for delete
 -- ----------------------------------------------------------------------------
 -- messages — 発言。所有者判定は親の conversations 経由
 --
--- content は content_blocks.payload.content との二重管理。insert / update では
--- 書いているが select には一度も現れず（本文の読み出しは content_blocks を join する
--- fetchMessages だけ）、実質使われていない。削除候補だが今は残してある。
+-- content は content_blocks.payload.content と同じ本文を持つ2つ目の写し。アプリは
+-- 書くだけで読まない（fetchMessages の select に content は無く、本文の読み出しは
+-- content_blocks の join だけ）。
+--
+-- 【削除しない】長らく「実質使われていない削除候補」としていたが、2026-08-19 に
+-- 撤回した。読まれないことは無用であることを意味しない。この列は
+-- 「独立した2つ目の写し」であること自体が役割で、実際に2つの障害をこれで捕まえた。
+--
+--   1. content_blocks への insert が 22P02 で全滅したとき、本文が残っていたのは
+--      この列だけだった（＝中断がどこで起きたかを事後に特定できた）
+--   2. content と content_blocks を突き合わせて 4文字のずれを検出した。
+--      persistMessage が message.blocks を await を跨いで2回読んでおり、その間に
+--      届いたトークンぶん食い違っていた（修正済み。useChat.ts の insertBlockRows 付近）
+--
+-- 写しが1つしか無ければ、2つの値のどちらが正しいかを問う機会すら生まれない。
+-- 95行で 55 kB。検知能力に対して保持コストが安すぎるため、消さずに持ち続ける。
+--
+-- 【既知のずれ】dd48812c-94dd-4df9-a612-5c144d188fdf は content 256文字 /
+-- content_blocks 252文字のまま放置している（上の修正より前に書かれた中断応答）。
+-- 表示は252文字ぶんで、実害は末尾4文字が読めないことだけ。
+--
+-- 【突き合わせクエリ】only_in_content と diverged が 0 なら健全
+--   with joined as (
+--     select m.id, m.content as msg_content,
+--       coalesce((select string_agg(b.payload->>'content', '' order by b.sort_order)
+--                 from public.content_blocks b
+--                where b.message_id = m.id and b.type = 'text'), '') as block_content
+--     from public.messages m
+--   )
+--   select count(*) as total,
+--          count(*) filter (where msg_content <> block_content) as diverged,
+--          count(*) filter (where block_content = '' and msg_content <> '') as only_in_content
+--     from joined;
 --
 -- signals は I0（記録）で足した列。停止・言い直し・再質問といった「推論を挟まずに
 -- 観測できた事実」を持つ（src/types/intent.ts の TurnSignals）。表示物ではなく
@@ -187,16 +217,31 @@ create policy messages_delete_own on public.messages for delete
 -- ----------------------------------------------------------------------------
 -- content_blocks — 本文の正本。所有者判定は message → conversation 経由
 --
--- 永続化するのは 'text' だけ。'error'（エラー表示）と 'perspective'（三体モードの
--- 副体リアルタイム表示）はフロントの型（src/types/message.ts）にはあるがDBには
--- 意図的に保存しない一時ブロック。将来ブロック種別を増やすなら enum もここで広げる
+-- 永続化するのは 'text' と 'perspective'。
+--
+-- 'perspective'（三体モードの副体の見解）は当初「表示専用の一時ブロック」として捨てて
+-- いたが、リロードで「どの体が何と言ったか」が消えるため保存に切り替えた（2026-08-19）。
+-- 3つの知性が同じ問いで割れる瞬間は ThreeBody が文脈なしに見て分かる唯一の出力であり
+-- （ROADMAP 0章）、共有カード（ROADMAP ③）もこのデータが正本になる。
+-- payload は { bodies: [{ bodyIndex, name, provider, content, done }] }。
+--
+-- 'error' だけは今も保存しない。表示専用の一時情報で、残す価値が無い
 -- ----------------------------------------------------------------------------
-create type public.content_block_type as enum ('text');
+-- 型名も値も、本ファイルは長らく間違っていた（2026-08-19 に pg_enum と突き合わせて訂正）。
+-- 型名は content_block_type ではなく block_type、値も 'text' だけではなかった。
+-- 冒頭の【出所】のとおり本ファイルは pg_dump ではなくクエリからの再構築であり、
+-- 型名と enum の値はアプリのクエリには現れないため、推測が2つとも外れていた。
+--
+-- voice / image / map / game はアプリが一度も書かず、読む側も無い（BlockRow の型は
+-- 'text' | 'perspective' の2値。useChat.ts）。過去の設計の名残と見られる。
+-- Postgres では enum の値を落とすのに型の作り直しと列の張り替えが要るため、
+-- 消さずに残したまま使わない
+create type public.block_type as enum ('text', 'voice', 'image', 'map', 'game', 'perspective');
 
 create table public.content_blocks (
   id          uuid primary key default gen_random_uuid(),
   message_id  uuid not null references public.messages (id) on delete cascade,
-  type        public.content_block_type not null default 'text',
+  type        public.block_type not null default 'text',
   payload     jsonb not null,
   sort_order  integer not null default 0
 );
@@ -391,6 +436,14 @@ grant execute on function public.release_global_quota(date) to service_role;
 --        画面から一度ずつ通して確認済み。
 --        ＝ 以降、messages と content_blocks と user_setting の許可範囲は
 --        章1に書いてある個別ポリシーだけが決めている
+--   8. 見解の永続化（2026-08-19）
+--        alter type public.block_type add value if not exists 'perspective'。
+--        既存行に触れないのでロックもバックフィルも不要で、過去の行は 'text' のまま。
+--        遡って見解が埋まることはなく、適用後に生成されたターンからだけ残る。
+--        適用前は 22P02 で content_blocks への insert が失敗しており、本文と見解を
+--        1つの配列で送っていたため本文まで巻き添えで落ちていた（応答が画面から丸ごと
+--        消え、直前の質問が孤立表示になる）。insert は本文と見解に分離済み
+--        （useChat.ts の insertBlockRows）
 --
 -- 【確認クエリ】SQL Editor のタブは使い捨てにし、これらだけ手元に残しておけばよい。
 --   select can_use_shared_key, count(*) from public.user_setting group by 1;
@@ -417,3 +470,16 @@ grant execute on function public.release_global_quota(date) to service_role;
 -- 付けるなら下を足す。付けないなら、この節ごと消してよい
 --   create policy feedback_select_own on public.feedback for select
 --     to authenticated using (auth.uid() = user_id);
+
+-- ----------------------------------------------------------------------------
+-- 4-2. block_type の未使用値（voice / image / map / game）
+--
+-- アプリは一度も書かず、読む側も無い（BlockRow は 'text' | 'perspective' の2値）。
+-- 消すには型を作り直して content_blocks.type を張り替える必要があり、稼働中のテーブル
+-- に対してその手間を払う理由が今は無い。残す判断でよければ、この節ごと消してよい。
+--
+-- 【確認クエリ】
+--   select enumlabel from pg_enum e
+--     join pg_type t on t.oid = e.enumtypid
+--    where t.typname = 'block_type' order by e.enumsortorder;
+--   select type, count(*) from public.content_blocks group by 1;

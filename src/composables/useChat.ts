@@ -1,5 +1,5 @@
 import { ref, computed, watch } from 'vue'
-import type { Message, TextBlock, PerspectiveBlock } from '../types/message'
+import type { Message, TextBlock, PerspectiveBlock, ContentBlock, BodyPerspective } from '../types/message'
 import { hasSignal, NO_SIGNALS, type TurnSignals } from '../types/intent'
 import { useSettings, type BodyProvider, isBodyUsable } from './useSettings'
 import { buildSystemPrompt, buildBodyPersonaPrompt } from './useSystemPrompt'
@@ -112,12 +112,17 @@ function flattenText(blocks: Message['blocks']) {
 export const HISTORY_LIMIT = 10
 
 // 直近 HISTORY_LIMIT 件だけをバックエンドへ送る。
-// 先頭ではなく末尾から取るのは、直近の文脈のほうが応答に効くため
+// 先頭ではなく末尾から取るのは、直近の文脈のほうが応答に効くため。
+//
+// 本文が空のターンは落とす。中断された応答は本文を持たないことがあり、そのまま送ると
+// 「何も言わなかったアシスタント」が履歴に並んで文脈を汚す（プロバイダーによっては
+// 空の content 自体を弾く）。切り詰めの前に落とすことで、空ターンが HISTORY_LIMIT の
+// 枠を食って本当に必要な往復を押し出すのも防ぐ
 function toApiMessages(msgs: Message[]) {
-  return msgs.slice(-HISTORY_LIMIT).map(m => ({
-    role: m.role,
-    content: flattenText(m.blocks),
-  }))
+  return msgs
+    .map(m => ({ role: m.role, content: flattenText(m.blocks) }))
+    .filter(m => m.content !== '')
+    .slice(-HISTORY_LIMIT)
 }
 
 // conversations.user_id は user_setting.id への外部キーのため、先にプロフィール行を用意しておく必要がある
@@ -152,6 +157,22 @@ async function pruneOrphanedMessages(msgs: Message[]): Promise<Message[]> {
   return msgs.filter(m => !orphanIds.includes(m.id))
 }
 
+// content_blocks の1行。payload の形は type で決まる
+type StoredBlockRow = {
+  type:       string
+  payload:    { content?: string; bodies?: BodyPerspective[] }
+  sort_order: number
+}
+
+function toContentBlock(row: StoredBlockRow): ContentBlock {
+  if (row.type === 'perspective') {
+    // done を必ず立て直す。ストリーミング中の途中保存を読み戻したときに false のままだと、
+    // 生成はとっくに終わっているのに MessageBubble がカーソル（▍）を点滅させ続ける
+    return { type: 'perspective', bodies: (row.payload.bodies ?? []).map(b => ({ ...b, done: true })) }
+  }
+  return { type: 'text', content: row.payload.content ?? '' }
+}
+
 async function fetchMessages(conversationId: string): Promise<Message[]> {
   const { data, error } = await supabase
     .from('messages')
@@ -166,9 +187,9 @@ async function fetchMessages(conversationId: string): Promise<Message[]> {
     timestamp: new Date(row.timestamp as string),
     // 列が無い（ブロックD未適用）プロジェクトでも undefined になるだけで壊れない
     signals: (row.signals as TurnSignals | null) ?? undefined,
-    blocks: (row.content_blocks as { type: string; payload: { content: string }; sort_order: number }[])
+    blocks: (row.content_blocks as StoredBlockRow[])
       .sort((a, b) => a.sort_order - b.sort_order)
-      .map((b) => ({ type: 'text', content: b.payload.content })),
+      .map(toContentBlock),
     // 列が無い（ブロックD未適用）プロジェクトや、列追加より前に保存された行では
     // null になる。既定は 'text'（音声だったと誤認するより無難な側へ倒す）
     modality: (row.modality as Modality | null) ?? 'text',
@@ -411,6 +432,58 @@ async function openConversation(id?: string): Promise<string | null> {
 //   1. 言い直しで user の本文を置き換える
 //   2. ストリーミング中の assistant を、伸びた本文で上書きする（途中保存）
 //
+// DBへ書くブロック行を組み立てる。
+//
+// text に加えて perspective も永続化する。副体の見解は「3つの知性が同じ問いで割れる
+// 瞬間」そのもので、ThreeBody が文脈なしに見て分かる唯一の出力（ROADMAP 0章）。
+// 表示だけして捨てていたためリロードで消え、「どの体が何と言ったか」を後から確かめる
+// 手段が無かった。ROADMAP ③の共有カードもこのデータが正本になる。
+//
+// error だけは今も捨てる。表示専用の一時情報であり、DBの enum にも値が無い。
+//
+// sort_order は blocks 配列の位置そのもの。perspective は body_start で unshift される
+// ため先頭に来る＝読み込み時も見解カードが本文の上に戻る
+type BlockRow = {
+  message_id: string
+  type:       'text' | 'perspective'
+  payload:    { content: string } | { bodies: BodyPerspective[] }
+  sort_order: number
+}
+
+function toBlockRows(message: Message): BlockRow[] {
+  return message.blocks.flatMap((b, i): BlockRow[] => {
+    const base = { message_id: message.id, sort_order: i }
+    if (b.type === 'text')        return [{ ...base, type: 'text',        payload: { content: b.content } }]
+    if (b.type === 'perspective') return [{ ...base, type: 'perspective', payload: { bodies: b.bodies } }]
+    return []
+  })
+}
+
+// 本文と見解は別々の insert に分ける。
+//
+// 1つの配列で送ると PostgREST が単一トランザクションで実行するため、見解が弾かれた
+// 瞬間に本文まで巻き添えで落ちる。enum に 'perspective' を足す前は実際にこれが起きて
+// いて（22P02）、messages 行だけが残り content_blocks が0件になり、応答が画面から
+// 丸ごと消えていた（MessageList.vue が0ブロックを描画対象から外すため）。
+//
+// 本文の失敗は throw する。読めない応答が残るので呼び出し側に知らせる必要がある。
+// 見解の失敗は throw しない。見解は本文の付随物であり、これを理由に本文まで
+// 「保存できなかった」ことにする理由が無い。握り潰さずログには必ず残す
+async function insertBlockRows(rows: BlockRow[]): Promise<void> {
+  const textRows  = rows.filter(r => r.type === 'text')
+  const extraRows = rows.filter(r => r.type !== 'text')
+
+  if (textRows.length > 0) {
+    const { error } = await supabase.from('content_blocks').insert(textRows)
+    if (error) throw error
+  }
+
+  if (extraRows.length > 0) {
+    const { error } = await supabase.from('content_blocks').insert(extraRows)
+    if (error) console.error('見解の保存に失敗しました（本文は保存済み）', error)
+  }
+}
+
 // prevWrite は「その行を作った insert」。まだ終わっていないうちに UPDATE を投げると
 // 対象行がまだ存在せず0件ヒットになり、古い本文が残る。必ず待ってから書き換える
 // （呼び出し側で既に直列化してある場合は null でよい）
@@ -418,12 +491,16 @@ async function updatePersistedMessage(message: Message, prevWrite: Promise<unkno
   const { user } = useAuth()
   if (!user.value) return
 
+  // ブロックの読み取りは await より前に1回だけ。理由は persistMessage 側に書いてある
+  const blockRows = toBlockRows(message)
+  const content   = flattenText(message.blocks)
+
   await prevWrite?.catch(() => undefined)
 
   const { error: msgErr } = await supabase
     .from('messages')
     .update({
-      content:   flattenText(message.blocks),
+      content,
       signals:   hasSignal(message.signals) ? message.signals : null,
       modality:  message.modality,
       timestamp: message.timestamp.toISOString(),
@@ -431,18 +508,12 @@ async function updatePersistedMessage(message: Message, prevWrite: Promise<unkno
     .eq('id', message.id)
   if (msgErr) throw msgErr
 
-  // 差分を取らず、毎回まるごと入れ替える。text ブロックは user なら1つ、assistant でも
-  // 統合後の本文1つだけ（perspective / error は永続化対象外）なので、差分計算に見合わない
+  // 差分を取らず、毎回まるごと入れ替える。ブロックは多くても見解1つ＋本文1つなので、
+  // 差分計算に見合わない
   const { error: delErr } = await supabase.from('content_blocks').delete().eq('message_id', message.id)
   if (delErr) throw delErr
 
-  const blockRows = message.blocks
-    .filter((b): b is TextBlock => b.type === 'text')
-    .map((b, i) => ({ message_id: message.id, type: 'text' as const, payload: { content: b.content }, sort_order: i }))
-  if (blockRows.length > 0) {
-    const { error: insErr } = await supabase.from('content_blocks').insert(blockRows)
-    if (insErr) throw insErr
-  }
+  if (blockRows.length > 0) await insertBlockRows(blockRows)
 }
 
 // エラーブロックは一時的な表示のみ。DBのblock_type enumに'error'が無いため永続化しない
@@ -450,13 +521,25 @@ async function persistMessage(message: Message): Promise<void> {
   const { user } = useAuth()
   if (!user.value) return
 
-  const textBlocks = message.blocks.filter((b): b is TextBlock => b.type === 'text')
+  // message.blocks は「まだ書き換わっている途中の器」であり、この関数は saveProgress から
+  // ストリーミング中にも呼ばれる（＝読むたびに中身が違う）。await を跨いで2回読むと、
+  // content と content_blocks がずれたままDBに入る。
+  //
+  // 実測（2026-08-19）: content 256文字 / content_blocks 252文字。差分は「最も理解」の
+  // 4文字で、ensureConversation を待つ間に届いたぶんだった。
+  //
+  // 読むのは await より前に1回だけ。以降はこの写しだけを使う
+  const blockRowsToWrite = toBlockRows(message)
+  const content          = flattenText(message.blocks)
 
   // 本文が無くても、シグナルが立っていれば保存する。
   // 一文字も書かれないうちに停止されたケースは「答えが要らなかった」という最も強い
   // シグナルであり、ここで捨てると I0 が一番拾いたい情報を取りこぼす。
-  // 本文もシグナルも無いものだけが、記録する価値のない空メッセージ
-  if (textBlocks.length === 0 && !hasSignal(message.signals)) return
+  //
+  // 見解だけの状態（副体は答えたが統合が失敗した）も保存する。どの体が何と言ったかは
+  // 統合が無くても読む価値があり、むしろ失敗時ほど残っていてほしい。
+  // 中身もシグナルも無いものだけが、記録する価値のない空メッセージ
+  if (blockRowsToWrite.length === 0 && !hasSignal(message.signals)) return
 
   const convId = await ensureConversation(user.value.id)
 
@@ -469,7 +552,7 @@ async function persistMessage(message: Message): Promise<void> {
       id:         message.id,
       conversation_id: convId,
       role:       message.role,
-      content:    flattenText(message.blocks),
+      content,
       // シグナルが立っていないメッセージには書かない。全行に既定値を入れると
       // 「何も起きなかった」と「まだ記録していない」が区別できなくなる
       signals:    hasSignal(message.signals) ? message.signals : null,
@@ -480,18 +563,10 @@ async function persistMessage(message: Message): Promise<void> {
     .single()
   if (msgErr) throw msgErr
 
-  const blockRows = textBlocks.map((b, i) => ({
-    message_id: inserted.id as string,
-    type:       'text' as const,
-    payload:    { content: b.content },
-    sort_order: i,
-  }))
-
-  // 0文字で停止された場合、textBlocks は空になる（本文は無く signals だけが残る）。
+  // 0文字で停止された場合、ブロックは空になる（本文も見解も無く signals だけが残る）。
   // 空配列を insert する意味は無いので送らない
-  if (blockRows.length > 0) {
-    const { error: blocksErr } = await supabase.from('content_blocks').insert(blockRows)
-    if (blocksErr) throw blocksErr
+  if (blockRowsToWrite.length > 0) {
+    await insertBlockRows(blockRowsToWrite.map(r => ({ ...r, message_id: inserted.id as string })))
   }
 
   // 会話一覧を最終更新順に保つため、conversations.updated_at も更新する
@@ -741,6 +816,26 @@ export function useChat() {
       if (err instanceof DOMException && err.name === 'AbortError') {
         aborted = true
         abortReason = controller.abortReason ?? null
+
+        // 保存しないと決めた空の器は、配列からも取り除く。
+        //
+        // 残すと、画面には出ないのに messages.value には居座り続ける幽霊になる
+        // （MessageList の visibleMessages が0ブロックを描画対象から外すため）。
+        // 実害は表示ではなく履歴で、toApiMessages が {role:'assistant', content:''}
+        // として毎回LLMへ送ってしまう。空のアシスタントターンは文脈を汚すだけで、
+        // 送る理由がひとつも無い。
+        //
+        // 'user' はここで触らない。cancelGeneration が先に画面から外しており、
+        // 器そのものは persistMessage に渡す必要がある（signals だけを残すため）。
+        //
+        // at(-1) ではなく indexOf で消すこと。'resend' の場合、この catch が走る時点で
+        // 配列の末尾は既に次の送信ぶんに変わっている。
+        // 'switch' では messages.value ごと差し替わっていて見つからないが、
+        // その場合は -1 が返るだけで何も起きない
+        if (abortReason !== 'user' && reactiveMsg.blocks.length === 0) {
+          const ghostIndex = messages.value.indexOf(reactiveMsg)
+          if (ghostIndex !== -1) messages.value.splice(ghostIndex, 1)
+        }
         return
       }
 

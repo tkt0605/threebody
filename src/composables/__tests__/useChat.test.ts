@@ -126,6 +126,27 @@ describe('useChat', () => {
       // 送信対象は「自分の発言まで」（応答用のプレースホルダは含めない）
       expect(sentMessages(fetchMock)).toEqual([{ role: 'user', content: 'こんにちは' }])
     })
+
+    // 中断された応答は本文を持たないことがある。そのまま送ると「何も言わなかった
+    // アシスタント」が履歴に並び、文脈を汚したうえ上限の枠まで食う
+    it('本文が空のターンは送らない', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(mockResponse({ body: sseStream(['data: [DONE]\n\n']) }))
+      vi.stubGlobal('fetch', fetchMock)
+
+      const { messages, sendMessage } = useChat()
+      messages.value = [
+        { id: 'u1', role: 'user',      timestamp: new Date(), modality: 'text', blocks: [{ type: 'text', content: '前の質問' }] },
+        // 一文字も書かれないまま中断された応答
+        { id: 'a1', role: 'assistant', timestamp: new Date(), modality: 'text', blocks: [] },
+      ]
+
+      await sendMessage('次の質問')
+
+      expect(sentMessages(fetchMock)).toEqual([
+        { role: 'user', content: '前の質問' },
+        { role: 'user', content: '次の質問' },
+      ])
+    })
   })
 
   it('SSEのtextイベントを順番に連結してストリーミング表示する', async () => {
@@ -267,6 +288,27 @@ describe('useChat', () => {
 
       expect(textBlock(messages.value.at(-1)!).content).toBe('2回目の応答')
       expect(aiState.value).toBe('idle')
+    })
+
+    // 応答が始まる前に次を送る経路（連打・テキスト入力からの送信）。
+    // cancelGeneration を通らないので、空の器を片付ける人が他にいない
+    it('次の送信で中断された空の応答を、配列に残さない', async () => {
+      vi.stubGlobal('fetch', abortAwareFetch())
+
+      const { messages, sendMessage } = useChat()
+      const first = sendMessage('1回目')
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse({
+        body: sseStream(['data: {"type":"text","content":"2回目の応答"}\n\n', 'data: [DONE]\n\n']),
+      })))
+      await sendMessage('2回目')   // ここで 1回目 が 'resend' で中断される
+      await first
+
+      // 幽霊（0ブロックのアシスタント）が残っていないこと。
+      // 残ると画面には出ないのに toApiMessages が空ターンとしてLLMへ送り続ける
+      expect(messages.value.some(m => m.blocks.length === 0)).toBe(false)
+      expect(messages.value.map(m => m.role)).toEqual(['user', 'user', 'assistant'])
+      expect(textBlock(messages.value.at(-1)!).content).toBe('2回目の応答')
     })
 
     // ユーザーが「停止」を押す経路。会話切替による中断と違い、画面はそのまま残るため、
