@@ -34,13 +34,19 @@ const CONFIG: LevelConfig = {
   maxTokens: 4096, secondaryMaxTokens: 768,
 }
 
-const MESSAGES: OpenAI.Chat.ChatCompletionMessageParam[] = [{ role: 'user', content: 'こんにちは' }]
+// 割れる余地のある問い。挨拶や相槌は needsMultiBody が副体を呼ぶ前に落とすため、
+// 「統合まで走ること」を見たいテストの問いは中身のあるものにする
+const MESSAGES: OpenAI.Chat.ChatCompletionMessageParam[] = [
+  { role: 'user', content: 'Pinterestのような画像共有サービスはどう設計する？' },
+]
 
+// 副体の表示名・指示は role から backend が組む（フロントは role しか送らない）。
+// secondary-a = skeptic（崩れる点）、secondary-b = realist（最初の一手）
 function bodies(): BodyConfig[] {
   return [
-    { provider: 'ollama', apiKey: '', model: 'primary-model',   name: '一体' },
-    { provider: 'ollama', apiKey: '', model: 'secondary-a',     name: '二体' },
-    { provider: 'ollama', apiKey: '', model: 'secondary-b',     name: '三体' },
+    { provider: 'ollama', apiKey: '', model: 'primary-model' },
+    { provider: 'ollama', apiKey: '', model: 'secondary-a', role: 'skeptic' },
+    { provider: 'ollama', apiKey: '', model: 'secondary-b', role: 'realist' },
   ]
 }
 
@@ -116,7 +122,9 @@ describe('orchestrateMultiBody', () => {
     const primaryCall = vi.mocked(streamOllamaNative).mock.calls.find(c => c[0] === 'primary-model')!
     const sentText = JSON.stringify(primaryCall[1])
     expect(sentText).toContain('三体の見解です')
-    expect(sentText).not.toContain('二体')
+    // 失敗した体の見出しごと出ないこと（ラベル名は統合プロンプトの定型文にも出るため、
+    // 見出しの形で確かめる）
+    expect(sentText).not.toContain('【崩れる点')
   })
 
   it('副体が全滅したら単体モードに縮退する（空の見解を注入しない）', async () => {
@@ -180,7 +188,7 @@ describe('orchestrateMultiBody', () => {
     expect(sentText).toContain('三体の見解です')
   })
 
-  // personaPrompt の「コードを書くな」は小さいモデルが守らない回がある。
+  // 「コードを書くな」は小さいモデルが守らない回がある。
   // 依頼ではなく処理で落としていることを固定する
   it('副体が書いたコードブロックは統合へ渡らない', () => {
     const withCode = `${long('方針はこうです。')}\n\`\`\`python\nprint(1)\n\`\`\`\n以上です。`
@@ -201,6 +209,65 @@ describe('orchestrateMultiBody', () => {
       expect(sent).not.toContain('const a = 1')
       expect(sent).not.toContain('```')
     })
+  })
+
+  // 挨拶に3つの観点は存在しない。出力形式を固定した副作用として見解の文字数では
+  // 挨拶を弾けなくなったため、問いの側で先に落とす（＝呼び出しも2回減る）
+  it('挨拶では副体を呼ばず、主体だけで答える', async () => {
+    mockByModel({ 'secondary-a': long('見解'), 'secondary-b': long('見解'), 'primary-model': 'おはよう。' })
+    const { res, events } = fakeRes()
+    const all = bodies()
+
+    await orchestrateMultiBody(all, all, [{ role: 'user', content: 'おはよう' }], CONFIG, 'システム', res)
+
+    expect(events.filter(e => e.type === 'body_start')).toHaveLength(0)
+    expect(vi.mocked(streamOllamaNative).mock.calls.map(c => c[0])).toEqual(['primary-model'])
+  })
+
+  // 副体が「なるほど」で始めて普通に回答していたのは、主体と同じ会話人格と履歴を
+  // 渡していたため。副体には検討メモ用の system と、直近だけへ畳んだ問いを渡す
+  it('副体には会話人格も履歴全文も渡さない', async () => {
+    mockByModel({ 'secondary-a': long('見解'), 'secondary-b': long('見解'), 'primary-model': '統合' })
+    const { res } = fakeRes()
+    const all = bodies()
+    const history: OpenAI.Chat.ChatCompletionMessageParam[] = [
+      { role: 'user',      content: '前の質問' },
+      { role: 'assistant', content: `主体の過去の回答。${'この続きは副体に渡らない。'.repeat(40)}` },
+      { role: 'user',      content: 'Pinterestのような画像共有サービスはどう設計する？' },
+    ]
+
+    await orchestrateMultiBody(all, all, history, CONFIG, 'アイリスとしての会話人格', res)
+
+    const sent = (model: string) =>
+      JSON.stringify(vi.mocked(streamOllamaNative).mock.calls.find(c => c[0] === model)![1])
+
+    // 会話人格は主体だけのもの
+    expect(sent('primary-model')).toContain('アイリスとしての会話人格')
+    expect(sent('secondary-a')).not.toContain('アイリスとしての会話人格')
+    // 過去のやり取りは積まない。渡るのは直近の問いと、直前の応答の冒頭だけ
+    expect(sent('secondary-a')).not.toContain('前の質問')
+    expect(sent('secondary-a')).toContain('主体の過去の回答')       // 冒頭は文脈として残す
+    expect(sent('secondary-a').length).toBeLessThan(sent('primary-model').length)
+    expect(sent('secondary-a')).toContain('どう設計する')
+  })
+
+  it('副体2体には別々の作業が渡る（同じ答えが返る余地を無くす）', async () => {
+    mockByModel({ 'secondary-a': long('見解'), 'secondary-b': long('見解'), 'primary-model': '統合' })
+    const { res, events } = fakeRes()
+    const all = bodies()
+
+    await orchestrateMultiBody(all, all, MESSAGES, CONFIG, 'システム', res)
+
+    const sent = (model: string) =>
+      JSON.stringify(vi.mocked(streamOllamaNative).mock.calls.find(c => c[0] === model)![1])
+
+    expect(sent('secondary-a')).toContain('崩れる点:')
+    expect(sent('secondary-b')).toContain('最初の一手:')
+    expect(sent('secondary-a')).not.toContain('最初の一手:')
+
+    // カードの見出しも役ごとに変わる（同じ問いで割れていることが一目で分かる）
+    expect(events.filter(e => e.type === 'body_start').map(e => (e as { name?: string }).name))
+      .toEqual(['崩れる点', '最初の一手'])
   })
 
   // 「見解が渡ること」は上で見ているが、「どこに渡るか」は誰も見ていなかった。

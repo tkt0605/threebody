@@ -97,17 +97,17 @@ describe('POST /api/chat — 共有キーの枠', () => {
     expect(releaseGlobalQuota).not.toHaveBeenCalled()
   })
 
-  // 共有キー経路の personaPrompt はここで直に組み立てるため、フロントの
-  // NO_ARTIFACT（src/constants/bodyPersonas.ts）が届かず素通しになっていた。
-  // 運営がトークンを負担する経路でこそ、副体に具体物を書かせたくない
-  it('共有キー経路の副体にも「具体物を書くな」が届く', async () => {
+  // 共有キー経路は副体の指示を自前で組んでいたため、自前キー経路とズレていた
+  // （実測: 「具体物を書くな」が共有キー側にだけ届いていなかった）。
+  // role だけを渡し、文面は llm/secondaryPrompt.ts の1箇所に持たせる
+  it('共有キー経路の副体には、互いに別の役が割り当たる', async () => {
     await post(NO_OWN_KEY)
 
     const [bodies] = vi.mocked(orchestrateMultiBody).mock.calls[0]!
-    // 一体（主体）は具体物を出す側なので、この制約を持たない
-    expect(bodies[0]!.personaPrompt).toBeUndefined()
-    expect(bodies[1]!.personaPrompt).toContain('具体物を作るのは統合役の仕事')
-    expect(bodies[2]!.personaPrompt).toContain('具体物を作るのは統合役の仕事')
+    // 一体（主体）は答えを組み立てる側なので、副体の役を持たない
+    expect(bodies[0]!.role).toBeUndefined()
+    expect(bodies[1]!.role).toBe('skeptic')
+    expect(bodies[2]!.role).toBe('realist')
   })
 
   // 自分のキーで動くユーザーは運営のコストを一切使わない。

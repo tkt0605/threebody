@@ -3,6 +3,10 @@ import Anthropic from '@anthropic-ai/sdk'
 import type OpenAI from 'openai'
 import type { BodyConfig, LevelConfig } from './types'
 import { resolveBodyModel, toOllamaMessages, toAnthropicMessages, extractTextContent } from './messageHelpers'
+import {
+  buildSecondaryMessages, buildSecondarySystemPrompt, needsMultiBody,
+  resolveSecondaryRole, secondaryRoleLabel,
+} from './secondaryPrompt'
 import { streamOllamaNative } from './providers/ollama'
 import { createOpenAICompatClient, streamOpenAICompat } from './providers/openaiCompat'
 import { streamAnthropic } from './providers/anthropic'
@@ -132,16 +136,34 @@ export async function orchestrateMultiBody(
 ): Promise<void> {
   const [primary, ...secondaries] = available as [BodyConfig, ...BodyConfig[]]
 
+  // 割れる余地の無い問い（挨拶・相槌）では副体を呼ばずに単体で答える。
+  // ここで落とすぶん、無駄な2回の呼び出しも消える
+  if (!needsMultiBody(messages)) {
+    res.write(`data: ${JSON.stringify({ type: 'synthesis_start', bodyIndex: allBodies.indexOf(primary) })}\n\n`)
+    await streamBodyOAI(primary, messages, config, systemPrompt, res)
+    return
+  }
+
   // allSettled にしているのは、副体1体の失敗で三体モードごと落とさないため。
   // Promise.all だと1体が throw した時点で reject し、他の体の見解も主体による統合も
   // まるごと失われる（＝「複数視点の統合」という売りと噛み合わない）
   const settled = await Promise.allSettled(
-    secondaries.map(async (b) => {
+    secondaries.map(async (b, i) => {
       const bodyIdx = allBodies.indexOf(b)
-      const name    = b.name ?? '副体'
+      const role    = resolveSecondaryRole(b.role, i)
+      const name    = secondaryRoleLabel(role)
       res.write(`data: ${JSON.stringify({ type: 'body_start', bodyIndex: bodyIdx, name, provider: b.provider })}\n\n`)
       try {
-        return await streamSecondaryBody(b, bodyIdx, messages, { ...config, maxTokens: config.secondaryMaxTokens }, b.personaPrompt ?? systemPrompt, res)
+        // 副体には会話人格（systemPrompt）も履歴全文も渡さない。役ごとの検討メモ用の
+        // system と、直近だけへ畳んだ問いを渡す（理由は llm/secondaryPrompt.ts）
+        return await streamSecondaryBody(
+          b,
+          bodyIdx,
+          buildSecondaryMessages(messages, role),
+          { ...config, maxTokens: config.secondaryMaxTokens },
+          buildSecondarySystemPrompt(role),
+          res,
+        )
       } finally {
         // 成功・失敗のどちらでも必ず送る。送らないとフロントの pendingBodies から
         // この体が消えず、球体が分裂したまま固まる（useChat.ts の body_done ハンドラ）
@@ -154,7 +176,7 @@ export async function orchestrateMultiBody(
   // flatMap にしているのは、null を挟んでから filter するより型が素直に通るため
   const views = settled.flatMap((result, i) => {
     const b    = secondaries[i]!
-    const name = b.name ?? '副体'
+    const name = secondaryRoleLabel(resolveSecondaryRole(b.role, i))
     if (result.status === 'rejected') {
       // 失敗した体は見解から除外して統合を続ける。キーがエラー本文へ
       // echo back されることがあるため、ログに出す前に必ず伏せ字化する
@@ -197,14 +219,23 @@ export async function orchestrateMultiBody(
 
 ${perspectives}
 
+各見解は「崩れる点」「別の見方」「最初の一手」のように担当が分かれており、
+どれも質問への答えではない。答えを書くのはあなただけだ。
+
 【厳守】
 - ユーザーの元の質問に、あなた自身の言葉で直接答える。
 - 見解に対する感想・謝辞・論評を書かない。見解の存在に言及しない。
 - ユーザーが具体物（コード・手順・文章）を求めているなら、まずそれ自体を出す。
   確認や質問は出したあとに1つだけ添えてよい。何も出さずに問い返して終わらない。
+- 「確度: 低」「未確認」と書かれている内容は、事実として書かない。採るなら
+  「〜の場合は」「〜なら」と条件付きで書くか、確かめる手順のほうを書く。
 - 見解が誤っている・質問とずれている場合は、黙って捨てて自分で正しい答えを書く。
+  全部捨てて自分で答えてよい。3つとも使う義務は無い。
+- 見解どうしが食い違うときは、両論併記で逃げずに、どちらを採るか決めて答えに反映する。
 - 見解の言い回しを切り貼りしない。助詞や語尾だけ残して述語を差し替えると文が壊れる。
   受け取るのは中身だけにして、文は必ず最初から自分で組み立てる。
+- 見出し（崩れる点・別の見方 など）や箇条書きの形をそのまま答えに持ち込まない。
+  資料の形式であって、ユーザーへの返答の形式ではない。
 - 出す前に、日本語として助詞の係り受けが通っているか読み返す。`
 
   res.write(`data: ${JSON.stringify({ type: 'synthesis_start', bodyIndex: allBodies.indexOf(primary) })}\n\n`)
@@ -220,14 +251,14 @@ ${perspectives}
   if (debugLevel === 'true' || debugLevel === 'full') {
     settled.forEach((r, i) => {
       const b    = secondaries[i]
-      const name = b?.name ?? '副体'
+      const name = secondaryRoleLabel(resolveSecondaryRole(b?.role, i))
       if (r.status === 'rejected') { console.info(`[統合] ${name}: 失敗`); return }
-      // 副体が指示を無視したのか、そもそも新しい指示が届いていないのかを切り分ける。
-      // personaPrompt はフロント（constants/bodyPersonas.ts）で組まれて送られてくるため、
-      // ブラウザが古いバンドルのままだと旧文面が届き続ける
-      const 指示到達 = b?.personaPrompt?.includes('具体物を作るのは統合役の仕事') ? '到達' : '未到達'
-      const コード   = r.value.includes('```') ? 'コードあり' : 'コードなし'
-      console.info(`[統合] ${name}: ${r.value.length}文字 / ${コード} / 「書くな」指示=${指示到達}`)
+      // 形式を守れたか（＝会話として普通に回答していないか）を1行で見る。
+      // 守れていない体は、モデルが小さすぎて役に立っていない側の証拠になる
+      // 見出しは 「崩れる点:」「【崩れる点】」 どちらの形でも出る。名前が有るかだけを見る
+      const 形式 = r.value.includes(secondaryRoleLabel(resolveSecondaryRole(b?.role, i))) ? '形式OK' : '★形式崩れ'
+      const コード = r.value.includes('```') ? 'コードあり' : 'コードなし'
+      console.info(`[統合] ${name}: ${r.value.length}文字 / ${形式} / ${コード}`)
     })
 
     // 本丸の検証。見解が user ターンへ漏れていないことを毎ターン確かめる

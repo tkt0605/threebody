@@ -18,22 +18,6 @@ import {
 
 const router = Router()
 
-// 副体に具体物を書かせないための指示。
-//
-// 自前キー経路では同じ内容がフロントの src/constants/bodyPersonas.ts (NO_ARTIFACT) から
-// personaPrompt に載って届くが、共有キー経路の personaPrompt はここで組み立てるため
-// 素通しになっていた（実測: DEBUG_SYNTHESIS のログで「書くな」指示=未到達）。
-// 共有キーは運営がトークンを負担する経路なので、副体2体に長い具体物を書かせる余地を
-// 残しておく理由がない。
-//
-// フロントと共有せず同じ文面を2箇所に持つのは、backend が src/ を参照しないため。
-// 片方だけ直すと「自前キーでは守るのに共有キーでは書く」というズレに戻るので、
-// 変更するときは必ず両方を揃えること
-const SECONDARY_NO_ARTIFACT = `
-コードや具体的な実装そのものは書かない。
-「どういう方針で作るべきか」「何に注意すべきか」を3〜5行で述べるに留める。
-具体物を作るのは統合役の仕事。`
-
 // /api/chat は curl等フロントを介さない生のリクエストでも叩ける（CORSはブラウザだけの制約のため）。
 // IPあたりの機械的な連打だけを弾く粗い防波堤。ユーザー単位にすると resolveUserId の
 // Supabase問い合わせが二重になるため、あえてIP単位に留める
@@ -123,22 +107,13 @@ router.post('/chat', chatRateLimit, async (req, res) => {
           const sharedConfig = LEVEL_CONFIG[SHARED_THINKING_LEVEL]!
           // ThreeBodyの名を冠する以上、無料枠でも三体モードを見せる（Phase 0）。
           // プロバイダーはAnthropicのみに揃え、新規シークレットへの依存を避ける
-          // （混成プロバイダー化は将来の拡張として温存）。同一モデル3体では見解が
-          // 収束しすぎるため、副体にはpersonaPromptで視点の差を持たせる
+          // （混成プロバイダー化は将来の拡張として温存）。同一モデル3体で見解が
+          // 収束しないよう、副体には role を割り当てる。文面は llm/secondaryPrompt.ts が
+          // 自前キー経路と共通で組む（この2経路で指示がズレていたのが元の不具合）
           const sharedBodies: BodyConfig[] = [
-            { provider: 'anthropic', apiKey: key, model: sharedConfig.anthropicModel, name: '一体' },
-            {
-              provider: 'anthropic', apiKey: key, model: sharedConfig.anthropicModel, name: '二体',
-              personaPrompt: systemPrompt
-                + '\n\n慎重派の視点で、リスクや見落としがちな懸念点を重視して答えてください。'
-                + SECONDARY_NO_ARTIFACT,
-            },
-            {
-              provider: 'anthropic', apiKey: key, model: sharedConfig.anthropicModel, name: '三体',
-              personaPrompt: systemPrompt
-                + '\n\n発想派の視点で、別の角度からのアイデアや可能性を重視して答えてください。'
-                + SECONDARY_NO_ARTIFACT,
-            },
+            { provider: 'anthropic', apiKey: key, model: sharedConfig.anthropicModel },
+            { provider: 'anthropic', apiKey: key, model: sharedConfig.anthropicModel, role: 'skeptic' },
+            { provider: 'anthropic', apiKey: key, model: sharedConfig.anthropicModel, role: 'realist' },
           ]
           await orchestrateMultiBody(sharedBodies, sharedBodies, oaiMessages, sharedConfig, systemPrompt, res)
           completed = true
