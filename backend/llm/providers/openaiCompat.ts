@@ -17,7 +17,7 @@ export async function streamOpenAICompat(
   messages: OpenAI.Chat.ChatCompletionMessageParam[],
   maxTokens: number,
   systemPrompt: string,
-) {
+): Promise<string> {
   const systemMessages: OpenAI.Chat.ChatCompletionMessageParam[] = systemPrompt
     ? [{ role: 'system', content: systemPrompt }]
     : []
@@ -29,10 +29,15 @@ export async function streamOpenAICompat(
     stream: true,
   })
 
+  // 本文を戻り値でも返す。副体はこの答えを読んで検算するため、呼び出し側が全文を持つ
+  // 必要がある（res へ書くだけでは、書いた内容が誰の手元にも残らない）
+  let full = ''
   for await (const chunk of stream) {
     const content = chunk.choices[0]?.delta?.content
     if (content) {
+      full += content
       res.write(`data: ${JSON.stringify({ type: 'text', content })}\n\n`)
     }
   }
+  return full
 }

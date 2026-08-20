@@ -11,7 +11,7 @@ export async function streamAnthropic(
   config: LevelConfig,
   systemPrompt: string,
   client: Anthropic = anthropic,
-) {
+): Promise<string> {
   // Opus 4.7: budget_tokens は削除済み → adaptive thinking を使う
   // Sonnet 4.6 以下: thinkingBudget があれば enabled（非推奨だが機能する）
   const thinkingParam = config.adaptiveThinking
@@ -29,10 +29,14 @@ export async function streamAnthropic(
     ...thinkingParam,
   })
 
-  // textStream は thinking ブロックを自動的にスキップしてテキストのみ流す
+  // textStream は thinking ブロックを自動的にスキップしてテキストのみ流す。
+  // 本文は戻り値でも返す（副体がこの答えを検算するため、呼び出し側に全文が要る）
+  let full = ''
   stream.on('text', (textDelta) => {
+    full += textDelta
     res.write(`data: ${JSON.stringify({ type: 'text', content: textDelta })}\n\n`)
   })
   const finalMsg = await stream.finalMessage()
   console.info(`[usage] primary model=${config.anthropicModel}`, finalMsg.usage)
+  return full
 }
