@@ -4,7 +4,10 @@ import pluginVue from 'eslint-plugin-vue'
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', '.github/**'],
+    // scripts/ は tsconfig の外にある開発用ツール（回帰ハーネス等）。型情報を要する
+    // recommendedTypeChecked が「project service に無い」で parse error にするため外す。
+    // tsconfig に足すと本番のビルド対象に開発用スクリプトが混ざる
+    ignores: ['dist/**', 'node_modules/**', '.github/**', 'scripts/**'],
   },
 
   js.configs.recommended,
