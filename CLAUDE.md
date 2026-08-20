@@ -18,15 +18,20 @@ ThreeBody — 1〜3個のLLM（「体」）が並列に回答し、主体（一�
 ### データ
 
 - `conversations.user_id` は `user_setting.id` への外部キー。会話作成の前に `ensureUserProfile()` が必須
-- `error` / `perspective` ブロックは非永続化。`persistMessage` は `text` ブロックのみ抽出する
+- `error` ブロックだけ非永続化（表示専用で DB の enum にも値が無い）。`text` と `perspective` は永続化する
+- 本文と見解は別々の insert に分ける。1配列で送ると PostgREST が単一トランザクションで走り、見解が弾かれた瞬間に本文まで巻き添えで落ちる
 - 退会だけがバックエンドにあるのは、`auth.users` の行が service_role でしか消せないため。会話削除がフロント完結なのは RLS の範囲内で閉じる操作だから
 
-### 三体モード
+### 三体モード（検算方式）
 
-- 有効な体が2つ以上で発動。副体を並列実行（最大512トークン）→ `【○体（provider）の見解】` の形式で主体のシステムプロンプトに注入 → 主体が統合回答をストリーム
-- SSE イベント順: `body_start` / `body_text` / `body_done` → `synthesis_start` → `text`
-- `aiState` の遷移: `idle → thinking → synthesizing → converging → idle`
-- 副体が全滅した場合は単体モードに縮退する（1体の失敗で全体を落とさない）
+- 主体が先に答え、その答えを副体があとから検算する。主体には他の体の存在を一切知らせず、単体モードとまったく同じプロンプトで答えさせる
+- 統合方式（副体の見解を主体のシステムプロンプトへ注入して統合させる）は測定の結果やめた。入る観点より落ちる観点のほうが多かった。経緯と数値は `docs/chat_see.log`
+- 旧・統合方式のコード（`ROLE_SLOTS` / `buildSecondary*` / `buildSynthesisLayer`）は本番経路から外れているが残してある。`scripts/experiment-synthesis.ts` が方式間の比較に使う。本番の挙動を変えるときは `buildReview*` 側を触ること
+- SSE イベント順: `answer_start` → `text` → `answer_done`（`review` で検算の有無を伝える）→ `body_start` / `body_text` / `body_done`
+- `aiState` の遷移: `idle → thinking → converging → reviewing → idle`。`answer_done` の時点で本文は完成しているので、読み上げは検算の完了を待たない
+- 検算に回すのは、副体が1体以上あり、割れる余地のある問い（`needsMultiBody`）で、答えが 120 字以上のときだけ
+- 副体が全滅しても答えは揺らがない。カードが欠けるだけ（統合方式では副体の失敗が答えそのものを揺らしていた）
+- 見解カードは本文の下に並ぶ。`sort_order` は blocks 配列の位置そのもので、`perspective` は `body_start` で `push` される
 
 ### プロバイダー
 

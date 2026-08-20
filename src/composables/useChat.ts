@@ -444,8 +444,8 @@ async function openConversation(id?: string): Promise<string | null> {
 //
 // error だけは今も捨てる。表示専用の一時情報であり、DBの enum にも値が無い。
 //
-// sort_order は blocks 配列の位置そのもの。perspective は body_start で unshift される
-// ため先頭に来る＝読み込み時も見解カードが本文の上に戻る
+// sort_order は blocks 配列の位置そのもの。検算方式では本文が先に確定し、perspective は
+// body_start で push されるため後ろに来る＝読み込み時も見解カードが本文の下に戻る
 type BlockRow = {
   message_id: string
   type:       'text' | 'perspective'
