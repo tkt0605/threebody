@@ -1,5 +1,3 @@
-# .claude/commands/status_build.md
-
 ---
 description: プロジェクトの状況を分析し、その改善案を提示する。
 ---

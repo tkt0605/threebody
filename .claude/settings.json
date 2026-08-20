@@ -4,5 +4,6 @@
             "Bash(git reset --hard *)",
             "Bash(git clean *)"
         ]
-    }
+    },
+    "enabledPlugins": { "vercel@claude-plugins-official": false }
 }

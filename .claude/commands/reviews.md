@@ -1,5 +1,3 @@
-# .claude/commands/review.md
-
 ---
 description: コードレビューを実行する。
 ---

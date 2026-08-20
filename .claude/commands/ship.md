@@ -1,5 +1,3 @@
-# .claude/commands/ship.md
-
 ---
 description: テスト -> init -> commit -> PRまで一気にやる
 ---

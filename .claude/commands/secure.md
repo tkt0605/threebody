@@ -1,5 +1,3 @@
-# .claude/commands/secure.md
-
 ---
 description: プロジェクトのセキュリティ状況を分析し、脆弱性・改善案を提示する。
 ---
