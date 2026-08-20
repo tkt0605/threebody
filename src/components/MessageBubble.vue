@@ -99,7 +99,7 @@ function handleCopyClick(event: MouseEvent) {
 <template>
   <div class="flex flex-col w-full">
     <span
-      class="px-4 pt-3 pb-0.5 text-xs font-medium tracking-wide"
+      class="px-3 pt-3 pb-0.5 text-xs font-medium tracking-wide"
       :class="message.role === 'user'
         ? 'text-gray-400 dark:text-gray-500'
         : 'text-indigo-400'"
@@ -107,7 +107,7 @@ function handleCopyClick(event: MouseEvent) {
       {{ message.role === 'user' ? 'あなた' : 'I.R.I.S' }}
     </span>
     <div
-      class="max-w-[100%] px-6 py-4 text-sm leading-relaxed"
+      class="max-w-[100%] px-3 py-3 text-sm leading-relaxed"
       :class="
         message.role === 'user'
           ? 'w-full border-b border-gray-600 dark:text-white text-gray-900'
