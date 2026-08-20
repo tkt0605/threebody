@@ -28,6 +28,7 @@
 
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { execSync } from 'node:child_process'
   
 // ── 引数 ──────────────────────────────────────────────────────────────
@@ -53,11 +54,6 @@ const OPT = {
 }
 
 const TOKEN = process.env.THREEBODY_TOKEN
-if (!TOKEN) {
-  console.error('THREEBODY_TOKEN が未設定です。Supabase のアクセストークンを渡してください。')
-  console.error('例: THREEBODY_TOKEN=eyJ... node scripts/regress.mjs')
-  process.exit(1)
-}
 
 // ── 回帰セット ────────────────────────────────────────────────────────
 // 直した箇所ごとに1問。1問では、直した3箇所のうち1つしか通らない。
@@ -72,47 +68,46 @@ const QUESTIONS = [
     label: '外部データを求める',
     turns: [DATA_QUESTION],
     // A/D は目視。捏造かどうかは、その数値が実在するかを人が知らないと決まらない
-    checks: ['E1', 'E2', 'E3', 'C', 'B', 'D1', 'A', 'D'],
+    checks: ['E3', 'C', 'B', 'D1', 'R1', 'R2', 'R3', 'A', 'D'],
   },
   {
     id:     'greeting',
     label:  '挨拶（縮退の確認）',
     turns:  ['おはよう'],
-    // 副体を呼ばずに単体で答えるべき場面。needsMultiBody / SYNTHESIS_MIN_CHARS の担当
-    checks: ['F', 'E1', 'E2', 'E3'],
+    // 検算へ回さず単体で答えるべき場面。needsMultiBody / REVIEW_MIN_CHARS の担当
+    checks: ['F', 'E3'],
   },
   {
     id:     'code',
     label:  'コードを求める',
     turns:  ['配列から重複を除く TypeScript の関数を書いて'],
-    checks: ['G', 'B', 'E1', 'E2', 'E3'],
+    checks: ['G', 'B', 'E3', 'R1', 'R2', 'R3'],
   },
   {
     id:     'followup',
     label:  '直前の回答に「もっと詳しく」',
     turns:  [DATA_QUESTION, 'もっと詳しく'],
-    // H は履歴汚染。副体の出力に、前ターンの主体本文がそのまま現れていないか
-    checks: ['H', 'D1', 'A', 'D', 'E1', 'E2', 'E3'],
+    // H は履歴汚染。検算方式では今ターンの答えを副体へ渡すのが仕様なので、
+    // 「渡していないはずの過去ターンの本文」だけを汚染として見る
+    checks: ['H', 'D1', 'E3', 'R1', 'R2', 'R3', 'A', 'D'],
   },
 ]
 
 // ── 判定 ──────────────────────────────────────────────────────────────
-// 自動判定は主体の本文だけに当てる。副体は見出しを出すのが仕事なので混ぜられない
+// 【契約の改訂：統合方式 → 検算方式】
+// 主体が副体を一切見なくなったため、旧 E1・E2（副体の見出し／見解ラベルが主体本文に
+// 混入していないか）は構造上もう落ちない。落ちない判定を合格として数えると、
+// 合格数が実力ではなく設計の副産物になる。両方とも廃止した。
+//
+// 旧 H（前ターンの本文が副体に流れ込んでいない）は前提そのものが食い違う。新設計は
+// 意図的に今ターンの答えを副体へ渡すからだ。ただし「誤りが世代を超えて増殖する経路を
+// 塞ぐ」という狙いは生きているので、測る対象を「今ターンの答えに含まれない過去本文」
+// へ絞り直した（下の H）。
+//
+// 代わりに、検算方式でしか起きない失敗を3つ足した（R1・R2・R3）。
+//
+// 自動判定は、主体の本文と副体の本文を別々に当てる。混ぜると意味を失う
 const CHECKS = {
-  E1: {
-    kind: '自動', label: '副体の見出しが混入していない',
-    run: ({ primary }) => {
-      const m = primary.match(/(?:^|\n)\s*【?(崩れる点|別の見方|最初の一手|詰まる所|効く条件)】?\s*[:：]?/)
-      return m ? { ok: false, note: `「${m[1]}」` } : { ok: true }
-    },
-  },
-  E2: {
-    kind: '自動', label: '見解ラベルが混入していない',
-    run: ({ primary }) => {
-      const m = primary.match(/の見解】|【[^】]*体（[^）]*）/)
-      return m ? { ok: false, note: `「${m[0]}」` } : { ok: true }
-    },
-  },
   E3: {
     kind: '自動', label: '内省・自己校正の残骸が無い',
     run: ({ primary }) => {
@@ -134,19 +129,74 @@ const CHECKS = {
     run: ({ primary }) => (primary.includes('```') ? { ok: true } : { ok: false }),
   },
   F: {
-    kind: '自動', label: '副体を呼ばずに単体で答えた',
-    run: ({ bodies }) => (bodies.length === 0
-      ? { ok: true }
-      : { ok: false, note: `副体 ${bodies.length}体が走った` }),
+    kind: '自動', label: '検算へ回さず単体で答えた',
+    // 旧 F と見ているものは同じだが、根拠が変わった。統合方式では needsMultiBody だけが
+    // 門番で、通ってしまえば副体が先に走った。検算方式では答えが出てから
+    // needsMultiBody と REVIEW_MIN_CHARS の両方で判定し、結果が answer_done.review に載る
+    run: ({ bodies, review }) => {
+      if (bodies.length > 0) return { ok: false, note: `副体 ${bodies.length}体が走った` }
+      if (review === true)   return { ok: false, note: 'review:true なのに副体が走っていない' }
+      return { ok: true }
+    },
+  },
+  R1: {
+    kind: '自動', label: '副体が指定の見出しで書いた',
+    // 旧 E1 の置き換え。主体側では原理的に落ちなくなったので、判定対象を副体へ移した。
+    // 形式を守れない体は、モデルが小さすぎて検算の役に立っていない側の証拠になる
+    run: ({ bodies }) => {
+      if (bodies.length === 0) return { ok: null, note: '副体なし' }
+      const broken = bodies.filter(b => {
+        const t = b.text.trim()
+        if (/^指摘なし/.test(t)) return false          // 逃げ道は正しい出力
+        return !new RegExp(`(^|\n)\\s*【?${b.name}】?\\s*[:：]`).test(t)
+      })
+      return broken.length === 0
+        ? { ok: true }
+        : { ok: false, note: `${broken.map(b => b.name).join('・')} が見出しを外した` }
+    },
+  },
+  R2: {
+    kind: '自動', label: '副体が答えを書き直していない',
+    // 検算方式で新しく生まれた失敗。副体が答えを作り直すと、画面に答えが2つ並ぶ。
+    // 副体は主体より小さいモデルなので、後から出た劣ったほうが最後に残る
+    run: ({ bodies }) => {
+      if (bodies.length === 0) return { ok: null, note: '副体なし' }
+      for (const b of bodies) {
+        if (b.text.includes('```')) return { ok: false, note: `${b.name} がコードを書いた` }
+        const m = b.text.match(/修正版|書き直す|以下に改善|正しくは以下|改訂版/)
+        if (m) return { ok: false, note: `${b.name}「${m[0]}」` }
+      }
+      return { ok: true }
+    },
+  },
+  R3: {
+    kind: '参考', label: '副体が答えの中身に即している',
+    // 「誰でも最初に思いつく一般論」を書いていないか。答えに出てくる語が副体に
+    // 1つも現れないなら、答えを読まずに問いだけから書いた疑いがある。
+    // 参考どまりなのは、言い換えられていても正しい指摘はあり得るため
+    run: ({ bodies, primary }) => {
+      if (bodies.length === 0) return { ok: null, note: '副体なし' }
+      const terms = [...new Set(primary.match(/[一-龠]{2,}|[ァ-ヴー]{3,}|[A-Za-z]{4,}/g) ?? [])]
+      if (terms.length === 0) return { ok: null, note: '照合できる語が無い' }
+      const detached = bodies.filter(b => !terms.some(t => b.text.includes(t)))
+      return detached.length === 0
+        ? { ok: true }
+        : { ok: false, note: `${detached.map(b => b.name).join('・')} が答えの語を1つも使っていない` }
+    },
   },
   H: {
-    kind: '自動', label: '前ターンの本文が副体に流れ込んでいない',
-    run: ({ bodies, prevPrimary }) => {
+    kind: '自動', label: '今ターンの答え以外の過去本文が副体に無い',
+    // 旧 H の測り直し。検算方式では今ターンの答えを副体へ渡すのが仕様なので、
+    // 「副体に主体の本文が現れる」こと自体は汚染ではない。汚染なのは、渡していない
+    // はずの過去ターンの本文が現れる場合だけ（buildReviewMessages は履歴を渡さない）
+    run: ({ bodies, primary, prevPrimary }) => {
       if (!prevPrimary) return { ok: true, note: '前ターン無し' }
       for (const b of bodies) {
         const shared = longestCommonSubstring(b.text, prevPrimary)
-        // 20字の逐語一致は偶然では起きない。CONTEXT_HEAD_CHARS 経由の復唱の印
-        if (shared.length >= 20) return { ok: false, note: `逐語一致${shared.length}字「${shared.slice(0, 30)}」` }
+        if (shared.length < 20) continue
+        // 今ターンの答えを経由して来たものは仕様どおり。答えに無いものだけが汚染
+        if (primary.includes(shared)) continue
+        return { ok: false, note: `逐語一致${shared.length}字「${shared.slice(0, 30)}」` }
       }
       return { ok: true }
     },
@@ -188,7 +238,10 @@ function longestCommonSubstring(a, b) {
 
 // ── SSE ───────────────────────────────────────────────────────────────
 // イベント名は backend/llm/textService.ts が送る側の権威。
-// body_start / body_text / body_done → synthesis_start → text
+// answer_start → text → answer_done（review 付き）→ body_start / body_text / body_done
+//
+// 検算方式では主体の本文が先に完成し、副体はその後に続く。順序が反転したので、
+// primary を読み終えてから bodies が埋まる
 async function ask(messages) {
   const bodies = [
     { provider: OPT.provider, model: OPT.model, apiKey: process.env.THREEBODY_API_KEY ?? '' },
@@ -219,6 +272,8 @@ async function ask(messages) {
   const bodyTexts = new Map()   // bodyIndex → { name, provider, text }
   let primary = ''
   let error   = null
+  // answer_done が伝える「このターンは検算に回すか」。F の判定に使う
+  let review  = null
 
   const reader  = res.body.getReader()
   const decoder = new TextDecoder()
@@ -243,17 +298,32 @@ async function ask(messages) {
         const b = bodyTexts.get(ev.bodyIndex)
         if (b) b.text += ev.content
       }
-      else if (ev.type === 'text')  primary += ev.content
-      else if (ev.type === 'error') error = ev.message ?? ev.code
+      else if (ev.type === 'text')        primary += ev.content
+      else if (ev.type === 'answer_done') review = ev.review ?? false
+      else if (ev.type === 'error')       error = ev.message ?? ev.code
     }
   }
 
-  // synthesis_start は主体の bodyIndex でも body_start を経ずに来る。
+  // answer_start は主体の bodyIndex を伝えるだけで body_start を経ない。
   // 副体として数えるのは body_start が来たものだけ
-  return { primary, bodies: [...bodyTexts.values()], error }
+  return { primary, bodies: [...bodyTexts.values()], error, review }
 }
 
+// 判定だけを外から読めるようにする。判定式そのものが回帰の対象で、
+// これを直したときに壊れていないかは backend/tests/regressChecks.test.ts が見る
+export { CHECKS, QUESTIONS, longestCommonSubstring }
+
 // ── 実行 ──────────────────────────────────────────────────────────────
+// import されたときは走らせない（上の判定だけを取り出せるようにするため）
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
+if (isMain) {
+
+if (!TOKEN) {
+  console.error('THREEBODY_TOKEN が未設定です。Supabase のアクセストークンを渡してください。')
+  console.error('例: THREEBODY_TOKEN=eyJ... node scripts/regress.mjs')
+  process.exit(1)
+}
+
 const commit = (() => {
   try { return execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim() }
   catch { return 'unknown' }
@@ -322,14 +392,14 @@ for (const q of targets) {
       continue
     }
 
-    const { primary, bodies, error } = result
+    const { primary, bodies, error, review } = result
 
     write('')
     write('─'.repeat(78))
     write(`[${q.id} run ${run}/${OPT.n}] ${q.label}   ${new Date().toISOString()}`)
     if (error) write(`!! error イベント: ${error}`)
 
-    write(`── 副体 ${bodies.length}体 ──`)
+    write(`── 副体 ${bodies.length}体（answer_done.review=${review}）──`)
     for (const b of bodies) write(`#${b.name}（${b.provider}）${b.text.length}字\n${b.text.trim() || '（空）'}`)
     write(`── 主体 ${primary.length}字 ──`)
     write(primary.trim() || '（空）')
@@ -337,7 +407,7 @@ for (const q of targets) {
     write('── 判定 ──')
     for (const id of q.checks) {
       const c = CHECKS[id]
-      const { ok, note } = c.run({ primary, bodies, prevPrimary })
+      const { ok, note } = c.run({ primary, bodies, prevPrimary, review })
       record(`${q.id}/${id}`, ok)
       const verdict = ok === true ? '合格' : ok === false ? '不合格' : '?'
       write(`${c.kind}  ${id.padEnd(3)} ${c.label.padEnd(34, '　')} ${verdict}${note ? `: ${note}` : ''}`)
@@ -369,4 +439,8 @@ write('')
 write(`※ 失敗0回でも、否定できる失敗率の上限は約 3/n（n=${OPT.n} → ${Math.min(100, Math.round(300 / OPT.n))}% 以下）。`)
 write('※ 「直った」と言うには n=20 が要る。n=5 は「明らかに壊れているか」の足切り。')
 write('※ A・D は自動化できない。上の本文を読んで数えること。')
+write('※ 旧 E1・E2 は廃止。主体が副体を見なくなり、構造上落ちなくなったため。')
+write('※ 「?」は判定対象が存在しなかった run（副体が走らなかった等）。合否には数えない。')
 write(`書き出し: ${OPT.out}`)
+
+}
