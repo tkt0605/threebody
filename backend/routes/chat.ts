@@ -6,6 +6,7 @@ import type { BodyConfig, Provider } from '../llm/types'
 import { M, LEVEL_CONFIG } from '../llm/modelConfig'
 import { toOllamaMessages } from '../llm/messageHelpers'
 import { streamBodyOAI, orchestrateMultiBody } from '../llm/textService'
+import { buildPrimaryPrompt } from '../llm/promptLayers'
 import { streamAnthropic } from '../llm/providers/anthropic'
 import { streamOpenAICompat } from '../llm/providers/openaiCompat'
 import { streamOllamaNative, ollamaEnabled } from '../llm/providers/ollama'
@@ -49,6 +50,10 @@ router.post('/chat', chatRateLimit, async (req, res) => {
     apiKey?:       string
     useSharedKey?: boolean
   }
+
+  // 層1（共通規範）と層2（主体の契約）を、フロントから届く人格の上に被せる。
+  // 主体へ渡すのは以降すべて primaryPrompt。経路ごとに組み直すと片方だけ古くなる
+  const primaryPrompt = buildPrimaryPrompt(systemPrompt)
 
   // 認証は必須。トークンが無い・検証に失敗したリクエストはここで終わる。
   //
@@ -115,7 +120,7 @@ router.post('/chat', chatRateLimit, async (req, res) => {
             { provider: 'anthropic', apiKey: key, model: sharedConfig.anthropicModel, role: 'skeptic' },
             { provider: 'anthropic', apiKey: key, model: sharedConfig.anthropicModel, role: 'realist' },
           ]
-          await orchestrateMultiBody(sharedBodies, sharedBodies, oaiMessages, sharedConfig, systemPrompt, res)
+          await orchestrateMultiBody(sharedBodies, sharedBodies, oaiMessages, sharedConfig, primaryPrompt, res)
           completed = true
           res.write('data: [DONE]\n\n')
           return
@@ -160,14 +165,14 @@ router.post('/chat', chatRateLimit, async (req, res) => {
       if (available.length > 1) {
         // 副体（二体・三体）からの見解を並列取得 → 主体が統合、という一連の流れは
         // orchestrateMultiBody に集約（共有キー経路の三体モードとも共有）
-        await orchestrateMultiBody(bodies, available, oaiMessages, config, systemPrompt, res)
+        await orchestrateMultiBody(bodies, available, oaiMessages, config, primaryPrompt, res)
         completed = true
         res.write('data: [DONE]\n\n')
         return
       }
 
       if (available.length === 1) {
-        await streamBodyOAI(available[0]!, oaiMessages, config, systemPrompt, res)
+        await streamBodyOAI(available[0]!, oaiMessages, config, primaryPrompt, res)
         completed = true
         res.write('data: [DONE]\n\n')
         return
@@ -177,16 +182,16 @@ router.post('/chat', chatRateLimit, async (req, res) => {
     // ── 単体モード（従来） ───────────────────────────────────────────────────────
     if (provider === 'anthropic') {
       const client = new Anthropic({ apiKey })
-      await streamAnthropic(res, messages, config, systemPrompt, client)
+      await streamAnthropic(res, messages, config, primaryPrompt, client)
     } else if (provider === 'openai') {
       const client = new OpenAI({ apiKey })
-      await streamOpenAICompat(client, model ?? '', res, oaiMessages, config.maxTokens, systemPrompt)
+      await streamOpenAICompat(client, model ?? '', res, oaiMessages, config.maxTokens, primaryPrompt)
     } else if (provider === 'deepseek') {
       const client = new OpenAI({ apiKey, baseURL: 'https://api.deepseek.com' })
-      await streamOpenAICompat(client, model ?? '', res, oaiMessages, config.maxTokens, systemPrompt)
+      await streamOpenAICompat(client, model ?? '', res, oaiMessages, config.maxTokens, primaryPrompt)
     } else {
       const ollamaModel = model?.trim() || M.ollama.default
-      await streamOllamaNative(ollamaModel, toOllamaMessages(oaiMessages, systemPrompt), config.maxTokens, (content) => {
+      await streamOllamaNative(ollamaModel, toOllamaMessages(oaiMessages, primaryPrompt), config.maxTokens, (content) => {
         res.write(`data: ${JSON.stringify({ type: 'text', content })}\n\n`)
       })
     }

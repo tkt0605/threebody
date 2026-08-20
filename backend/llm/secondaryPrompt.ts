@@ -1,7 +1,7 @@
 import type OpenAI from 'openai'
 import type { SecondaryRole } from './types'
 import { extractTextContent } from './messageHelpers'
-
+import { CORE_PRINCIPLES } from './promptLayers'
 // 副体（二体・三体）に渡すもの一式。system・user・表示名をここ1箇所で組む。
 //
 // 【なぜ backend に寄せたか】
@@ -66,8 +66,12 @@ export function resolveSecondaryRole(role: string | undefined, indexAmongSeconda
 // 設定の language ではなく「問いと同じ言語」に紐づけるのは、backend が設定を受け取らないため
 export function buildSecondarySystemPrompt(role: SecondaryRole): string {
   const { task, slots } = ROLE_SLOTS[role]
+  // 何者かを先に置き、層1（共通規範）、層2（役割の詳細）と続ける。主体側の並びと揃える。
+  // 事実の規律は層1にあるので、ここには書かない
   return `あなたは、ある問いについての検討メモを書く担当だ。
 このメモを読むのは統合役のAIであり、ユーザーではない。
+
+${CORE_PRINCIPLES}
 
 【あなたの担当】
 ${task}。
@@ -77,7 +81,6 @@ ${task}。
 - コード・手順・文章のような具体物を書かない。
 - 挨拶、相槌、「なるほど」「たしかに」「〜ですね」のような会話としての受け答えを書かない。ユーザーに話しかけない。
 - 教科書的な一般論を書かない。誰でも最初に思いつく内容は、統合役がすでに持っている。
-- 確認していない仕様・数値・構成を断定しない。知らないことは「未確認」と書く。憶測を事実の形で書くほうが、書かないより有害。
 - 挙げるのは1つだけ。2つ以上並べると平均化して、他の体と同じ内容になる。
 
 【出力形式】以下の3行だけを、この見出しのまま書く。前置きも後書きも書かない。

@@ -33,7 +33,9 @@ describe('buildSecondarySystemPrompt', () => {
     expect(prompt).toContain('ユーザーではない')
     expect(prompt).toContain('問い全体への答えを書かない')
     expect(prompt).toContain('なるほど')  // 禁止語として挙げている側
-    expect(prompt).toContain('「未確認」と書く')
+    // 事実の規律は層1（CORE_PRINCIPLES）へ移した。副体にも必ず被っていること
+    expect(prompt).toContain('知らないことは知らないと書く')
+    expect(prompt).toContain('確認していない前提があれば「未確認: ○○」と続ける')
   })
 })
 

@@ -7,6 +7,7 @@ import {
   buildSecondaryMessages, buildSecondarySystemPrompt, needsMultiBody,
   resolveSecondaryRole, secondaryRoleLabel,
 } from './secondaryPrompt'
+import { buildSynthesisLayer } from './promptLayers'
 import { streamOllamaNative } from './providers/ollama'
 import { createOpenAICompatClient, streamOpenAICompat } from './providers/openaiCompat'
 import { streamAnthropic } from './providers/anthropic'
@@ -207,36 +208,11 @@ export async function orchestrateMultiBody(
     return
   }
 
-  // 見解は system 側に置く。user ターンへ連結すると「ユーザーが資料を提示してきた」と
-  // 読まれ、主体が質問に答える側ではなく資料に感想を述べる側に回る。
-  // （実測: 見解をuserに入れていた頃の出力が「提示された複数の回答を見ると…」で始まり、
-  //  求められたコードを出さずに問い返して終わっていた）
+  // 層2（統合固有）を、chat.ts で層1まで組み終えた主体プロンプトの上に重ねる。
+  // 見解の置き場所（system か user か）の理由は promptLayers.ts のコメントにある
   const synthesisSystemPrompt = `${systemPrompt}
 
-【統合タスク】
-以下は、同じ質問に対する他のLLM（体）の見解です。
-これはユーザーの発言ではなく、あなただけが見ている参考資料です。
-
-${perspectives}
-
-各見解は「崩れる点」「別の見方」「最初の一手」のように担当が分かれており、
-どれも質問への答えではない。答えを書くのはあなただけだ。
-
-【厳守】
-- ユーザーの元の質問に、あなた自身の言葉で直接答える。
-- 見解に対する感想・謝辞・論評を書かない。見解の存在に言及しない。
-- ユーザーが具体物（コード・手順・文章）を求めているなら、まずそれ自体を出す。
-  確認や質問は出したあとに1つだけ添えてよい。何も出さずに問い返して終わらない。
-- 「確度: 低」「未確認」と書かれている内容は、事実として書かない。採るなら
-  「〜の場合は」「〜なら」と条件付きで書くか、確かめる手順のほうを書く。
-- 見解が誤っている・質問とずれている場合は、黙って捨てて自分で正しい答えを書く。
-  全部捨てて自分で答えてよい。3つとも使う義務は無い。
-- 見解どうしが食い違うときは、両論併記で逃げずに、どちらを採るか決めて答えに反映する。
-- 見解の言い回しを切り貼りしない。助詞や語尾だけ残して述語を差し替えると文が壊れる。
-  受け取るのは中身だけにして、文は必ず最初から自分で組み立てる。
-- 見出し（崩れる点・別の見方 など）や箇条書きの形をそのまま答えに持ち込まない。
-  資料の形式であって、ユーザーへの返答の形式ではない。
-- 出す前に、日本語として助詞の係り受けが通っているか読み返す。`
+${buildSynthesisLayer(perspectives)}`
 
   res.write(`data: ${JSON.stringify({ type: 'synthesis_start', bodyIndex: allBodies.indexOf(primary) })}\n\n`)
 
