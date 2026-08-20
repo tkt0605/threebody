@@ -2,22 +2,8 @@
 
 ThreeBody — 1〜3個のLLM（「体」）が並列に回答し、主体（一体）が統合する音声チャット。Vue 3 + Express、SSEストリーミング。
 
-## コマンド
-
-```bash
-npm run dev:all              # フロント(5173) + バック(3000)
-npm run lint
-npm run test                 # vitest
-npx vue-tsc --noEmit         # フロント型チェック
-npm run typecheck:backend
-```
-
-テスト対象: `src/composables/__tests__/**/*.test.ts`, `backend/tests/**/*.test.ts`
-
 ## 構成
 
-- `src/` — Vue 3 Composition API / TypeScript / Tailwind v4。`views/ChatView.vue` が全体を組み立てる
-- `backend/` — Express。`index.ts` から `routes/`（chat・capabilities・health・account）、`llm/`（`types.ts` / `modelConfig.ts` / `textService.ts` / `providers/`）、`utils/` をマウント
 - 永続化 — Supabase `conversations` → `messages` → `content_blocks`。クエリは `useChat.ts` に集約
 
 ファイル単位の説明はここに書かない。必要なら実物を読むこと。
