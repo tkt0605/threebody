@@ -4,10 +4,9 @@ import type OpenAI from 'openai'
 import type { BodyConfig, LevelConfig } from './types'
 import { resolveBodyModel, toOllamaMessages, toAnthropicMessages, extractTextContent } from './messageHelpers'
 import {
-  buildSecondaryMessages, buildSecondarySystemPrompt, needsMultiBody,
-  resolveSecondaryRole, secondaryRoleLabel,
+  buildReviewMessages, buildReviewSystemPrompt, needsMultiBody,
+  resolveSecondaryRole, reviewRoleLabel,
 } from './secondaryPrompt'
-import { buildSynthesisLayer } from './promptLayers'
 import { streamOllamaNative } from './providers/ollama'
 import { createOpenAICompatClient, streamOpenAICompat } from './providers/openaiCompat'
 import { streamAnthropic } from './providers/anthropic'
@@ -68,64 +67,71 @@ export async function streamSecondaryBody(
   return full
 }
 
+// 主体の本文をSSEへ流しつつ、全文を戻り値でも返す。
+// 戻り値が要るのは、副体がこの答えを読んで検算するため。res へ書くだけでは
+// 書いた内容が呼び出し側に残らない（プロバイダー3種とも res 直書きだった）
 export async function streamBodyOAI(
   body: BodyConfig,
   messages: OpenAI.Chat.ChatCompletionMessageParam[],
   config: LevelConfig,
   systemPrompt: string,
   res: express.Response,
-): Promise<void> {
+): Promise<string> {
   const model = resolveBodyModel(body)
 
   if (body.provider === 'anthropic') {
     const anthropicClient = new Anthropic({ apiKey: body.apiKey })
     const anthropicMsgs = toAnthropicMessages(messages)
-    await streamAnthropic(
+    return await streamAnthropic(
       res,
       anthropicMsgs,
       { ...config, anthropicModel: model },
       systemPrompt,
       anthropicClient
     )
-    return
   }
 
   if (body.provider === 'ollama') {
+    let full = ''
     await streamOllamaNative(model, toOllamaMessages(messages, systemPrompt), config.maxTokens, (content) => {
+      full += content
       res.write(`data: ${JSON.stringify({ type: 'text', content })}\n\n`)
     })
-    return
+    return full
   }
 
   const oaiClient = createOpenAICompatClient(body)
-  await streamOpenAICompat(oaiClient, model, res, messages, config.maxTokens, systemPrompt)
+  return await streamOpenAICompat(oaiClient, model, res, messages, config.maxTokens, systemPrompt)
 }
 
-// 副体の見解からコードブロックを落とす。
-//
-// personaPrompt でも「コードを書くな」と頼んでいるが、小さいローカルモデルは守る回と
-// 守らない回がある（実測で、同じ設定のまま片方の回だけ従った）。依頼ではなく処理で落とす。
-//
-// 落とす理由は分量だけではない。副体は secondaryMaxTokens しか持たないため、コードは
-// たいてい途中で切れる。書きかけのコードを資料として渡すと、主体はそれを直そうとするか、
-// 半端なまま引き写す。方針だけ受け取って主体が最初から書くほうが結果が良い。
-//
-// 閉じていないフェンス（生成が途中で切れた場合）も末尾ごと落とす
-function stripCodeBlocks(text: string): string {
-  const closed = text.replace(/```[\s\S]*?```/g, '\n（コード略）\n')
-  const open   = closed.indexOf('```')
-  const body   = open === -1 ? closed : `${closed.slice(0, open)}\n（コード略）\n`
-  // 落とした跡に空行が固まるので、3行以上の連続改行は2行に畳む
-  return body.replace(/\n{3,}/g, '\n\n').trim()
+// 検算の対象になる問い。副体には履歴を渡さないので、直近のユーザー発言だけを取り出す
+function lastUserText(messages: OpenAI.Chat.ChatCompletionMessageParam[]): string {
+  const i = messages.map(m => m.role).lastIndexOf('user')
+  return i === -1 ? '' : extractTextContent(messages[i]!.content).trim()
 }
 
-// これを下回る見解しか集まらなかったら統合しない（＝単体モードに縮退）。
-// 挨拶や相槌は副体2体を足しても100文字に届かず、逆に中身のある質問なら
-// 副体は secondaryMaxTokens 近くまで書くため、この境界で綺麗に分かれる
-const SYNTHESIS_MIN_CHARS = 120
+// 検算に回すには短すぎる答え。「おはよう。」に崩れる点は無い。
+// needsMultiBody は問いの側で落とすが、問いが十分でも答えが一言で済むことはある
+const REVIEW_MIN_CHARS = 120
 
-// 副体（二体・三体）を並列取得 → 見解をシステムプロンプトに注入 → 主体が統合回答をストリーミング、
-// という三体モードの一連の流れ。`allBodies` は SSE の bodyIndex を求めるための元配列
+// 主体が答える → その答えを副体が検算する、という順序。
+//
+// 【なぜ統合をやめたか】
+// 以前は「副体が先に検討メモを書く → 主体がそれを統合して答える」だった。
+// 実測（docs/chat_see.log）で、統合は答えを良くしなかった:
+//   ・副体のメモ由来の観点が主体の答えに移った数 …… 平均 0.1/run
+//   ・単体なら出ていた観点が、統合すると落ちた数 …… 平均 1.2/run
+// 入ってこないのに、出るものだけが減っていた。原因は副体の中身ではなく、主体に
+// 「答える」と「まとめる」の二役を同時に負わせたこと。統合層は禁止事項の列挙
+// （メモに言及するな・見出しを使うな・固有名を写すな）で、主体の注意は問いより先に
+// 規則との照合へ向かう。具体名が 2.8 → 1.0 に落ちたのは、「心当たりの無い名前は
+// 捨てろ」を守った結果、元々知っていた名前まで巻き添えで落ちたため。
+//
+// 順序を反転すると、主体は単体モードとまったく同じプロンプトで答える（＝劣化しない）。
+// 副体の指摘は「答える前」ではなく「答えた後」に渡るので、主体の出力と衝突しない。
+// 待ち時間も、副体ラウンドが本文の前から後ろへ移るぶん体感で縮む。
+//
+// `allBodies` は SSE の bodyIndex を求めるための元配列
 // （通常モードでは req.body.bodies、共有キーモードでは available と同一の配列）
 export async function orchestrateMultiBody(
   allBodies: BodyConfig[],
@@ -137,32 +143,38 @@ export async function orchestrateMultiBody(
 ): Promise<void> {
   const [primary, ...secondaries] = available as [BodyConfig, ...BodyConfig[]]
 
-  // 割れる余地の無い問い（挨拶・相槌）では副体を呼ばずに単体で答える。
-  // ここで落とすぶん、無駄な2回の呼び出しも消える
-  if (!needsMultiBody(messages)) {
-    res.write(`data: ${JSON.stringify({ type: 'synthesis_start', bodyIndex: allBodies.indexOf(primary) })}\n\n`)
-    await streamBodyOAI(primary, messages, config, systemPrompt, res)
-    return
-  }
+  // 主体は常に単体モードと同じプロンプトで、最初に答える。
+  // 他の体の存在を主体へ一切知らせないことが、この設計の要点
+  res.write(`data: ${JSON.stringify({ type: 'answer_start', bodyIndex: allBodies.indexOf(primary) })}\n\n`)
+  const answer = await streamBodyOAI(primary, messages, config, systemPrompt, res)
 
-  // allSettled にしているのは、副体1体の失敗で三体モードごと落とさないため。
-  // Promise.all だと1体が throw した時点で reject し、他の体の見解も主体による統合も
-  // まるごと失われる（＝「複数視点の統合」という売りと噛み合わない）
+  // 検算に回すか。回さないなら answer_done の時点で応答は完成しており、
+  // フロントはここで読み上げを締める（review:false）
+  const willReview =
+    secondaries.length > 0 && needsMultiBody(messages) && answer.trim().length >= REVIEW_MIN_CHARS
+  res.write(`data: ${JSON.stringify({ type: 'answer_done', review: willReview })}\n\n`)
+  if (!willReview) return
+
+  const question = lastUserText(messages)
+
+  // allSettled にしているのは、副体1体の失敗で他の体の検算まで落とさないため。
+  // 本文はこの時点で既にユーザーへ届いているので、ここでの失敗は「カードが1枚欠ける」
+  // だけに留まる（統合していた頃は、副体の失敗が答えそのものを揺らしていた）
   const settled = await Promise.allSettled(
     secondaries.map(async (b, i) => {
       const bodyIdx = allBodies.indexOf(b)
       const role    = resolveSecondaryRole(b.role, i)
-      const name    = secondaryRoleLabel(role)
+      const name    = reviewRoleLabel(role)
       res.write(`data: ${JSON.stringify({ type: 'body_start', bodyIndex: bodyIdx, name, provider: b.provider })}\n\n`)
       try {
-        // 副体には会話人格（systemPrompt）も履歴全文も渡さない。役ごとの検討メモ用の
-        // system と、直近だけへ畳んだ問いを渡す（理由は llm/secondaryPrompt.ts）
+        // 副体に渡すのは「問い」と「主体の答え」だけ。会話人格も履歴も渡さない（理由は
+        // llm/secondaryPrompt.ts）。答えを渡すのは、検算の対象がその答えそのものだから
         return await streamSecondaryBody(
           b,
           bodyIdx,
-          buildSecondaryMessages(messages, role),
+          buildReviewMessages(question, answer, role),
           { ...config, maxTokens: config.secondaryMaxTokens },
-          buildSecondarySystemPrompt(role),
+          buildReviewSystemPrompt(role),
           res,
         )
       } finally {
@@ -174,83 +186,21 @@ export async function orchestrateMultiBody(
   )
 
   const secrets = collectSecrets({ bodies: allBodies })
-  // flatMap にしているのは、null を挟んでから filter するより型が素直に通るため
-  const views = settled.flatMap((result, i) => {
+  settled.forEach((result, i) => {
+    if (result.status !== 'rejected') return
     const b    = secondaries[i]!
-    const name = secondaryRoleLabel(resolveSecondaryRole(b.role, i))
-    if (result.status === 'rejected') {
-      // 失敗した体は見解から除外して統合を続ける。キーがエラー本文へ
-      // echo back されることがあるため、ログに出す前に必ず伏せ字化する
-      console.error(`[三体] ${name}(${b.provider}) の応答に失敗しました:`, sanitizeErrorMessage(result.reason, secrets))
-      return []
-    }
-    const view = stripCodeBlocks(result.value)
-    if (!view.trim()) return []
-    return [{ name, provider: b.provider, view }]
+    const name = reviewRoleLabel(resolveSecondaryRole(b.role, i))
+    // キーがエラー本文へ echo back されることがあるため、ログに出す前に必ず伏せ字化する
+    console.error(`[検算] ${name}(${b.provider}) の応答に失敗しました:`, sanitizeErrorMessage(result.reason, secrets))
   })
 
-  // 見出し（【○体（provider）の見解】）を除いた、中身そのものの分量
-  const contentChars = views.reduce((n, v) => n + v.view.length, 0)
-  const perspectives = views.map(v => `【${v.name}（${v.provider}）の見解】\n${v.view}`).join('\n\n')
-
-  // 副体が全滅した場合、空の見解を「以下は他の体の見解です」に続けて注入すると
-  // 主体が存在しない見解について語り出す。単体モードに縮退させる。
-  //
-  // 見解が短すぎる場合も同じく縮退させる。「おはよう」のような挨拶では副体2体が
-  // ほぼ同じ一言を返し、統合すべき差分が存在しない。それでも統合を走らせると、
-  // 主体は組み立てる材料が無いので隣の2文を継ぎ接ぎする（実測: 「どんなことで
-  // 頭がいっぱい？」＋「どんなことを話したい？」→「どんなことで頭のなかにある？」と、
-  // 助詞だけ引き写して述語が入れ替わった壊れた文になった）。
-  // 統合する中身が無いなら、主体に普通に答えさせるほうが日本語として正しい
-  if (!perspectives || contentChars < SYNTHESIS_MIN_CHARS) {
-    res.write(`data: ${JSON.stringify({ type: 'synthesis_start', bodyIndex: allBodies.indexOf(primary) })}\n\n`)
-    await streamBodyOAI(primary, messages, config, systemPrompt, res)
-    return
-  }
-
-  // 層2（統合固有）を、chat.ts で層1まで組み終えた主体プロンプトの上に重ねる。
-  // 見解の置き場所（system か user か）の理由は promptLayers.ts のコメントにある
-  const synthesisSystemPrompt = `${systemPrompt}
-
-${buildSynthesisLayer(perspectives)}`
-
-  res.write(`data: ${JSON.stringify({ type: 'synthesis_start', bodyIndex: allBodies.indexOf(primary) })}\n\n`)
-
-  // 統合に何が渡ったかを見る窓。三体モードの不具合は「主体が受け取った内容」を見ないと、
-  // プロンプトの組み方・副体の出力・モデルの能力のどれが原因か切り分けられない。
-  //
-  // 既定は要約（数行）だけにする。全文を毎ターン流すとターミナルが数百行で埋まり、
-  // 肝心の判定行が流れて読めなくなる（出力コスト自体は推論時間に比べて無視できるが、
-  // 読めないログは無いのと同じ）。全文が要るときだけ DEBUG_SYNTHESIS=full にする。
-  // bodies / apiKey は絶対に出さないこと
-  const debugLevel = process.env.DEBUG_SYNTHESIS?.trim().toLowerCase()
-  if (debugLevel === 'true' || debugLevel === 'full') {
+  // 検算に何が渡ったかを見る窓。指摘が的外れなとき、原因が「答えが渡っていない」のか
+  // 「モデルが小さい」のかは、渡した中身を見ないと切り分けられない
+  if (process.env.DEBUG_SYNTHESIS?.trim().toLowerCase() === 'full') {
+    console.info(`[検算] 答え ${answer.length}文字 / 副体 ${secondaries.length}体`)
     settled.forEach((r, i) => {
-      const b    = secondaries[i]
-      const name = secondaryRoleLabel(resolveSecondaryRole(b?.role, i))
-      if (r.status === 'rejected') { console.info(`[統合] ${name}: 失敗`); return }
-      // 形式を守れたか（＝会話として普通に回答していないか）を1行で見る。
-      // 守れていない体は、モデルが小さすぎて役に立っていない側の証拠になる
-      // 見出しは 「崩れる点:」「【崩れる点】」 どちらの形でも出る。名前が有るかだけを見る
-      const 形式 = r.value.includes(secondaryRoleLabel(resolveSecondaryRole(b?.role, i))) ? '形式OK' : '★形式崩れ'
-      const コード = r.value.includes('```') ? 'コードあり' : 'コードなし'
-      console.info(`[統合] ${name}: ${r.value.length}文字 / ${形式} / ${コード}`)
+      const name = reviewRoleLabel(resolveSecondaryRole(secondaries[i]?.role, i))
+      console.info(`[検算] ${name}: ${r.status === 'rejected' ? '失敗' : `${r.value.length}文字`}`)
     })
-
-    // 本丸の検証。見解が user ターンへ漏れていないことを毎ターン確かめる
-    const 漏れ = messages.some(m =>
-      m.role === 'user' && extractTextContent(m.content).includes('の見解】')
-    )
-    console.info(`[統合] userターンへの見解の漏れ: ${漏れ ? '★あり（バグ再発）' : 'なし'} / 履歴${messages.length}件`)
-
-    if (debugLevel === 'full') {
-      console.info(`[統合] systemPrompt:\n${synthesisSystemPrompt}`)
-      messages.forEach(m =>
-        console.info(`[統合] [${m.role}] ${JSON.stringify(extractTextContent(m.content).slice(0, 200))}`)
-      )
-    }
   }
-
-  // ユーザーターンは元の質問のまま渡す（加工しない）
-  await streamBodyOAI(primary, messages, config, synthesisSystemPrompt, res)
 }
