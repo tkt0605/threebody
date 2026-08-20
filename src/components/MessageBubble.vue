@@ -126,7 +126,14 @@ function handleCopyClick(event: MouseEvent) {
           v-html="DOMPurify.sanitize(renderMarkdown(block.content)) + (message.streaming ? '<span class=\'animate-pulse\' aria-hidden=\'true\'>▍</span>' : '')"
           @click="handleCopyClick"
         />
-        <div v-else-if="block.type === 'perspective' && block.bodies.length > 0" class="space-y-2 mb-3">
+        <!-- 検算カードは本文の下に並ぶ。仕切りを上に置くのは、カードが「この答えを読んだ結果」
+             であることを、読む順序そのもので示すため -->
+        <div v-else-if="block.type === 'perspective' && block.bodies.length > 0" class="space-y-2 mt-4">
+          <div class="flex items-center gap-2 text-[10px] tracking-wide text-gray-400 dark:text-white/30">
+            <span class="flex-1 border-t border-dashed border-black/10 dark:border-white/10" />
+            他の体がこの答えを検算
+            <span class="flex-1 border-t border-dashed border-black/10 dark:border-white/10" />
+          </div>
           <div class="grid gap-2" :class="block.bodies.length > 1 ? 'grid-cols-2' : 'grid-cols-1'">
             <div
               v-for="b in block.bodies"
@@ -144,11 +151,6 @@ function handleCopyClick(event: MouseEvent) {
                 @click="handleCopyClick"
               />
             </div>
-          </div>
-          <div class="flex items-center gap-2 text-[10px] tracking-wide text-gray-400 dark:text-white/30">
-            <span class="flex-1 border-t border-dashed border-black/10 dark:border-white/10" />
-            一体が統合
-            <span class="flex-1 border-t border-dashed border-black/10 dark:border-white/10" />
           </div>
         </div>
         <div

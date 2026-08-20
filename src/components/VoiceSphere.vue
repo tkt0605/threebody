@@ -42,7 +42,7 @@ const coreParticles: CoreParticle[] = (() => {
   })
 })()
 
-// ── クラスタ配置（thinking 時にアクティブな体の数だけ分裂、それ以外は中心に収束） ──
+// ── クラスタ配置（reviewing 時に検算中の体の数だけ分裂、それ以外は中心に収束） ──
 const TRIANGLE_RADIUS = CORE_RADIUS * 1.4
 function clusterTargets(n: number) {
   return Array.from({ length: n }, (_, i) => {
@@ -63,7 +63,7 @@ function isBodyAvailable(b: BodyConfig) {
   return b.model.trim().length > 0 && (b.provider === 'ollama' || b.apiKey.trim().length > 0)
 }
 
-// 各体のプロバイダーカラー（thinking 時のクラスタ色分け用）
+// 各体のプロバイダーカラー（reviewing 時のクラスタ色分け用）
 function hexToRgb(hex: string) {
   const n = parseInt(hex.slice(1), 16)
   return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }
@@ -77,7 +77,7 @@ const CLUSTER_PULSE_FREQ  = [0.05, 0.07, 0.09]
 const CLUSTER_PULSE_PHASE = [0, (2 * Math.PI) / 3, (4 * Math.PI) / 3]
 const CLUSTER_PULSE_AMOUNT = 0.15
 
-// converging（統合回答ストリーム中）：1つの球として脈動
+// converging（本文ストリーム中）：1つの球として脈動
 const CONVERGING_PULSE_FREQ = 0.1
 const CONVERGING_PULSE_AMOUNT = 0.05
 
@@ -105,7 +105,7 @@ function startLoop() {
       : 0
     const currentLevel = avg * 8.5  // iris: average / 30 (0-255byte) と等価
 
-    // 応答生成中（thinking〜synthesizing〜converging）は完了するまで待機色（青）に戻さず、
+    // 応答生成中（thinking〜converging〜reviewing）は完了するまで待機色（青）に戻さず、
     // 主体（一体）のプロバイダー色を保持する（統合中に色が一瞬青に戻ってしまう不自然さを防ぐ）
     const primaryBody = aiState.value !== 'idle' ? settings.bodies.find(isBodyAvailable) : undefined
     const processingColor = primaryBody ? BODY_PROVIDER_RGB[primaryBody.provider] : null
@@ -121,15 +121,16 @@ function startLoop() {
       return { x: cx + x * s, y: cy + y * s, s }
     }
 
-    // thinking 中は「まだ回答待ちの副体」の数に応じて分裂し、1体ずつ完了するたびにクラスタが
-    // 中心へ収束していく（= 待ち時間の進捗が見える化される）。converging/synthesizing は常に1つに統合
-    const isThreeBody = aiState.value === 'thinking' && pendingBodies.value.length > 0
+    // reviewing 中は「まだ検算中の副体」の数に応じて分裂し、1体ずつ完了するたびにクラスタが
+    // 中心へ収束していく（= 待ち時間の進捗が見える化される）。thinking/converging は常に1つ。
+    // 統合方式では副体が本文より先に走ったので、ここは thinking を見ていた
+    const isThreeBody = aiState.value === 'reviewing' && pendingBodies.value.length > 0
     const availableBodies = isThreeBody
       ? pendingBodies.value
       : settings.bodies.filter(isBodyAvailable)
     const activeBodyCount = availableBodies.length
     const clusterCount = activeBodyCount >= 3 ? 3 : activeBodyCount === 2 ? 2 : 1
-    const splitting = aiState.value === 'thinking' && !isRec && clusterCount >= 2
+    const splitting = aiState.value === 'reviewing' && !isRec && clusterCount >= 2
     const targets = clusterCount === 3 ? CLUSTER_TARGETS[3] : CLUSTER_TARGETS[2]
     for (let g = 0; g < MAX_CLUSTERS; g++) {
       const target = splitting && g < clusterCount ? targets[g]! : MERGED_TARGET
@@ -151,10 +152,10 @@ function startLoop() {
     for (const p of coreParticles) {
       const clusterIdx = p.subIndex % subDivisor
 
-      // thinking 中：クラスタごとに異なるリズムで脈動 / converging 中：1つの球として脈動
+      // reviewing 中：クラスタごとに異なるリズムで脈動 / converging 中：1つの球として脈動
       const pulse = splitting
         ? 1 + Math.sin(frameTime * CLUSTER_PULSE_FREQ[clusterIdx]! + CLUSTER_PULSE_PHASE[clusterIdx]!) * CLUSTER_PULSE_AMOUNT
-        : (aiState.value === 'converging' || aiState.value === 'synthesizing') && !isRec
+        : (aiState.value === 'converging' || aiState.value === 'thinking') && !isRec
           ? 1 + Math.sin(frameTime * CONVERGING_PULSE_FREQ) * CONVERGING_PULSE_AMOUNT
           : 1
 
@@ -174,7 +175,7 @@ function startLoop() {
       const rx = px * Math.cos(rot) - pz * Math.sin(rot)
       const rz = px * Math.sin(rot) + pz * Math.cos(rot)
 
-      // クラスタ中心オフセットを加算（thinking 時の分裂）
+      // クラスタ中心オフセットを加算（reviewing 時の分裂）
       const c = clusterCenters[clusterIdx]!
       const { x, y, s } = project(rx + c.x, py + c.y, rz + c.z)
 

@@ -62,7 +62,11 @@ async function authHeader(): Promise<Record<string, string>> {
 }
 
 const messages = ref<Message[]>([])
-export type AiState = 'idle' | 'thinking' | 'synthesizing' | 'converging'
+// idle → thinking（主体の最初のトークン待ち） → converging（本文を書き出し中）
+//      → reviewing（本文は完成し、副体がその答えを検算中） → idle
+// 統合方式では副体が先に走っていたため thinking の間に体が分裂していたが、
+// 順序が反転して副体は本文の後ろへ移った（backend/llm/textService.ts）
+export type AiState = 'idle' | 'thinking' | 'converging' | 'reviewing'
 const aiState = ref<AiState>('idle');
 
 export interface PendingBody { bodyIndex: number; name: string; provider: BodyProvider }
@@ -757,14 +761,18 @@ export function useChat() {
               bodyIndex?: number
               name?: string
               provider?: string
+              review?: boolean
             }
             if (parsed.type === 'body_start' && parsed.bodyIndex != null) {
               pendingBodies.value.push({ bodyIndex: parsed.bodyIndex, name: parsed.name ?? '副体', provider: (parsed.provider ?? 'ollama') as BodyProvider })
 
+              // 検算カードは本文の「後ろ」に積む。push なのは、指摘が答えを読んだ上での
+              // ものだから。統合方式では副体が先に喋っていたので unshift だった
+              aiState.value = 'reviewing'
               let perspectiveBlock = reactiveMsg.blocks.find((b): b is PerspectiveBlock => b.type === 'perspective')
               if (!perspectiveBlock) {
                 perspectiveBlock = { type: 'perspective', bodies: [] }
-                reactiveMsg.blocks.unshift(perspectiveBlock)
+                reactiveMsg.blocks.push(perspectiveBlock)
               }
               perspectiveBlock.bodies.push({
                 bodyIndex: parsed.bodyIndex,
@@ -786,10 +794,17 @@ export function useChat() {
               const entry = perspectiveBlock?.bodies.find(b => b.bodyIndex === parsed.bodyIndex)
               if (entry) entry.done = true
             }
-            if (parsed.type === 'synthesis_start') {
+            if (parsed.type === 'answer_start') {
               pendingBodies.value = []
-              aiState.value = 'synthesizing'
               if (parsed.bodyIndex != null) block.bodyIndex = parsed.bodyIndex
+            }
+            // 本文がここで完成する。検算カードはこの後ろに続くが、応答としては
+            // 出来上がっているので、読み上げの締め（ChatView が streaming の false を見て
+            // narration.end を呼ぶ）をカードの完了まで待たせない。
+            // review が false なら、このターンに副体は走らない
+            if (parsed.type === 'answer_done') {
+              reactiveMsg.streaming = false
+              if (parsed.review) aiState.value = 'reviewing'
             }
             if (parsed.type === 'text' && parsed.content){
               block.content += parsed.content
