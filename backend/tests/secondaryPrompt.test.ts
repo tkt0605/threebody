@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import type OpenAI from 'openai'
 import {
-  buildSecondaryMessages, buildSecondarySystemPrompt, needsMultiBody,
-  resolveSecondaryRole, secondaryRoleLabel,
+  buildReviewMessages, buildReviewSystemPrompt, buildSecondaryMessages,
+  buildSecondarySystemPrompt, needsMultiBody, resolveSecondaryRole,
+  reviewRoleLabel, secondaryRoleLabel,
 } from '../llm/secondaryPrompt'
 
 const text = (m: OpenAI.Chat.ChatCompletionMessageParam) =>
@@ -111,5 +112,104 @@ describe('resolveSecondaryRole', () => {
 
   it('未知の値は既定の役へ落とす', () => {
     expect(secondaryRoleLabel(resolveSecondaryRole('unknown-role', 0))).toBe('崩れる点')
+  })
+})
+
+// ── 検算モード（本番経路） ────────────────────────────────────────────
+// 上の buildSecondary* は実験専用へ降格した旧・統合方式のもの。
+// 本番の副体はここから下の buildReview* を通る
+describe('buildReviewSystemPrompt', () => {
+  it('役ごとに別の見出しを要求する（見る対象が問いから答えへ移っても割れ方は保つ）', () => {
+    const skeptic  = buildReviewSystemPrompt('skeptic')
+    const optimist = buildReviewSystemPrompt('optimist')
+    const realist  = buildReviewSystemPrompt('realist')
+
+    expect(skeptic).toContain('崩れる点:')
+    expect(optimist).toContain('別の見方:')
+    // realist は「最初の一手」から「抜けている点」へ。答えが既にあるので、
+    // 着手の一手ではなく答えの欠落を見る役に変わった
+    expect(realist).toContain('抜けている点:')
+    expect(realist).not.toContain('最初の一手:')
+
+    expect(skeptic).not.toContain('別の見方:')
+    expect(optimist).not.toContain('崩れる点:')
+  })
+
+  // 検算が答えを書き直し始めると、画面に答えが2つ並ぶ。
+  // 副体は主体より小さいモデルなので、後から出た劣った答えが最後に残る
+  it('答えの書き直しと、答え全体への講評を禁じる', () => {
+    const prompt = buildReviewSystemPrompt('skeptic')
+
+    expect(prompt).toContain('答えを書き直さない')
+    expect(prompt).toContain('作り直した答え・コード・手順を書かない')
+    expect(prompt).toContain('要約や講評を書かない')
+    expect(prompt).toContain('なるほど')  // 禁止語として挙げている側
+  })
+
+  // 統合方式の頃のメモは主体だけが読む中間生成物で、単体では意味の取れない断片が多かった。
+  // 検算の出力はそのままユーザーに読まれるので、宛先を偽らない
+  it('読むのがユーザーであることを明示する', () => {
+    const prompt = buildReviewSystemPrompt('realist')
+
+    expect(prompt).toContain('ユーザーに読まれる')
+    expect(prompt).not.toContain('ユーザーではない')
+  })
+
+  // 無い指摘をひねり出すと、答えが正しいときほど的外れなカードが並ぶ
+  it('指摘が無いときの逃げ道を用意する', () => {
+    expect(buildReviewSystemPrompt('optimist')).toContain('指摘なし')
+  })
+
+  it('事実の規律（層1）が必ず被っている', () => {
+    for (const role of ['skeptic', 'optimist', 'realist'] as const) {
+      expect(buildReviewSystemPrompt(role)).toContain('知らないことは知らないと書く')
+    }
+  })
+})
+
+describe('buildReviewMessages', () => {
+  it('問いと主体の答えだけを user 1件で渡す', () => {
+    const msgs = buildReviewMessages('設計はどうする？', 'まず SSE で繋ぐ。', 'skeptic')
+
+    expect(msgs).toHaveLength(1)
+    expect(msgs[0]!.role).toBe('user')
+    expect(text(msgs[0]!)).toContain('【問い】')
+    expect(text(msgs[0]!)).toContain('設計はどうする？')
+    expect(text(msgs[0]!)).toContain('【答え】')
+    expect(text(msgs[0]!)).toContain('まず SSE で繋ぐ。')
+  })
+
+  it('作業指示を user ターンにも置く（小さいモデルは system より直近に従う）', () => {
+    expect(text(buildReviewMessages('q', 'a', 'realist')[0]!)).toContain('【あなたの作業】')
+    expect(text(buildReviewMessages('q', 'a', 'realist')[0]!)).toContain('答えは書き直さない')
+    expect(text(buildReviewMessages('q', 'a', 'skeptic')[0]!)).toContain('最も崩れやすい箇所')
+    expect(text(buildReviewMessages('q', 'a', 'realist')[0]!)).toContain('答えに書かれていない')
+  })
+
+  // 入力は体の数だけ倍化する。長い答えをそのまま渡すと、検算1回のコストが本文を超える
+  it('長い答えは上限で切り、切ったことを明示する', () => {
+    const long = 'あ'.repeat(5000)
+    const body = text(buildReviewMessages('q', long, 'skeptic')[0]!)
+
+    expect(body).toContain('…（以下略）')
+    // 切るのは末尾。答えの結論は前半に出るので冒頭は必ず残る
+    expect(body).toContain('あ'.repeat(3000))
+    expect(body).not.toContain('あ'.repeat(3001))
+  })
+
+  it('上限より短い答えは切らない', () => {
+    const body = text(buildReviewMessages('q', 'みじかい答え', 'skeptic')[0]!)
+    expect(body).not.toContain('…（以下略）')
+  })
+})
+
+describe('reviewRoleLabel', () => {
+  // カードの見出しになる。旧 secondaryRoleLabel と realist だけ食い違うので、
+  // 取り違えるとカードに「最初の一手」と出たまま中身が「抜けている点」になる
+  it('検算の見出しを返す（旧・統合方式の見出しとは realist が異なる）', () => {
+    expect(reviewRoleLabel('skeptic')).toBe('崩れる点')
+    expect(reviewRoleLabel('optimist')).toBe('別の見方')
+    expect(reviewRoleLabel('realist')).toBe('抜けている点')
+    expect(secondaryRoleLabel('realist')).toBe('最初の一手')
   })
 })

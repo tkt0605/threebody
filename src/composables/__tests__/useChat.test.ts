@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useChat, HISTORY_LIMIT } from '../useChat'
-import type { ErrorBlock, Message, TextBlock } from '../../types/message'
+import type { ErrorBlock, Message, PerspectiveBlock, TextBlock } from '../../types/message'
 
 function sseStream(chunks: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder()
@@ -58,6 +58,10 @@ function textBlock(msg: Message, index = 0) {
 
 function errorBlock(msg: Message, index = 0) {
   return msg.blocks[index] as ErrorBlock
+}
+
+function perspectiveBlock(msg: Message) {
+  return msg.blocks.find((b): b is PerspectiveBlock => b.type === 'perspective')
 }
 
 describe('useChat', () => {
@@ -414,6 +418,84 @@ describe('useChat', () => {
         // 取り除かれた器には記録が残っている
         expect(assistantMsg.msg.signals?.interrupted).toBe(true)
       })
+    })
+  })
+
+  // ── 検算方式 ─────────────────────────────────────────────────────────
+  // 統合方式では主体の本文が副体の後に来ていた。反転後は本文が先に完成し、
+  // 検算カードが後から続く。この順序と「本文の完成で締める」が新設計の要
+  describe('検算（answer_done と検算カード）', () => {
+    // 読み上げの締めは ChatView が streaming の false を見て narration.end を呼ぶ。
+    // ここが検算の完了まで待つと、本文を読み終えた後に無音が数秒〜十数秒入る
+    it('answer_done で本文を締める。検算カードの完了は待たない', async () => {
+      vi.stubGlobal('fetch', hangingFetch([
+        'data: {"type":"answer_start","bodyIndex":0}\n\n',
+        'data: {"type":"text","content":"本文"}\n\n',
+        'data: {"type":"answer_done","review":true}\n\n',
+        'data: {"type":"body_start","bodyIndex":1,"name":"崩れる点","provider":"ollama"}\n\n',
+      ]))
+
+      const { messages, sendMessage, cancelGeneration, aiState } = useChat()
+      const inFlight = sendMessage('hi')
+      await vi.waitFor(() => expect(aiState.value).toBe('reviewing'))
+
+      const msg = messages.value[1]!
+      // 本文は完成している＝読み上げを締めてよい
+      expect(msg.streaming).toBe(false)
+      // 一方で検算はまだ終わっていない
+      expect(perspectiveBlock(msg)!.bodies[0]!.done).toBe(false)
+
+      cancelGeneration()
+      await inFlight
+    })
+
+    it('review が false なら検算へ進まない', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse({
+        body: sseStream([
+          'data: {"type":"answer_start","bodyIndex":0}\n\n',
+          'data: {"type":"text","content":"おはよう。"}\n\n',
+          'data: {"type":"answer_done","review":false}\n\n',
+          'data: [DONE]\n\n',
+        ]),
+      })))
+
+      const { messages, sendMessage, aiState } = useChat()
+      await sendMessage('おはよう')
+
+      const msg = messages.value[1]!
+      expect(msg.streaming).toBe(false)
+      expect(perspectiveBlock(msg)).toBeUndefined()
+      expect(aiState.value).toBe('idle')
+    })
+
+    // sort_order は blocks 配列の位置そのもの。ここが逆になると、リロード後だけ
+    // カードが本文の上に戻る（統合方式の頃は unshift でそれが正しかった）
+    it('検算カードを本文ブロックの後ろに積む', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse({
+        body: sseStream([
+          'data: {"type":"answer_start","bodyIndex":0}\n\n',
+          'data: {"type":"text","content":"本文"}\n\n',
+          'data: {"type":"answer_done","review":true}\n\n',
+          'data: {"type":"body_start","bodyIndex":1,"name":"崩れる点","provider":"ollama"}\n\n',
+          'data: {"type":"body_text","bodyIndex":1,"content":"崩れる点: "}\n\n',
+          'data: {"type":"body_text","bodyIndex":1,"content":"出典が未確認"}\n\n',
+          'data: {"type":"body_done","bodyIndex":1}\n\n',
+          'data: [DONE]\n\n',
+        ]),
+      })))
+
+      const { messages, sendMessage, pendingBodies } = useChat()
+      await sendMessage('設計はどうする？')
+
+      const msg = messages.value[1]!
+      expect(msg.blocks.map(b => b.type)).toEqual(['text', 'perspective'])
+      expect(textBlock(msg).content).toBe('本文')
+
+      const card = perspectiveBlock(msg)!.bodies[0]!
+      expect(card.name).toBe('崩れる点')
+      expect(card.content).toBe('崩れる点: 出典が未確認')
+      expect(card.done).toBe(true)
+      expect(pendingBodies.value).toHaveLength(0)
     })
   })
 })
