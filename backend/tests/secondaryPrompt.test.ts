@@ -48,15 +48,30 @@ describe('buildSecondaryMessages', () => {
 
   // 繰り返し聞くほど答えが薄くなっていたのは、履歴に主体の過去回答が積まれ、
   // 副体がそれを読んで「すでに述べたとおり」の側へ逃げていたため
-  it('履歴を user 1件へ畳み、直前の応答は冒頭だけ渡す', () => {
+  it('履歴を user 1件へ畳み、直前の問いは冒頭だけ渡す', () => {
     const msgs = buildSecondaryMessages(history, 'skeptic')
 
     expect(msgs).toHaveLength(1)
     expect(msgs[0]!.role).toBe('user')
     expect(text(msgs[0]!)).toContain('同じことをもう一度聞く')
-    // 直前の応答は文脈として冒頭のみ。全文（1000字超）は渡らない
-    expect(text(msgs[0]!)).toContain('【これまでの流れ】')
+    expect(text(msgs[0]!)).toContain('【直前の問い】')
+    expect(text(msgs[0]!)).toContain('最初の質問')
     expect(text(msgs[0]!).length).toBeLessThan(700)
+  })
+
+  // 主体が一度間違えた固有名を副体が復唱し、それを主体がまた採る閉ループを断つ。
+  // 渡してよいのはユーザー自身の言葉（問い）だけで、検証されていない回答は渡さない
+  it('直前の「回答」は一切渡さない（誤った固有名が世代を超えて増殖する経路）', () => {
+    const contaminated: OpenAI.Chat.ChatCompletionMessageParam[] = [
+      { role: 'user',      content: '6か国の教育支出をまとめて' },
+      { role: 'assistant', content: 'OECDのEDUstatsデータベースを参照してください。' },
+      { role: 'user',      content: 'もっと詳しく' },
+    ]
+    const body = text(buildSecondaryMessages(contaminated, 'realist')[0]!)
+
+    expect(body).not.toContain('EDUstats')
+    expect(body).not.toContain('OECD')
+    expect(body).toContain('6か国の教育支出をまとめて')
   })
 
   it('作業指示を user ターンにも置く（小さいモデルは system より直近に従う）', () => {
@@ -65,9 +80,9 @@ describe('buildSecondaryMessages', () => {
     expect(text(buildSecondaryMessages(history, 'skeptic')[0]!)).toContain('失敗しやすい箇所')
   })
 
-  it('1往復目は「これまでの流れ」を付けない', () => {
+  it('1往復目は「直前の問い」を付けない', () => {
     const msgs = buildSecondaryMessages([{ role: 'user', content: '設計はどうする？' }], 'skeptic')
-    expect(text(msgs[0]!)).not.toContain('【これまでの流れ】')
+    expect(text(msgs[0]!)).not.toContain('【直前の問い】')
   })
 })
 

@@ -88,7 +88,7 @@ ${task}。
 ${slots}`
 }
 
-// 直前の応答からこの文字数だけを文脈として渡す。
+// 直前の問いからこの文字数だけを文脈として渡す。
 // 全文だと「もっと詳しく」への追随のために払う額が大きすぎる（入力が体の数だけ増える）
 const CONTEXT_HEAD_CHARS = 300
 
@@ -102,7 +102,15 @@ const CONTEXT_HEAD_CHARS = 300
 // 2. コスト。1ターンの支配項は出力ではなく入力で、それが体の数だけ倍化していた。
 //    副体の入力を直近だけに絞ると、三体モードの割り増しはここで大きく戻る。
 //
-// 文脈依存の追い質問（「もっと詳しく」）だけは直前の応答の冒頭で拾う
+// 文脈依存の追い質問（「もっと詳しく」）だけは、直前の「問い」の冒頭で拾う。
+//
+// 【なぜ直前の「答え」ではないか】
+// 以前は主体の直前の回答を渡していたが、それは検証されていない文章であるうえ、
+// 副体からは資料に見える。主体が一度間違えた固有名を副体が復唱し、それを主体が
+// また採る閉ループになっていた（実測: 存在しない「OECDのEDUstats」が3ターン連続で
+// 出続け、プロンプトを3行足しても消えなかった）。
+// 「もっと詳しく」が何を指すかを決めるのは直前の問いのほうで、答えは要らない。
+// 問いはユーザー自身の言葉なので、こちらの誤りを運ぶことがない。
 export function buildSecondaryMessages(
   messages: OpenAI.Chat.ChatCompletionMessageParam[],
   role: SecondaryRole,
@@ -112,15 +120,15 @@ export function buildSecondaryMessages(
   if (lastUserIndex === -1) return messages
 
   const question = extractTextContent(messages[lastUserIndex]!.content).trim()
-  const prevAssistant = messages
+  const prevQuestion = messages
     .slice(0, lastUserIndex)
-    .filter(m => m.role === 'assistant')
+    .filter(m => m.role === 'user')
     .map(m => extractTextContent(m.content).trim())
     .filter(Boolean)
     .at(-1)
 
-  const context = prevAssistant
-    ? `【これまでの流れ】\n${prevAssistant.slice(0, CONTEXT_HEAD_CHARS)}${prevAssistant.length > CONTEXT_HEAD_CHARS ? '…' : ''}\n\n`
+  const context = prevQuestion
+    ? `【直前の問い】\n${prevQuestion.slice(0, CONTEXT_HEAD_CHARS)}${prevQuestion.length > CONTEXT_HEAD_CHARS ? '…' : ''}\n\n`
     : ''
 
   // 作業指示を system ではなく user ターンの末尾にも置く。小さいモデルほど

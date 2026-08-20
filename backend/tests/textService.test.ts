@@ -244,9 +244,10 @@ describe('orchestrateMultiBody', () => {
     // 会話人格は主体だけのもの
     expect(sent('primary-model')).toContain('アイリスとしての会話人格')
     expect(sent('secondary-a')).not.toContain('アイリスとしての会話人格')
-    // 過去のやり取りは積まない。渡るのは直近の問いと、直前の応答の冒頭だけ
-    expect(sent('secondary-a')).not.toContain('前の質問')
-    expect(sent('secondary-a')).toContain('主体の過去の回答')       // 冒頭は文脈として残す
+    // 過去のやり取りは積まない。渡るのは直近の問いと、直前の「問い」の冒頭だけ。
+    // 主体の回答は検証されていないので、誤った固有名を副体へ運ばないよう一切渡さない
+    expect(sent('secondary-a')).not.toContain('主体の過去の回答')
+    expect(sent('secondary-a')).toContain('前の質問')               // 冒頭は文脈として残す
     expect(sent('secondary-a').length).toBeLessThan(sent('primary-model').length)
     expect(sent('secondary-a')).toContain('どう設計する')
   })
