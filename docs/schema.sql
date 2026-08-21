@@ -214,6 +214,23 @@ create policy messages_delete_own on public.messages for delete
     where c.id = messages.conversation_id and c.user_id = auth.uid()
   ));
 
+-- 共有されたターンだけを、未ログインの閲覧者へ開ける（ROADMAP ③）。
+-- 起点は shared_messages で、そこに生きている行が無いメッセージは anon から見えない。
+-- ＝ 共有していないメッセージのIDを直接叩いても0件になる。
+-- 対象に authenticated も含めるのは、ログイン済みの人が「他人の」共有URLを開くため
+-- （messages_select_own は自分の会話しか通さない）
+create policy messages_select_shared on public.messages for select
+  to anon, authenticated
+  using (exists (
+    select 1 from public.shared_messages s
+    where s.revoked_at is null
+      and (s.message_id = messages.id or s.question_message_id = messages.id)
+  ));
+
+-- signals は「停止した・言い直した」というユーザーの操作の記録で、共有の対象ではない。
+-- 行ポリシーとは独立した列単位の防御として、閲覧者からは読めなくする
+revoke select (signals) on public.messages from anon;
+
 -- ----------------------------------------------------------------------------
 -- content_blocks — 本文の正本。所有者判定は message → conversation 経由
 --
@@ -284,6 +301,89 @@ create policy content_blocks_delete_own on public.content_blocks for delete
     join public.conversations c on c.id = m.conversation_id
     where m.id = content_blocks.message_id and c.user_id = auth.uid()
   ));
+
+-- 共有されたターンの本文と検算カード。条件は messages_select_shared と同型で、
+-- 起点も同じ shared_messages（＝取り消せば両方が同時に閉じる）
+create policy content_blocks_select_shared on public.content_blocks for select
+  to anon, authenticated
+  using (exists (
+    select 1 from public.shared_messages s
+    where s.revoked_at is null
+      and (s.message_id = content_blocks.message_id or s.question_message_id = content_blocks.message_id)
+  ));
+
+-- ----------------------------------------------------------------------------
+-- shared_messages — 公開したターンの台帳（ROADMAP ③ 見解の共有）
+--
+-- 【何を公開するか】1ターン ＝ 主体の答え（message_id）＋ その問い
+-- （question_message_id）。検算カードは答えの content_blocks に 'perspective' として
+-- 入っているので、行を足す必要は無い。
+--
+-- 【なぜ台帳を別テーブルにするか】
+--   1. URLに出るのは token で、message_id ではない。message_id はアプリ内の他の
+--      文脈（エラー報告のcontext等）にも出るIDなので、それがそのまま公開URLだと
+--      「共有していないものが漏れた」と「共有したものが読まれた」を区別できない
+--   2. 取り消せる。revoked_at を立てれば全ポリシーが同時に閉じる
+--   3. 会話は私物という既定を崩さない。既定は非公開で、行がある1件だけが公開になる
+--
+-- 【閲覧のコスト】anon key でフロントから直接読む。閲覧者はLLMを呼ばず、
+-- 自前サーバーも通らない。何人見ても無料枠が1回も減らないことが③の存在理由
+-- （ROADMAP 2章「律速は資金」を迂回する唯一の経路）。
+--
+-- 生きている共有は1メッセージにつき1件（部分ユニーク）。取り消した行は履歴として残り、
+-- 再共有すると新しい token が発行される＝古いURLは復活しない
+-- ----------------------------------------------------------------------------
+create table public.shared_messages (
+  token                uuid primary key default gen_random_uuid(),
+  message_id           uuid not null references public.messages (id) on delete cascade,
+  question_message_id  uuid references public.messages (id) on delete set null,
+  user_id              uuid not null references public.user_setting (id) on delete cascade,
+  created_at           timestamptz not null default now(),
+  revoked_at           timestamptz
+);
+
+comment on table public.shared_messages is
+  '公開したターンの台帳。token が公開URL、message_id が主体の答え、question_message_id がその問い。revoked_at で取り消す。';
+
+create unique index shared_messages_live_message_idx
+  on public.shared_messages (message_id) where revoked_at is null;
+
+-- usewr_idは重複はしないから、unique indexを作成する必要はない。
+create index shared_messages_user_id_idx on public.shared_messages (user_id);
+
+alter table public.shared_messages enable row level security;
+
+-- 未ログインの閲覧者。token を知っている行だけが実際に取れる（絞り込みは
+-- クエリ側の .eq('token', …)）。ポリシー自体は「生きている共有かどうか」しか見ない
+create policy shared_messages_select_public on public.shared_messages for select
+  to anon, authenticated using (revoked_at is null);
+
+-- 取り消した自分の共有も、所有者は見える（共有中かどうかの表示に使う）
+create policy shared_messages_select_own on public.shared_messages for select
+  to authenticated using (auth.uid() = user_id);
+
+-- 自分のメッセージしか公開できない。user_id の自称だけでは足りず、
+-- そのメッセージが自分の会話に属することまで確かめる
+create policy shared_messages_insert_own on public.shared_messages for insert
+  to authenticated with check (
+    auth.uid() = user_id
+    and exists (
+      select 1 from public.messages m
+      join public.conversations c on c.id = m.conversation_id
+      where m.id = shared_messages.message_id and c.user_id = auth.uid()
+    )
+  );
+
+-- 取り消し（revoked_at を立てる）に必要
+create policy shared_messages_update_own on public.shared_messages for update
+  to authenticated with check (auth.uid() = user_id);
+
+create policy shared_messages_delete_own on public.shared_messages for delete
+  to authenticated using (auth.uid() = user_id);
+
+-- 誰が共有したかは公開しない（ROADMAP ③「ユーザープロフィールは作らない」）。
+-- 行ポリシーとは独立した列単位の防御で、user_id は閲覧者から読めなくする
+revoke select (user_id) on public.shared_messages from anon;
 
 -- ----------------------------------------------------------------------------
 -- feedback — エラー報告（src/composables/useFeedback.ts）
@@ -444,6 +544,13 @@ grant execute on function public.release_global_quota(date) to service_role;
 --        1つの配列で送っていたため本文まで巻き添えで落ちていた（応答が画面から丸ごと
 --        消え、直前の質問が孤立表示になる）。insert は本文と見解に分離済み
 --        （useChat.ts の insertBlockRows）
+--   9. 見解の共有（2026-08-21）※本番未適用
+--        create table shared_messages + 部分ユニークindex + ポリシー5本、
+--        messages / content_blocks に *_select_shared（to anon, authenticated）を1本ずつ、
+--        revoke select (user_id) on shared_messages / (signals) on messages from anon。
+--        これが RLS を anon へ開ける最初の変更なので、適用後に必ず確認すること:
+--        共有していない message_id を anon key で直接 select して0件になること
+--        （scripts/verify-share-rls.mjs が両方向を確かめる）
 --
 -- 【確認クエリ】SQL Editor のタブは使い捨てにし、これらだけ手元に残しておけばよい。
 --   select can_use_shared_key, count(*) from public.user_setting group by 1;
