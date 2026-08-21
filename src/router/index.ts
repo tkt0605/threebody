@@ -4,6 +4,7 @@ import LoginView     from '../views/LoginView.vue'
 import AuthCallback  from '../views/AuthCallback.vue'
 import TermsView     from '../views/TermsView.vue'
 import PrivacyView   from '../views/PrivacyView.vue'
+import SharedTurnView from '../views/SharedTurnView.vue'
 import { supabase }  from '../lib/supabase'
 
 const router = createRouter({
@@ -21,6 +22,10 @@ const router = createRouter({
     // 審査もこのURLへ未ログインで到達できることを前提にしている
     { path: '/terms',        component: TermsView    },
     { path: '/privacy',      component: PrivacyView  },
+    // 共有された1ターン（ROADMAP ③）。requiresAuth を付けない。
+    // 未ログインで開けないと、そもそもこの機能の存在理由（閲覧者にLLMを呼ばせず、
+    // 何人見ても無料枠が減らない拡散経路）が無くなる
+    { path: '/s/:token',     component: SharedTurnView },
   ],
 })
 
@@ -31,7 +36,9 @@ router.beforeEach(async (to) => {
   const { data: { session } } = await supabase.auth.getSession()
   const authed = !!session
 
-  if (to.meta.requiresAuth && !authed) return '/login'
+  // 行き先を落とさずログインへ回す。共有ページの導線（問いを持ってアプリへ入る）は
+  // ここで消えると意味が無くなる。実際の復帰は /auth/callback（lib/postLogin.ts）
+  if (to.meta.requiresAuth && !authed) return { path: '/login', query: { next: to.fullPath } }
   if ((to.path === '/login' || to.path === '/signup') && authed) return '/'
 })
 

@@ -1,5 +1,5 @@
 import { ref, computed, watch } from 'vue'
-import type { Message, TextBlock, PerspectiveBlock, ContentBlock, BodyPerspective } from '../types/message'
+import type { Message, TextBlock, PerspectiveBlock, BodyPerspective } from '../types/message'
 import { hasSignal, NO_SIGNALS, type TurnSignals } from '../types/intent'
 import { useSettings, type BodyProvider, isBodyUsable } from './useSettings'
 import { buildSystemPrompt } from './useSystemPrompt'
@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useCapabilities } from './useCapabilities'
 import { redactText } from '../lib/redact'
+import { toContentBlocks, type StoredBlockRow } from '../lib/contentBlocks'
 import type { Modality } from '../types/intent'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:3000'
@@ -160,22 +161,6 @@ async function pruneOrphanedMessages(msgs: Message[]): Promise<Message[]> {
   return msgs.filter(m => !orphanIds.includes(m.id))
 }
 
-// content_blocks の1行。payload の形は type で決まる
-type StoredBlockRow = {
-  type:       string
-  payload:    { content?: string; bodies?: BodyPerspective[] }
-  sort_order: number
-}
-
-function toContentBlock(row: StoredBlockRow): ContentBlock {
-  if (row.type === 'perspective') {
-    // done を必ず立て直す。ストリーミング中の途中保存を読み戻したときに false のままだと、
-    // 生成はとっくに終わっているのに MessageBubble がカーソル（▍）を点滅させ続ける
-    return { type: 'perspective', bodies: (row.payload.bodies ?? []).map(b => ({ ...b, done: true })) }
-  }
-  return { type: 'text', content: row.payload.content ?? '' }
-}
-
 async function fetchMessages(conversationId: string): Promise<Message[]> {
   const { data, error } = await supabase
     .from('messages')
@@ -190,9 +175,7 @@ async function fetchMessages(conversationId: string): Promise<Message[]> {
     timestamp: new Date(row.timestamp as string),
     // 列が無い（ブロックD未適用）プロジェクトでも undefined になるだけで壊れない
     signals: (row.signals as TurnSignals | null) ?? undefined,
-    blocks: (row.content_blocks as StoredBlockRow[])
-      .sort((a, b) => a.sort_order - b.sort_order)
-      .map(toContentBlock),
+    blocks: toContentBlocks(row.content_blocks as StoredBlockRow[]),
     // 列が無い（ブロックD未適用）プロジェクトや、列追加より前に保存された行では
     // null になる。既定は 'text'（音声だったと誤認するより無難な側へ倒す）
     modality: (row.modality as Modality | null) ?? 'text',
@@ -762,6 +745,7 @@ export function useChat() {
               name?: string
               provider?: string
               review?: boolean
+              hasFinding?: boolean
             }
             if (parsed.type === 'body_start' && parsed.bodyIndex != null) {
               pendingBodies.value.push({ bodyIndex: parsed.bodyIndex, name: parsed.name ?? '副体', provider: (parsed.provider ?? 'ollama') as BodyProvider })
@@ -792,7 +776,12 @@ export function useChat() {
 
               const perspectiveBlock = reactiveMsg.blocks.find((b): b is PerspectiveBlock => b.type === 'perspective')
               const entry = perspectiveBlock?.bodies.find(b => b.bodyIndex === parsed.bodyIndex)
-              if (entry) entry.done = true
+              if (entry) {
+                entry.done = true
+                // 「指摘が出たか」は backend が判定して body_done で送る。届かない場合
+                // （古いバックエンド）は書き込まず、不明のまま残す
+                if (parsed.hasFinding != null) entry.hasFinding = parsed.hasFinding
+              }
             }
             if (parsed.type === 'answer_start') {
               pendingBodies.value = []
