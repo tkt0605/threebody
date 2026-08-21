@@ -39,6 +39,16 @@ const visibleMessages = computed(() => props.messages.filter(m => m.blocks.lengt
 // 判定に visibleMessages を使ってはいけない。一文字も出ないうちに終わった応答は
 // 0ブロックなのでそこから除外されており、その行こそが signals.interrupted という
 // 理由を持っているため。除外前の props.messages を見る必要がある
+// 共有するターンに添える「問い」。直前のユーザー発言を指す。
+// 判定に visibleMessages を使わないのは orphanReason と同じ理由で、
+// 0ブロックの行も並びの一部だから
+function questionMessageId(msg: Message): string | null {
+  if (msg.role !== 'assistant') return null
+  const all  = props.messages
+  const prev = all[all.indexOf(msg) - 1]
+  return prev?.role === 'user' ? prev.id : null
+}
+
 type OrphanReason = 'stopped' | 'lost' | null
 
 function orphanReason(msg: Message): OrphanReason {
@@ -81,6 +91,7 @@ function orphanReason(msg: Message): OrphanReason {
         :key="msg.id"
         :message="msg"
         :orphan-reason="orphanReason(msg)"
+        :question-message-id="questionMessageId(msg)"
       />
       <MessageBubble v-if="draftMessage" :message="draftMessage" />
     </div>

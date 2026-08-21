@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useFeedback } from '../composables/useFeedback'
 import type { ErrorBlock } from '../types/message'
 import { marked } from 'marked'
@@ -7,15 +7,49 @@ import type { Message } from '../types/message'
 import DOMPurify from 'dompurify'
 import { BODY_ROLE_COLORS } from '../constants/bodyProviders'
 import { useChat } from '../composables/useChat'
+import { useSharedTurn, shareUrl } from '../composables/useSharedTurn'
 // orphanReason は「答えが付いていない理由」。判定は MessageList が持つ
 // （0ブロックの応答は描画対象から外れており、その行が理由を持っているため）
-defineProps<{
+// questionMessageId は直前のユーザー発言。共有ページに問いを載せるために要る
+// （どのメッセージが直前かを知っているのは MessageList だけ）
+const props = defineProps<{
   message: Message
   orphanReason?: 'stopped' | 'lost' | null
   readonly?: boolean
+  questionMessageId?: string | null
 }>()
 
 const { retryMessage, deleteMessage } = useChat()
+
+// ── 共有（ROADMAP ③） ────────────────────────────────────────────────────────
+const { share, revoke, tokenFor, pending } = useSharedTurn()
+const copied = ref(false)
+
+const shareToken = computed(() => tokenFor(props.message.id))
+
+// 共有ボタンを出すのは検算カードが付いたターンだけ。
+// 統合された1つの答えは他のチャットAIのスクリーンショットと区別がつかず、
+// 見せたくなる理由が立たない（ROADMAP 0章）。答えと指摘が並んでいる状態だけが資産
+const reviewed = computed(() =>
+  props.message.role === 'assistant'
+  && !props.message.streaming
+  && props.message.blocks.some(b => b.type === 'perspective' && b.bodies.some(x => x.done))
+)
+
+async function copyShareUrl(token: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(shareUrl(token))
+    copied.value = true
+    setTimeout(() => { copied.value = false }, 1500)
+  } catch {
+    // クリップボードAPIが使えない環境では、下に出ているURLを手で選んでもらう
+  }
+}
+
+async function onShare(): Promise<void> {
+  const token = shareToken.value ?? await share(props.message.id, props.questionMessageId ?? null)
+  if (token) await copyShareUrl(token)
+}
 const { reportError } = useFeedback()
 type ReportState = 'idle' | 'sending' | 'done' | 'failed'
 const reportStates = ref<Record<number, ReportState>>({})
@@ -178,6 +212,34 @@ function handleCopyClick(event: MouseEvent) {
           </div>
         </div>
       </template>
+      <!-- 共有（ROADMAP ③）。既定は非公開で、押したターンだけが公開される。
+           閲覧側はLLMを呼ばないので、何人見ても無料枠は1回も減らない -->
+      <div v-if="reviewed && !readonly" class="pt-2">
+        <div v-if="shareToken" class="space-y-1.5">
+          <div class="flex items-center gap-2">
+            <code class="flex-1 truncate text-[11px] px-2 py-1 rounded-md bg-black/[0.04] dark:bg-white/[0.06] text-gray-500 dark:text-white/50">{{ shareUrl(shareToken) }}</code>
+            <button
+              class="text-[11px] px-2 py-1 rounded-md transition-colors cursor-pointer
+                     bg-gray-100 hover:bg-gray-200/70 text-gray-600
+                     dark:bg-white/6 dark:hover:bg-white/10 dark:text-white/60"
+              @click="copyShareUrl(shareToken)"
+            >{{ copied ? 'コピーしました' : 'コピー' }}</button>
+          </div>
+          <button
+            class="text-[11px] underline underline-offset-2 text-gray-400 dark:text-white/35 cursor-pointer
+                   disabled:cursor-default disabled:no-underline"
+            :disabled="pending === message.id"
+            @click="revoke(message.id)"
+          >公開をやめる</button>
+        </div>
+        <button
+          v-else
+          class="text-[11px] underline underline-offset-2 text-gray-400 dark:text-white/35 cursor-pointer
+                 disabled:cursor-default disabled:no-underline"
+          :disabled="pending === message.id"
+          @click="onShare"
+        >{{ pending === message.id ? 'リンクを作成中…' : 'この検算を共有する' }}</button>
+      </div>
       <!-- 答えが付いていない理由を先に書く。ボタン2つだけだと「なぜ送り直す必要が
            あるのか」が分からず、押してよいのかも判断できない。
            原因を断定しないこと。自分で止めた場合を「エラーで途切れた」と書くと、
