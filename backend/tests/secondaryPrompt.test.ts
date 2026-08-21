@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import type OpenAI from 'openai'
 import {
   buildReviewMessages, buildReviewSystemPrompt, buildSecondaryMessages,
-  buildSecondarySystemPrompt, needsMultiBody, resolveSecondaryRole,
+  buildSecondarySystemPrompt, hasReviewFinding, needsMultiBody, resolveSecondaryRole,
   reviewRoleLabel, secondaryRoleLabel,
 } from '../llm/secondaryPrompt'
 
@@ -211,5 +211,34 @@ describe('reviewRoleLabel', () => {
     expect(reviewRoleLabel('optimist')).toBe('別の見方')
     expect(reviewRoleLabel('realist')).toBe('抜けている点')
     expect(secondaryRoleLabel('realist')).toBe('最初の一手')
+  })
+})
+
+// 「指摘が出たか」の判定はここ1箇所だけ。SSE の body_done と content_blocks の payload の
+// 両方がこの結果を運ぶので、ここが緩むと後段（実例の自動抽出）が丸ごとずれる
+describe('hasReviewFinding', () => {
+  it('形式どおりの指摘は true', () => {
+    expect(hasReviewFinding('崩れる点: 出典が未確認\nなぜ: …\n確度: 中')).toBe(true)
+  })
+
+  it('逃げ道（指摘なし）は false', () => {
+    expect(hasReviewFinding('指摘なし')).toBe(false)
+    expect(hasReviewFinding('  指摘なし。 ')).toBe(false)
+    expect(hasReviewFinding('指摘は特にありません')).toBe(false)
+  })
+
+  it('見出しの値として「指摘なし」と書かれた場合も false', () => {
+    expect(hasReviewFinding('抜けている点: 指摘なし\nなぜ要る: —\n確度: 高')).toBe(false)
+  })
+
+  // 全文を対象にすると、本物の指摘の途中に出てきた同じ語で false へ倒れる。
+  // 逃げ道は必ず1行目に出る（buildReviewSystemPrompt の指示）ので、見るのは1行目だけ
+  it('本文の途中に出てきた「指摘なし」では false にしない', () => {
+    expect(hasReviewFinding('崩れる点: 検証手段が無い\nなぜ: 指摘なしと区別できない\n確度: 中')).toBe(true)
+  })
+
+  it('空（副体が落ちた）は false', () => {
+    expect(hasReviewFinding('')).toBe(false)
+    expect(hasReviewFinding('   \n ')).toBe(false)
   })
 })

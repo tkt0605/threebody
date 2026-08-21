@@ -4,7 +4,7 @@ import type OpenAI from 'openai'
 import type { BodyConfig, LevelConfig } from './types'
 import { resolveBodyModel, toOllamaMessages, toAnthropicMessages, extractTextContent } from './messageHelpers'
 import {
-  buildReviewMessages, buildReviewSystemPrompt, needsMultiBody,
+  buildReviewMessages, buildReviewSystemPrompt, hasReviewFinding, needsMultiBody,
   resolveSecondaryRole, reviewRoleLabel,
 } from './secondaryPrompt'
 import { streamOllamaNative } from './providers/ollama'
@@ -166,10 +166,13 @@ export async function orchestrateMultiBody(
       const role    = resolveSecondaryRole(b.role, i)
       const name    = reviewRoleLabel(role)
       res.write(`data: ${JSON.stringify({ type: 'body_start', bodyIndex: bodyIdx, name, provider: b.provider })}\n\n`)
+      // 全文を try の外に置くのは、body_done に「指摘が出たか」を載せるため。
+      // 失敗した副体では空のままで、hasFinding は false になる
+      let content = ''
       try {
         // 副体に渡すのは「問い」と「主体の答え」だけ。会話人格も履歴も渡さない（理由は
         // llm/secondaryPrompt.ts）。答えを渡すのは、検算の対象がその答えそのものだから
-        return await streamSecondaryBody(
+        content = await streamSecondaryBody(
           b,
           bodyIdx,
           buildReviewMessages(question, answer, role),
@@ -177,10 +180,14 @@ export async function orchestrateMultiBody(
           buildReviewSystemPrompt(role),
           res,
         )
+        return content
       } finally {
         // 成功・失敗のどちらでも必ず送る。送らないとフロントの pendingBodies から
-        // この体が消えず、球体が分裂したまま固まる（useChat.ts の body_done ハンドラ）
-        res.write(`data: ${JSON.stringify({ type: 'body_done', bodyIndex: bodyIdx })}\n\n`)
+        // この体が消えず、球体が分裂したまま固まる（useChat.ts の body_done ハンドラ）。
+        //
+        // hasFinding は「この副体が指摘を出したか」。判定は secondaryPrompt に1箇所だけ
+        // 置き、読む側（表示・共有・実例の抽出）が本文の文字列を見ないで済むようにする
+        res.write(`data: ${JSON.stringify({ type: 'body_done', bodyIndex: bodyIdx, hasFinding: hasReviewFinding(content) })}\n\n`)
       }
     })
   )

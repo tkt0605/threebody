@@ -252,3 +252,27 @@ export function needsMultiBody(messages: OpenAI.Chat.ChatCompletionMessageParam[
   if (/[?？]/.test(text)) return true
   return text.length >= TRIVIAL_MAX_CHARS
 }
+
+// 「指摘が出たか」を真偽値で持たせるための判定。
+//
+// 副体は指摘が思いつかないとき「指摘なし」と書く（buildReviewSystemPrompt の禁止事項）。
+// これを本文の文字列でしか判別できないと、読む側それぞれが自前で文字列を見ることになり、
+// 文面が揺れた瞬間に静かに壊れる。判定はここ1箇所に置き、結果を SSE の body_done と
+// content_blocks の payload（BodyPerspective.hasFinding）へ構造として載せる。
+//
+// 空文字は false。副体が落ちたときは全文が空のまま body_done が飛ぶ（textService の
+// finally）ので、「指摘が無かった」ではなく「カードが欠けた」状態だが、
+// どちらも "指摘は出ていない" 側なので同じ false でよい。
+//
+// 見るのは1行目だけ。「指摘なし」は単独行か、見出しの値（「崩れる点: 指摘なし」）として
+// 出る。全文を対象にすると、本物の指摘の途中に出てきた同じ語で false へ倒れる。
+//
+// [要判断] 判定できるのは日本語だけ。副体は「答えと同じ言語で書く」ので、英語の答えには
+// "No issues" が返る。日本語以外を扱い始めるときに拡張する
+const NO_FINDING_PATTERN = /指摘(は)?(特に)?(ありません|ございません|なし|無し)/
+
+export function hasReviewFinding(content: string): boolean {
+  const trimmed = content.trim()
+  if (!trimmed) return false
+  return !NO_FINDING_PATTERN.test(trimmed.split('\n')[0] ?? '')
+}

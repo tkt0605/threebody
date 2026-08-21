@@ -41,6 +41,12 @@ export type BodyPerspective = {
   provider: string
   content: string
   done: boolean
+  // この体が指摘を出したか。判定は backend（llm/secondaryPrompt.ts の hasReviewFinding）で
+  // 済ませ、SSE の body_done で届く。本文の「指摘なし」という文字列を読む側それぞれが
+  // 見に行くと、文面が揺れた瞬間に静かに壊れるため、構造として持たせる。
+  // 省略可なのは、この列を足す前に保存されたブロックには入っていないため
+  // （false ではなく「不明」。`| undefined` の明示は exactOptionalPropertyTypes のため）
+  hasFinding?: boolean | undefined
 }
 export type PerspectiveBlock = { type: 'perspective'; bodies: BodyPerspective[] }
 

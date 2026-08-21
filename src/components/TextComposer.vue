@@ -8,17 +8,21 @@ import { ref, nextTick, computed } from 'vue'
 // 行き止まりになっていた。声を出せない場所・声で言いづらい固有名詞・音声認識の
 // 誤変換など、Chrome でも文字で打ちたい場面は普通にある。
 // 音声を主役のまま残し、文字を「いつでも使える横の入口」として足すのがここの役目。
+// initialText は共有ページの導線から運ばれてくる問い（ChatView が ?ask= を渡す）。
+// 送信まではしない。無料枠を1回使う操作を、本人が押していないうちに始めないため
 const props = withDefaults(defineProps<{
   disabled?:    boolean
   placeholder?: string
+  initialText?: string
 }>(), {
   disabled:    false,
   placeholder: 'メッセージを入力',
+  initialText: '',
 })
 
 const emit = defineEmits<{ send: [text: string] }>()
 
-const text = ref('')
+const text = ref(props.initialText)
 const area = ref<HTMLTextAreaElement | null>(null)
 
 const canSubmit = computed(() => !props.disabled && text.value.trim().length > 0)

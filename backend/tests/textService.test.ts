@@ -15,7 +15,7 @@ vi.mock('../llm/providers/ollama', () => ({ streamOllamaNative: vi.fn() }))
 // このテストは ollama の体しか使わないため、丸ごと差し替えて読み込みを回避する
 vi.mock('../llm/providers/anthropic', () => ({ streamAnthropic: vi.fn() }))
 
-type SSEEvent = { type: string; bodyIndex?: number; content?: string; name?: string; review?: boolean }
+type SSEEvent = { type: string; bodyIndex?: number; content?: string; name?: string; review?: boolean; hasFinding?: boolean }
 
 // res.write に流れたSSE行を、テストから読める形に解いておく
 function fakeRes() {
@@ -153,6 +153,36 @@ describe('orchestrateMultiBody', () => {
 
     const doneIndexes = events.filter(e => e.type === 'body_done').map(e => e.bodyIndex).sort()
     expect(doneIndexes).toEqual([1, 2])
+  })
+
+  // 「指摘が出たか」を読む側が本文の文字列から判定すると、文面が揺れた瞬間に静かに壊れる。
+  // 判定は backend で済ませ、body_done に真偽値として載せる
+  it('body_done に hasFinding を載せる（指摘あり / 指摘なし）', async () => {
+    mockByModel({
+      'primary-model': long('答え'),
+      'secondary-a': '崩れる点: 出典が未確認\nなぜ: …\n確度: 中',
+      'secondary-b': '指摘なし',
+    })
+    const { res, events } = fakeRes()
+    const all = bodies()
+
+    await orchestrateMultiBody(all, all, MESSAGES, CONFIG, 'システム', res)
+
+    const done = events.filter(e => e.type === 'body_done')
+    expect(done.find(e => e.bodyIndex === 1)?.hasFinding).toBe(true)
+    expect(done.find(e => e.bodyIndex === 2)?.hasFinding).toBe(false)
+  })
+
+  // 落ちた副体は「指摘が無かった」のではなくカードが欠けた状態だが、
+  // 指摘が出ていないことに変わりはないので false 側に倒す
+  it('失敗した副体の hasFinding は false', async () => {
+    mockByModel({ 'primary-model': long('答え'), 'secondary-a': new Error('boom'), 'secondary-b': '抜けている点: 認証' })
+    const { res, events } = fakeRes()
+    const all = bodies()
+
+    await orchestrateMultiBody(all, all, MESSAGES, CONFIG, 'システム', res)
+
+    expect(events.find(e => e.type === 'body_done' && e.bodyIndex === 1)?.hasFinding).toBe(false)
   })
 
   // 「おはよう。」に崩れる点は無い。問いの側（needsMultiBody）で落とせない場合でも、
