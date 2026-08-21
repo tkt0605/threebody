@@ -153,27 +153,38 @@ export function buildSecondaryMessages(
 // 主体の答えを読んで、指摘を1つだけ書く。役ごとに「答えのどこを見るか」を分ける。
 // 見出し＝カードの見出しで、答えの下に並ぶ。検討メモ（ROLE_SLOTS）と別に持つのは、
 // 見る対象が「問い」から「既に書かれた答え」へ変わり、スロットの意味が変わるため
+// スロットは4フィールド固定（判定／対象箇所／根拠／代替案）。役ごとに変えるのは
+// 「どこを見るか」の指示文だけで、フィールド名自体は揃える。
+//
+// 【なぜ以前の3行（見出し/理由/確度）をやめたか】
+// 見出し行が「カードの見出し」と「判定」を兼ねていたため、コード側は1行目の文字列に
+// 「指摘なし」が含まれるかしか見れず（hasReviewFinding）、対象箇所が答えに実在するかは
+// 誰も検証していなかった。判定と対象箇所を別フィールドに分けることで、
+// 対象箇所＝答えからの引用であることをコード側で照合できるようにする
 const REVIEW_SLOTS: Record<SecondaryRole, { label: string; task: string; slots: string }> = {
   skeptic: {
     label: '崩れる点',
     task: 'この答えのうち、最も崩れやすい箇所を1つだけ挙げる',
-    slots: `崩れる点: （答えの中で最も崩れやすい箇所を1つ、40字以内）
-なぜ: （そこが崩れる理由。2〜3行）
-確度: （高／中／低。答えに確かめられていない断定があれば「未確認: ○○」と続ける）`,
+    slots: `判定: （指摘あり／指摘なし）
+            対象箇所: （最も崩れやすい箇所を、答えの本文から引用する。要約・言い換えはしない。60字以内。指摘なしのときは「―」）
+            根拠: （そこが崩れる理由。2〜3行。答えに確かめられていない断定があれば「未確認: ○○」と続ける）  
+            代替案: （その崩れを避けるには何を直すべきか。1行。指摘なしのときは「―」）`,
   },
   realist: {
     label: '抜けている点',
     task: 'この答えのとおり進めるときに必要なのに、答えに書かれていない点を1つだけ挙げる',
-    slots: `抜けている点: （答えに書かれていない、必要なものを1つ、40字以内）
-なぜ要る: （それが無いと何が起きるか。2〜3行）
-確度: （高／中／低。確かめていない前提があれば「未確認: ○○」と続ける）`,
+    slots: `判定: （指摘あり／指摘なし）
+            対象箇所: （抜けが関わる箇所を、答えの本文から引用する。要約・言い換えはしない。60字以内。指摘なしのときは「―」）
+            根拠: （それが無いと何が起きるか。2〜3行。確かめていない前提があれば「未確認: ○○」と続ける）
+            代替案: （何を補えばよいか。1行。指摘なしのときは「―」）`,
   },
   optimist: {
     label: '別の見方',
     task: 'この答えが採らなかった筋を1つだけ挙げる',
-    slots: `別の見方: （答えが採らなかった筋を1つ、40字以内）
-効く条件: （その筋が答えの筋に勝つのはどんな状況か。2〜3行）
-確度: （高／中／低。確かめていない前提があれば「未確認: ○○」と続ける）`,
+    slots: `判定: （指摘あり／指摘なし）  
+            対象箇所: （答えが採った筋を示す箇所を、答えの本文から引用する。要約・言い換えはしない。60字以内。指摘なしのときは「―」）
+            根拠: （別の筋が答えの筋に勝つのはどんな状況か。2〜3行。確かめていない前提があれば「未確認: ○○」と続ける）
+            代替案: （採るべき別の筋を1行で。指摘なしのときは「―」）`,
   },
 }
 
@@ -207,10 +218,12 @@ ${task}。
 - 挨拶、相槌、「なるほど」「たしかに」「〜ですね」のような会話としての受け答えを書かない。
 - 誰でも最初に思いつく一般論を書かない。答えに実際に書かれている中身に即して指摘する。
 - 挙げるのは1つだけ。2つ以上並べると平均化して、他の体と同じ内容になる。
-- 指摘が思いつかないときに、無理に作らない。その場合は「指摘なし」の1行だけを書く。
-  無い指摘をひねり出すほうが、指摘が無いことより有害だ。
+- 対象箇所は答えの文言を変えずに引用する。要約・言い換え・でっち上げをしない。
+  答えに実在しない引用は、判定を「指摘あり」にしていても指摘ごと捨てられる。
+- 指摘が思いつかないときに、無理に作らない。その場合は判定に「指摘なし」とだけ書き、
+  対象箇所と代替案には「―」を書く。無い指摘をひねり出すほうが、指摘が無いことより有害だ。
 
-【出力形式】以下の3行だけを、この見出しのまま書く。前置きも後書きも書かない。
+【出力形式】以下の4行だけを、この見出しのまま書く。前置きも後書きも書かない。
 見出しも本文も、答えと同じ言語で書く。
 ${slots}`
 }
@@ -229,7 +242,7 @@ export function buildReviewMessages(
     : trimmed
   return [{
     role: 'user',
-    content: `【問い】\n${question}\n\n【答え】\n${body}\n\n【あなたの作業】\n${REVIEW_SLOTS[role].task}。指定された3行の形式だけで書く。答えは書き直さない。`,
+    content: `【問い】\n${question}\n\n【答え】\n${body}\n\n【あなたの作業】\n${REVIEW_SLOTS[role].task}。指定された4行の形式だけで書く。対象箇所は答えからの引用のみ。答えは書き直さない。`,
   }]
 }
 
@@ -255,7 +268,7 @@ export function needsMultiBody(messages: OpenAI.Chat.ChatCompletionMessageParam[
 
 // 「指摘が出たか」を真偽値で持たせるための判定。
 //
-// 副体は指摘が思いつかないとき「指摘なし」と書く（buildReviewSystemPrompt の禁止事項）。
+// 副体は指摘が思いつかないとき判定に「指摘なし」と書く（buildReviewSystemPrompt の禁止事項）。
 // これを本文の文字列でしか判別できないと、読む側それぞれが自前で文字列を見ることになり、
 // 文面が揺れた瞬間に静かに壊れる。判定はここ1箇所に置き、結果を SSE の body_done と
 // content_blocks の payload（BodyPerspective.hasFinding）へ構造として載せる。
@@ -264,15 +277,75 @@ export function needsMultiBody(messages: OpenAI.Chat.ChatCompletionMessageParam[
 // finally）ので、「指摘が無かった」ではなく「カードが欠けた」状態だが、
 // どちらも "指摘は出ていない" 側なので同じ false でよい。
 //
-// 見るのは1行目だけ。「指摘なし」は単独行か、見出しの値（「崩れる点: 指摘なし」）として
-// 出る。全文を対象にすると、本物の指摘の途中に出てきた同じ語で false へ倒れる。
+// 判定は「判定:」フィールドを見る。見つからない（形式が崩れた）出力だけ1行目へ落ちる。
 //
 // [要判断] 判定できるのは日本語だけ。副体は「答えと同じ言語で書く」ので、英語の答えには
 // "No issues" が返る。日本語以外を扱い始めるときに拡張する
 const NO_FINDING_PATTERN = /指摘(は)?(特に)?(ありません|ございません|なし|無し)/
 
-export function hasReviewFinding(content: string): boolean {
+// 引用として認める最短の連続一致長（空白等を除いた後）。これより短いと答えのほぼ
+// どの一文にも部分一致してしまい、「引用の強制」が意味を持たなくなる
+const MIN_QUOTE_CHARS = 6
+
+// 空白・改行・引用符の違いだけで照合が壊れないようにする（副体は対象箇所を
+// 「」で囲んだり、句読点の前後にスペースを入れたりすることがある）
+function normalizeForQuoteCheck(s: string): string {
+  return s.replace(/[\s「」『』"'’“”…]/g, '')
+}
+
+// 対象箇所「全体」が答えの部分文字列である必要はない。実際のモデル出力は
+// 「GET /api/todos」のように答えを引用しつつ、それを説明する地の文を同じ行に
+// 混ぜて書く（禁止事項で「一字一句引用する」と明示しても、この書き方は消えなかった）。
+// 見るのは「MIN_QUOTE_CHARS文字以上、答えと連続一致する区間が対象箇所の中に
+// 1つでもあるか」だけ。これなら地の文が混ざっていても本物の引用は拾えるし、
+// 一致区間が皆無なでっち上げ（実測: 存在しない「OECDのEDUstats」）は依然として弾ける
+
+// パラメータ値はそれぞれtargetとanswerという文字列・戻り値はboolean(true or false)
+function hasQuotedSpan(target: string, answer: string): boolean {
+  //targetとanswerの二つの文書を正規化し、それぞれを変数で格納している。
+  const normalizedTarget = normalizeForQuoteCheck(target)
+  const normalizedAnswer = normalizeForQuoteCheck(answer)
+  // targetの文字列が MIN_QUOTE_CHARSよりも短い時はfalseを返す。
+  if (normalizedTarget.length < MIN_QUOTE_CHARS) return false
+  // targetの文字数がoから始まり1個ずつ増えていく中で文字数がはみ出さないところまでループを続ける。
+  for (let i = 0; i + MIN_QUOTE_CHARS <= normalizedTarget.length; i++) {
+    // インデックスiからMIN_QUOTE_CHARSまでの文字分だけを切り出してAnswerにそのまま服割れていたら true
+    if (normalizedAnswer.includes(normalizedTarget.slice(i, i + MIN_QUOTE_CHARS))) return true
+  }
+  return false
+}
+
+// content から「ラベル: 値」の値だけを取り出す。ラベルが行頭に無ければ null
+function extractField(content: string, label: string): string | null {
+  // .split('~')の設計意図は？
+  const line = content.split('\n').find((l) => {
+    //　上で見つけたものをlとし、l全体の文書を変数tとして格納
+    const t = l.trim()
+    // ここもわからん。
+    return t.startsWith(`${label}:`) || t.startsWith(`${label}：`)
+  })
+  if (line === undefined) return null
+  // 変数lineの文書を今探しているこの label 自身の文字数でスライス
+  return line.trim().slice(label.length + 1).trim()
+}
+
+// 「判定」と「対象箇所」の2フィールドで見る。
+//
+// 判定だけを見ていた旧実装では、モデルが「指摘あり」と書きさえすれば対象箇所が
+// 答えに実在するかは誰も確かめていなかった（docs/ROADMAP.md②の完了判定「副体の指摘が
+// 主体の答えに実際に書かれている中身を指している」は、この検証が無いと自動では守れない）。
+// 対象箇所は答えからの一字一句の引用を要求しており（buildReviewSystemPrompt）、
+// answer に実在しない・短すぎて実質どこにでも一致する場合は、判定が「指摘あり」でも
+// false へ倒す。でっち上げた対象箇所を「指摘あり」のまま SSE / content_blocks へ流すと、
+// ⑤（実例の自動公開）に答えを指していない指摘が実例として紛れ込む
+export function hasReviewFinding(content: string, answer: string): boolean {
   const trimmed = content.trim()
   if (!trimmed) return false
-  return !NO_FINDING_PATTERN.test(trimmed.split('\n')[0] ?? '')
+
+  const verdict = extractField(trimmed, '判定') ?? trimmed.split('\n')[0] ?? ''
+  if (NO_FINDING_PATTERN.test(verdict)) return false
+
+  const target = extractField(trimmed, '対象箇所')
+  if (!target) return false
+  return hasQuotedSpan(target, answer)
 }

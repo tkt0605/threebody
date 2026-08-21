@@ -187,7 +187,7 @@ export async function orchestrateMultiBody(
         //
         // hasFinding は「この副体が指摘を出したか」。判定は secondaryPrompt に1箇所だけ
         // 置き、読む側（表示・共有・実例の抽出）が本文の文字列を見ないで済むようにする
-        res.write(`data: ${JSON.stringify({ type: 'body_done', bodyIndex: bodyIdx, hasFinding: hasReviewFinding(content) })}\n\n`)
+        res.write(`data: ${JSON.stringify({ type: 'body_done', bodyIndex: bodyIdx, hasFinding: hasReviewFinding(content, answer) })}\n\n`)
       }
     })
   )

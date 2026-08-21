@@ -160,7 +160,9 @@ describe('orchestrateMultiBody', () => {
   it('body_done に hasFinding を載せる（指摘あり / 指摘なし）', async () => {
     mockByModel({
       'primary-model': long('答え'),
-      'secondary-a': '崩れる点: 出典が未確認\nなぜ: …\n確度: 中',
+      // 対象箇所は主体の答え（long('答え') の反復部分）からの実在する引用にする。
+      // hasReviewFinding は判定だけでなく、対象箇所が答えに実在するかも見る
+      'secondary-a': '判定: 指摘あり\n対象箇所: 方針としては段階的に進めるのが良いと考えます\n根拠: 具体策が書かれていない\n代替案: 最初の一歩を明記する',
       'secondary-b': '指摘なし',
     })
     const { res, events } = fakeRes()

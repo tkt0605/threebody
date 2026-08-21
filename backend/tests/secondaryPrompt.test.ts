@@ -119,20 +119,36 @@ describe('resolveSecondaryRole', () => {
 // 上の buildSecondary* は実験専用へ降格した旧・統合方式のもの。
 // 本番の副体はここから下の buildReview* を通る
 describe('buildReviewSystemPrompt', () => {
-  it('役ごとに別の見出しを要求する（見る対象が問いから答えへ移っても割れ方は保つ）', () => {
+  it('役ごとに別の対象を検証させる（見る対象が問いから答えへ移っても割れ方は保つ）', () => {
     const skeptic  = buildReviewSystemPrompt('skeptic')
     const optimist = buildReviewSystemPrompt('optimist')
     const realist  = buildReviewSystemPrompt('realist')
 
-    expect(skeptic).toContain('崩れる点:')
-    expect(optimist).toContain('別の見方:')
-    // realist は「最初の一手」から「抜けている点」へ。答えが既にあるので、
+    expect(skeptic).toContain('崩れやすい箇所')
+    // realist は「最初の一手」から「抜けが関わる箇所」へ。答えが既にあるので、
     // 着手の一手ではなく答えの欠落を見る役に変わった
-    expect(realist).toContain('抜けている点:')
-    expect(realist).not.toContain('最初の一手:')
+    expect(realist).toContain('抜けが関わる箇所')
+    expect(realist).not.toContain('最初の一手')
+    expect(optimist).toContain('答えが採った筋')
 
-    expect(skeptic).not.toContain('別の見方:')
-    expect(optimist).not.toContain('崩れる点:')
+    expect(skeptic).not.toContain('抜けが関わる箇所')
+    expect(optimist).not.toContain('崩れやすい箇所')
+  })
+
+  // 見出し（カードのラベル）と判定・対象箇所を別フィールドに分けた。1行目の文字列
+  // だけを見ていた旧実装では、対象箇所が答えに実在するかを誰も検証していなかった
+  it('4フィールド（判定・対象箇所・根拠・代替案）の形式を要求する', () => {
+    const prompt = buildReviewSystemPrompt('skeptic')
+    expect(prompt).toContain('判定:')
+    expect(prompt).toContain('対象箇所:')
+    expect(prompt).toContain('根拠:')
+    expect(prompt).toContain('代替案:')
+  })
+
+  it('対象箇所を答えからの引用に限定する', () => {
+    const prompt = buildReviewSystemPrompt('skeptic')
+    expect(prompt).toContain('答えの文言を変えずに引用する')
+    expect(prompt).toContain('答えに実在しない引用は')
   })
 
   // 検算が答えを書き直し始めると、画面に答えが2つ並ぶ。
@@ -217,28 +233,53 @@ describe('reviewRoleLabel', () => {
 // 「指摘が出たか」の判定はここ1箇所だけ。SSE の body_done と content_blocks の payload の
 // 両方がこの結果を運ぶので、ここが緩むと後段（実例の自動抽出）が丸ごとずれる
 describe('hasReviewFinding', () => {
-  it('形式どおりの指摘は true', () => {
-    expect(hasReviewFinding('崩れる点: 出典が未確認\nなぜ: …\n確度: 中')).toBe(true)
+  const answer = '認証はセッションCookieで行い、トークンの有効期限は24時間とする。'
+
+  it('対象箇所が答えに実在する引用なら true', () => {
+    const content = '判定: 指摘あり\n対象箇所: トークンの有効期限は24時間とする\n根拠: 短すぎて頻繁に再ログインが必要になる\n代替案: 7日程度に延ばす'
+    expect(hasReviewFinding(content, answer)).toBe(true)
   })
 
-  it('逃げ道（指摘なし）は false', () => {
-    expect(hasReviewFinding('指摘なし')).toBe(false)
-    expect(hasReviewFinding('  指摘なし。 ')).toBe(false)
-    expect(hasReviewFinding('指摘は特にありません')).toBe(false)
+  it('判定が「指摘なし」なら false', () => {
+    expect(hasReviewFinding('判定: 指摘なし\n対象箇所: ―\n根拠: ―\n代替案: ―', answer)).toBe(false)
+    expect(hasReviewFinding('指摘なし', answer)).toBe(false)
+    expect(hasReviewFinding('指摘は特にありません', answer)).toBe(false)
   })
 
-  it('見出しの値として「指摘なし」と書かれた場合も false', () => {
-    expect(hasReviewFinding('抜けている点: 指摘なし\nなぜ要る: —\n確度: 高')).toBe(false)
+  // 判定だけを見ていた旧実装の穴。「指摘あり」と書きさえすれば対象箇所が答えに
+  // 実在するかは誰も確かめていなかった
+  it('対象箇所が答えに実在しない（でっち上げ）なら、判定が「指摘あり」でも false', () => {
+    const content = '判定: 指摘あり\n対象箇所: 存在しないOECDのEDUstats\n根拠: 出典が不明\n代替案: 出典を明記する'
+    expect(hasReviewFinding(content, answer)).toBe(false)
   })
 
-  // 全文を対象にすると、本物の指摘の途中に出てきた同じ語で false へ倒れる。
-  // 逃げ道は必ず1行目に出る（buildReviewSystemPrompt の指示）ので、見るのは1行目だけ
-  it('本文の途中に出てきた「指摘なし」では false にしない', () => {
-    expect(hasReviewFinding('崩れる点: 検証手段が無い\nなぜ: 指摘なしと区別できない\n確度: 中')).toBe(true)
+  // 短すぎる対象箇所は答えのほぼどの一文にも部分一致してしまい、引用の強制が意味を持たない
+  it('対象箇所が短すぎるなら false', () => {
+    const content = '判定: 指摘あり\n対象箇所: とする\n根拠: …\n代替案: …'
+    expect(hasReviewFinding(content, answer)).toBe(false)
+  })
+
+  it('対象箇所の行が無ければ false（判定だけでは指摘を認めない）', () => {
+    const content = '判定: 指摘あり\n根拠: …\n代替案: …'
+    expect(hasReviewFinding(content, answer)).toBe(false)
+  })
+
+  // 副体は対象箇所を「」で囲んだり、句読点の前後にスペースを入れることがある
+  it('空白・引用符の違いは引用照合の邪魔をしない', () => {
+    const content = '判定: 指摘あり\n対象箇所: 「トークンの有効期限は 24時間 とする」\n根拠: …\n代替案: …'
+    expect(hasReviewFinding(content, answer)).toBe(true)
   })
 
   it('空（副体が落ちた）は false', () => {
-    expect(hasReviewFinding('')).toBe(false)
-    expect(hasReviewFinding('   \n ')).toBe(false)
+    expect(hasReviewFinding('', answer)).toBe(false)
+    expect(hasReviewFinding('   \n ', answer)).toBe(false)
+  })
+
+  // 実測（ToDoアプリの設計相談）: モデルは「一字一句引用する」と指示しても、引用の前後に
+  // 説明の地の文を混ぜて書く。対象箇所"全体"が答えの部分文字列であることを要求すると、
+  // 判定が「指摘あり」でも一致せず false へ倒れていた（旧実装の穴）
+  it('引用に説明の地の文が混ざっていても、答えからの一致区間があれば true', () => {
+    const content = '判定: 指摘あり\n対象箇所: 「トークンの有効期限は24時間とする」のように短い値を決め打ちしている部分\n根拠: …\n代替案: …'
+    expect(hasReviewFinding(content, answer)).toBe(true)
   })
 })
