@@ -168,6 +168,7 @@ function handleCopyClick(event: MouseEvent) {
             他の体がこの答えを検算
             <span class="flex-1 border-t border-dashed border-black/10 dark:border-white/10" />
           </div>
+          <!-- ここは二・三体の答えの出力フィールド -->
           <div class="grid gap-2" :class="block.bodies.length > 1 ? 'grid-cols-2' : 'grid-cols-1'">
             <div
               v-for="b in block.bodies"
