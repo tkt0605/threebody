@@ -2,13 +2,15 @@
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../lib/supabase'
+import { takePostLogin } from '../lib/postLogin'
 
 const router = useRouter()
 
 onMounted(async () => {
   // PKCE: URLの ?code= をトークンと交換する
   const { error } = await supabase.auth.exchangeCodeForSession(window.location.href)
-  router.replace(error ? '/login' : '/')
+  // 共有ページから来た人は、押したときの行き先（問いを載せたURL）へ戻す
+  router.replace(error ? '/login' : (takePostLogin() ?? '/'))
 })
 </script>
 

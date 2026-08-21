@@ -18,6 +18,7 @@ import { useVoiceNarration } from '../composables/useVoiceNarration'
 import { useSettings, isBodyUsable, hasOwnCloudKey } from '../composables/useSettings'
 import { useCapabilities } from '../composables/useCapabilities'
 import { useChatAnnouncer } from '../composables/useChatAnnouncer'
+import { useSharedTurn } from '../composables/useSharedTurn'
 import { useAuth } from '../composables/useAuth'
 import type { Message } from '../types/message'
 
@@ -26,6 +27,7 @@ const { settings } = useSettings()
 const { sharedKey, ollama, refreshCapabilities } = useCapabilities()
 const { user } = useAuth()
 const { announce } = useChatAnnouncer()
+const { loadLiveTokens } = useSharedTurn()
 
 const route  = useRoute()
 const router = useRouter()
@@ -39,6 +41,15 @@ async function syncRouteConversation() {
 
 onMounted(syncRouteConversation)
 watch(() => route.params.id, syncRouteConversation)
+
+// 共有ページ（ROADMAP ③）から「同じ問いを自分のモデルで検算させる」で来た人の問い。
+// 入力欄に入れるだけで送信はしない。無料枠を1回使う操作を、本人が押していないうちに
+// 始めないため。読むのはマウント時の1回だけで、以降は普通の入力欄に戻る
+const askFromShare = typeof route.query.ask === 'string' ? route.query.ask : ''
+
+// 共有状態（どのターンを公開しているか）は自分のぶんだけを1回引く。
+// MessageBubble の「この検算を共有する」がここを読む
+onMounted(loadLiveTokens)
 
 // 共有キーの残り回数はログイン状態で変わるため、マウント時と認証状態が変わるたびに取り直す
 watch(() => user.value?.id, refreshCapabilities, { immediate: true })
@@ -423,7 +434,7 @@ watch(
         <!-- 文字で始める入口。音声認識に対応しないブラウザ（Firefox等）ではここが唯一の入口になり、
              対応ブラウザでも「声に出したくない・出せない」場面の逃げ道になる -->
         <div class="w-full max-w-md space-y-1.5">
-          <TextComposer :disabled="generating" @send="handleTextSend" />
+          <TextComposer :disabled="generating" :initial-text="askFromShare" @send="handleTextSend" />
           <p class="text-center text-[11px] text-gray-400 dark:text-white/25">
             {{ startHint }}
           </p>
@@ -454,7 +465,7 @@ watch(
               />
             </div>
             <!-- 会話の途中でも声と文字を混ぜられるようにする（片方に決め打たない） -->
-            <TextComposer class="flex-1 min-w-0" :disabled="generating" @send="handleTextSend" />
+            <TextComposer class="flex-1 min-w-0" :disabled="generating" :initial-text="askFromShare" @send="handleTextSend" />
           </div>
         </div>
       </template>

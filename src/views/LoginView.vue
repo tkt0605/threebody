@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useRoute } from 'vue-router'
 import ThreeBodyLogo from '../components/ThreeBodyLogo.vue'
 import { useAuth } from '../composables/useAuth'
+import { rememberPostLogin } from '../lib/postLogin'
 
 const { loginWithGoogle } = useAuth()
+const route = useRoute()
 
 const error   = ref('')
 const loading = ref(false)
@@ -13,6 +16,9 @@ async function onGoogleLogin() {
   error.value   = ''
   loading.value = true
   try {
+    // 行き先はブラウザに預けてから出る。Google から戻る先は固定で、途中の意図を運べない
+    const next = route.query.next
+    if (typeof next === 'string') rememberPostLogin(next)
     // 成功時は Google にリダイレクトするためここには戻らない
     await loginWithGoogle()
   } catch (err) {
