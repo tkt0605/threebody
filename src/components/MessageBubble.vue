@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useFeedback } from '../composables/useFeedback'
-import type { ErrorBlock } from '../types/message'
+import type { BodyPerspective, ErrorBlock } from '../types/message'
 import { marked } from 'marked'
 import type { Message } from '../types/message'
 import DOMPurify from 'dompurify'
@@ -68,6 +68,16 @@ async function report(block: ErrorBlock, i: number): Promise<void>{
 }
 function roleColor(bodyIndex: number): string {
   return BODY_ROLE_COLORS[bodyIndex] ?? '#8b8b8b'
+}
+
+// 「指摘なし」で確定した体、および中身が空のまま確定した体を畳む。
+// done === false（判定未確定・ストリーミング中の一時的な空文字を含む）と
+// hasFinding === undefined（旧データ・旧バックエンド）は「不明」として残すが、
+// 空文字だけは別。toContentBlock（lib/contentBlocks.ts）がリロード時に done を
+// 強制的に true へ立て直すため、中断されたターンの「まだ何も書いていない体」が
+// 「確定済みだが空」というノイズになって出てくる
+function visibleBodies(bodies: BodyPerspective[]): BodyPerspective[] {
+  return bodies.filter(b => !(b.done === true && (b.hasFinding === false || !b.content.trim())))
 }
 
 marked.setOptions({ breaks: true })
@@ -162,16 +172,16 @@ function handleCopyClick(event: MouseEvent) {
         />
         <!-- 検算カードは本文の下に並ぶ。仕切りを上に置くのは、カードが「この答えを読んだ結果」
              であることを、読む順序そのもので示すため -->
-        <div v-else-if="block.type === 'perspective' && block.bodies.length > 0" class="space-y-2 mt-4">
+        <div v-else-if="block.type === 'perspective' && visibleBodies(block.bodies).length > 0" class="space-y-2 mt-4">
           <div class="flex items-center gap-2 text-[10px] tracking-wide text-gray-400 dark:text-white/30">
             <span class="flex-1 border-t border-dashed border-black/10 dark:border-white/10" />
             他の体がこの答えを検算
             <span class="flex-1 border-t border-dashed border-black/10 dark:border-white/10" />
           </div>
           <!-- ここは二・三体の答えの出力フィールド -->
-          <div class="grid gap-2" :class="block.bodies.length > 1 ? 'grid-cols-2' : 'grid-cols-1'">
+          <div class="grid gap-2" :class="visibleBodies(block.bodies).length > 1 ? 'grid-cols-2' : 'grid-cols-1'">
             <div
-              v-for="b in block.bodies"
+              v-for="b in visibleBodies(block.bodies)"
               :key="b.bodyIndex"
               class="rounded-xl border px-3 py-2.5 text-xs leading-relaxed bg-black/[0.02] dark:bg-white/[0.03]"
               :style="{ borderColor: roleColor(b.bodyIndex) + '40' }"

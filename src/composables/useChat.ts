@@ -660,6 +660,12 @@ export function useChat() {
     // 同じ主キーで二重 insert になるため（awaitを跨いで savedRow を読ませない）
     let savedRow    = false
     let savedLength = 0
+    // 検算カード（perspective）は本文の後ろでストリーミングされるため、本文の
+    // 長さだけを見る savedLength では「本文は保存済みだが体の中身が増えた」を
+    // 検知できない。body_start/body_text/body_done のたびに bodiesVersion を
+    // 進め、保存済みのバージョンと比べて別途変化を検知する
+    let savedBodiesVersion = 0
+    let bodiesVersion = 0
     let pendingWrite: Promise<unknown> | null = null
     let saveTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -668,12 +674,14 @@ export function useChat() {
       pendingWrite = (async () => {
         await prev?.catch(() => undefined)
         const content = block.content
-        // 一文字も届いていないうちは行を作らない（空バブルをDBに残さない）。
-        // 前回から伸びていなければ書く意味も無い
-        if (!content || content.length === savedLength) return
+        // 一文字も届いていないうちは行を作らない（空バブルをDBに残さない）
+        if (!content) return
+        // 前回から本文も検算カードも変わっていなければ書く意味も無い
+        if (content.length === savedLength && bodiesVersion === savedBodiesVersion) return
         if (savedRow) await updatePersistedMessage(reactiveMsg, null)
         else { await persistMessage(reactiveMsg); savedRow = true }
         savedLength = content.length
+        savedBodiesVersion = bodiesVersion
       })().catch(err => console.error('応答の保存に失敗しました', err))
     }
 
@@ -765,11 +773,17 @@ export function useChat() {
                 content:   '',
                 done:      false,
               })
+              bodiesVersion++
+              scheduleSave()
             }
             if (parsed.type === 'body_text' && parsed.bodyIndex != null && parsed.content) {
               const perspectiveBlock = reactiveMsg.blocks.find((b): b is PerspectiveBlock => b.type === 'perspective')
               const entry = perspectiveBlock?.bodies.find(b => b.bodyIndex === parsed.bodyIndex)
-              if (entry) entry.content += parsed.content
+              if (entry) {
+                entry.content += parsed.content
+                bodiesVersion++
+                scheduleSave()
+              }
             }
             if (parsed.type === 'body_done' && parsed.bodyIndex != null) {
               pendingBodies.value = pendingBodies.value.filter(b => b.bodyIndex !== parsed.bodyIndex)
@@ -781,6 +795,8 @@ export function useChat() {
                 // 「指摘が出たか」は backend が判定して body_done で送る。届かない場合
                 // （古いバックエンド）は書き込まず、不明のまま残す
                 if (parsed.hasFinding != null) entry.hasFinding = parsed.hasFinding
+                bodiesVersion++
+                scheduleSave()
               }
             }
             if (parsed.type === 'answer_start') {
