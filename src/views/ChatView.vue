@@ -45,7 +45,7 @@ watch(() => route.params.id, syncRouteConversation)
 // 共有ページ（ROADMAP ③）から「同じ問いを自分のモデルで検算させる」で来た人の問い。
 // 入力欄に入れるだけで送信はしない。無料枠を1回使う操作を、本人が押していないうちに
 // 始めないため。読むのはマウント時の1回だけで、以降は普通の入力欄に戻る
-const askFromShare = typeof route.query.ask === 'string' ? route.query.ask : ''
+const askFromShare = ref(typeof route.query.ask === 'string' ? route.query.ask : '')
 
 // 共有状態（どのターンを公開しているか）は自分のぶんだけを1回引く。
 // MessageBubble の「この検算を共有する」がここを読む
@@ -231,6 +231,7 @@ function requestVoiceDialog() {
 // 声で始めた会話は声で返し、文字で始めた会話は文字で返す
 function handleTextSend(text: string) {
   if (!canSend.value) { limitDialog.value?.open(); return }
+  askFromShare.value = ''
   sendMessage(text)
 }
 
