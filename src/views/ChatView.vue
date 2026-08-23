@@ -44,8 +44,8 @@ watch(() => route.params.id, syncRouteConversation)
 
 // 共有ページ（ROADMAP ③）から「同じ問いを自分のモデルで検算させる」で来た人の問い。
 // 入力欄に入れるだけで送信はしない。無料枠を1回使う操作を、本人が押していないうちに
-// 始めないため。読むのはマウント時の1回だけで、以降は普通の入力欄に戻る
-const askFromShare = typeof route.query.ask === 'string' ? route.query.ask : ''
+// 始めないため。送信時に ?ask= ごとURLから消すので、以降は普通の入力欄に戻る
+const askFromShare = computed(() => typeof route.query.ask === 'string' ? route.query.ask : '')
 
 // 共有状態（どのターンを公開しているか）は自分のぶんだけを1回引く。
 // MessageBubble の「この検算を共有する」がここを読む
@@ -229,8 +229,17 @@ function requestVoiceDialog() {
 // narration.begin() を呼ばないのが音声経路との唯一の違いで、これは意図的：
 // 文字で打った人は画面を見ているので、答えを声で読み上げられると邪魔になる。
 // 声で始めた会話は声で返し、文字で始めた会話は文字で返す
-function handleTextSend(text: string) {
+async function handleTextSend(text: string) {
   if (!canSend.value) { limitDialog.value?.open(); return }
+  // sendMessage は messages.value.push を同期で行い、その瞬間にテンプレートの分岐が
+  // 切り替わって TextComposer が別インスタンスとして再マウントされる（askFromShare を
+  // initial-text として読み直す）。router.replace の完了を待たずに sendMessage を呼ぶと、
+  // ?ask= がURLから消える前に新インスタンスが古い値のままマウントされてしまうため、
+  // 必ず先に replace を待ってから送信する
+  if (route.query.ask) {
+    const { ask: _ask, ...rest } = route.query
+    await router.replace({ query: rest })
+  }
   sendMessage(text)
 }
 
