@@ -376,35 +376,29 @@ watch(
     <AppHeader />
 
     <main class="flex-1 min-h-0 flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950 ">
-                <!-- いまどのキーで答えているか。共有キーの使用状況と、Ollamaへ落ちている
-                     ことの表示を1つの帯にまとめる（上限到達後もここで「使い切った」ことが分かる） -->
-          <div
-            v-if="usingLocalLLM || usingSharedKey"
-            class="shrink-0 text-center text-xs py-1.5"
-            :class="usingLocalLLM
-              ? 'text-emerald-700/90 bg-emerald-600/8 dark:text-emerald-300/80 dark:bg-emerald-400/10'
-              : limitReached
-                ? 'text-amber-600/90 bg-amber-500/10 dark:text-amber-300/90 dark:bg-amber-400/10'
-                : 'text-indigo-600/80 bg-indigo-600/8 dark:text-indigo-300/80 dark:bg-indigo-500/10'"
-          >
-          <!-- Ollamaを最優先で判定する。共有キーが尽きた状態は usingSharedKey と
-               usingLocalLLM が同時に真になるが、実際に答えるのはOllamaなので、
-               「上限に達しました」だけを出すと答えが返ってくる事実と食い違う -->
-          <template v-if="usingLocalLLM">
-            ローカルLLMを使用中<template v-if="limitReached">（無料お試し枠は本日ぶん終了）</template>
-          </template>
-          <!-- 全体枠で止まっている場合、このユーザーの使用回数は0回のこともある。
-               個人枠の「3/3回」を出すと事実と違う表示になるため文言ごと分ける -->
-          <template v-else-if="sharedKey.reason === 'global_limit_reached'">
-            本日ぶんの無料お試し枠（全体）が終了しました。明日また使えます。
-          </template>
-          <template v-else-if="sharedKey.reason === 'limit_reached'">
-            共有キーの使用量が上限に達しました。（本日{{ sharedKey.dailyLimit }}/{{ sharedKey.dailyLimit }}回）
-          </template>
-          <template v-else>
-            共有キーで利用中：本日あと{{ sharedKey.remaining }}/{{ sharedKey.dailyLimit }}回
-          </template>
-        </div>
+      <!-- いまどのキーで答えているか。共有キーの使用状況と、Ollamaへ落ちていることの表示を1つの帯にまとめる（上限到達後もここで「使い切った」ことが分かる） -->
+      <div v-if="usingLocalLLM || usingSharedKey" 
+        class="shrink-0 text-center text-xs py-1.5":class="usingLocalLLM
+        ? 'text-emerald-700/90 bg-emerald-600/8 dark:text-emerald-300/80 dark:bg-emerald-400/10'
+        : limitReached
+        ? 'text-amber-600/90 bg-amber-500/10 dark:text-amber-300/90 dark:bg-amber-400/10'
+        : 'text-indigo-600/80 bg-indigo-600/8 dark:text-indigo-300/80 dark:bg-indigo-500/10'"
+      >
+        <!-- Ollamaを最優先で判定する。共有キーが尽きた状態は usingSharedKey と usingLocalLLM が同時に真になるが、実際に答えるのはOllamaなので、「上限に達しました」だけを出すと答えが返ってくる事実と食い違う -->
+        <template v-if="usingLocalLLM">
+          ローカルLLMを使用中<template v-if="limitReached">（無料お試し枠は本日ぶん終了）</template>
+        </template>
+        <!-- 全体枠で止まっている場合、このユーザーの使用回数は0回のこともある。個人枠の「3/3回」を出すと事実と違う表示になるため文言ごと分ける -->
+        <template v-else-if="sharedKey.reason === 'global_limit_reached'">
+          本日ぶんの無料お試し枠（全体）が終了しました。明日また使えます。
+        </template>
+        <template v-else-if="sharedKey.reason === 'limit_reached'">
+          共有キーの使用量が上限に達しました。（本日{{ sharedKey.dailyLimit }}/{{ sharedKey.dailyLimit }}回）
+        </template>
+        <template v-else>
+          共有キーで利用中：本日あと{{ sharedKey.remaining }}/{{ sharedKey.dailyLimit }}回
+        </template>
+      </div>
       <!-- APIキー・モデル未設定：脳みそがまだない -->
       <div v-if="!hasActiveBody" class="flex-1 flex items-center justify-center">
         <EmptyBrainState :shared-key="sharedKey" @open-settings="appAside?.openSettings()" />
