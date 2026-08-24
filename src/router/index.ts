@@ -10,7 +10,11 @@ import { supabase }  from '../lib/supabase'
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/',             component: ChatView,     meta: { requiresAuth: true } },
+    { path: '/',              component: ChatView,     meta: { requiresAuth: true } },
+    // 「新規会話」の行き先。/ と違い、ここにいる間は最近の会話への解決（ensureConversation）を
+    // 一切行わない。/ のままだとリロード時に「直近の会話」へ解決されてしまい、
+    // 新規会話のつもりが古い会話に戻ってしまう
+    { path: '/new',           component: ChatView,     meta: { requiresAuth: true } },
     // 会話ごとにURLを分けて識別できるようにする（/ はensure後にここへ置換される）
     { path: '/c/:id',        component: ChatView,     meta: { requiresAuth: true } },
     { path: '/login',        component: LoginView    },

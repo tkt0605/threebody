@@ -22,7 +22,7 @@ import { useSharedTurn } from '../composables/useSharedTurn'
 import { useAuth } from '../composables/useAuth'
 import type { Message } from '../types/message'
 
-const { messages, sendMessage, cancelGeneration, openConversation, aiState, currentConversationId } = useChat()
+const { messages, sendMessage, cancelGeneration, openConversation, startNewConversation, loadConversations, aiState, currentConversationId } = useChat()
 const { settings } = useSettings()
 const { sharedKey, ollama, refreshCapabilities } = useCapabilities()
 const { user } = useAuth()
@@ -33,14 +33,23 @@ const route  = useRoute()
 const router = useRouter()
 
 // /c/:id があればその会話を開く。無ければensure/新規会話待ちの結果をcurrentConversationIdへ反映するだけで、
-// URLへの反映はしない（下のwatch(currentConversationId, ...)に一本化し、二重ナビゲーションを避ける）
+// URLへの反映はしない（下のwatch(currentConversationId, ...)に一本化し、二重ナビゲーションを避ける）。
+// /new にいる間は openConversation（＝ensureConversation経由の「直近の会話」への解決）を呼ばない。
+// リロードでここへ戻ってきても、startNewConversation() で画面を空にするだけに留める
 async function syncRouteConversation() {
   const routeId = typeof route.params.id === 'string' ? route.params.id : undefined
+  if (route.path === '/new') { 
+    startNewConversation()
+    await loadConversations()
+    return 
+  }
   await openConversation(routeId)
 }
 
 onMounted(syncRouteConversation)
-watch(() => route.params.id, syncRouteConversation)
+// route.params.id だけを見ると、/ ⇔ /new のように :id を持たない同士の遷移では
+// どちらも undefined のままで変化が無く、watch が発火しない。path も併せて見る
+watch(() => [route.path, route.params.id], syncRouteConversation)
 
 // 共有ページ（ROADMAP ③）から「同じ問いを自分のモデルで検算させる」で来た人の問い。
 // 入力欄に入れるだけで送信はしない。無料枠を1回使う操作を、本人が押していないうちに
@@ -55,10 +64,10 @@ onMounted(loadLiveTokens)
 watch(() => user.value?.id, refreshCapabilities, { immediate: true })
 
 // currentConversationIdが確定した瞬間（ページ読み込み時のensure、または「新規会話」からの
-// 最初のメッセージ送信でconversationsに行が作られた瞬間）に、"/" のままだったURLを /c/<id> に反映する。
-// URL同期はここ1箇所だけで行う
+// 最初のメッセージ送信でconversationsに行が作られた瞬間）に、"/" または "/new" のままだった
+// URLを /c/<id> に反映する。URL同期はここ1箇所だけで行う
 watch(currentConversationId, (id) => {
-  if (id && route.path === '/') router.replace(`/c/${id}`)
+  if (id && (route.path === '/' || route.path === '/new')) router.replace(`/c/${id}`)
 })
 
 const voiceActive = ref(false)

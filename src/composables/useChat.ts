@@ -928,5 +928,6 @@ export function useChat() {
     messages, sendMessage, stopGeneration, cancelGeneration, aiState, pendingBodies, openConversation, deleteMessage, retryMessage,
     conversations, currentConversationId, currentConversation,
     startNewConversation, deleteConversation, renameConversation,
+    loadConversations,
   }
 }

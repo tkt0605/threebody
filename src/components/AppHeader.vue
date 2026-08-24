@@ -25,7 +25,7 @@ function closeMenu() { menuOpen.value = false }
 function handleNewConversation() {
   menuOpen.value = false
   startNewConversation()
-  router.push('/')
+  router.push('/new')
 }
 
 const editingTitle = ref(false)

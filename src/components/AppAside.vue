@@ -35,11 +35,6 @@ async function handleLogout() {
   console.log('Logged out and redirected to login page')
 }
 
-function goChat() {
-  router.push(currentConversationId.value ? `/c/${currentConversationId.value}` : '/')
-  closeAside()
-}
-
 function openSettings() {
   settingsDialog.value?.open()
   closeAside()
@@ -52,7 +47,7 @@ function selectConversation(id: string) {
 
 function handleNewConversation() {
   startNewConversation()
-  router.push('/')
+  router.push('/new')
   closeAside()
 }
 
@@ -118,19 +113,19 @@ defineExpose({ openSettings })
         </svg>
         設定
       </button>
-            <button
+      <button
         class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer"
-        :class="route.path === '/' || route.path.startsWith('/c/')
+        :class="route.path === '/new' || route.path.startsWith('/c/')
           ? 'bg-indigo-600/12 text-indigo-600 dark:text-indigo-400'
           : 'text-gray-600 hover:text-gray-900 hover:bg-black/5 dark:text-white/55 dark:hover:text-white/90 dark:hover:bg-white/6'"
-        @click="goChat"
+        @click="handleNewConversation"
       >
       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M8 7V5a3 3 0 0 1 3-3h7a3 3 0 0 1 3 3v5a3 3 0 0 1-3 3h-1" />
         <path d="M6 7h8a3 3 0 0 1 3 3v5a3 3 0 0 1-3 3h-4l-4 3.5V18a3 3 0 0 1-3-3v-5a3 3 0 0 1 3-3z" />
         <path d="M10 10v5M7.5 12.5h5" />
       </svg>
-        チャット
+        新規会話
       </button>
     </div>
 
