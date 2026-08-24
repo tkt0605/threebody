@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { useFeedback } from '../composables/useFeedback'
 import type { BodyPerspective, ErrorBlock } from '../types/message'
 import { marked } from 'marked'
-import { highlightCode } from '../lib/highlighter'
+import { highlightCode, highlighterReady } from '../lib/highlighter'
 import type { Message } from '../types/message'
 import DOMPurify from 'dompurify'
 import { BODY_ROLE_COLORS } from '../constants/bodyProviders'
@@ -117,6 +117,12 @@ ${body}
 marked.use({ renderer })
 
 function renderMarkdown(content: string): string {
+  // highlighterReady を読むことでリアクティブ依存として登録する。shikiの初期化が
+  // 完了した瞬間にこのref経由でテンプレートが再描画され、プレーン表示から
+  // ハイライト済み表示へ切り替わる（renderMarkdown自体はメモ化されていないため、
+  // 値を使わなくても参照するだけで依存が張られる）
+  void highlighterReady.value
+
   // async: false を明示して同期版のオーバーロードを選ぶ。省略すると戻り値の型が
   // string | Promise<string> になり、String() でくるむと Promise のときに
   // 「[object Promise]」がそのまま描画されうる
