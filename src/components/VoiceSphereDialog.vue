@@ -11,6 +11,9 @@ defineProps<{
   generating?:   boolean
   // 生成は終わったが読み上げだけ続いている状態。ChatView 側で判定して渡す
   narrating?:    boolean
+  // 認識中のテキスト（確定分・未確定分）。表示専用で編集はさせない
+  finalText?:    string
+  interimText?:  string
 }>()
 
 const emit = defineEmits<{ 'toggle-mic': []; closed: []; stop: []; 'stop-narration': [] }>()
@@ -50,6 +53,14 @@ defineExpose({ open, close })
           <p v-if="errorMsg" role="alert" class="text-sm text-center max-w-sm text-red-500 dark:text-red-400">
             {{ errorMsg }}
           </p>
+
+          <!-- 認識中のテキスト表示。編集はさせない表示専用（textarea/inputは使わない） -->
+          <div
+            v-if="recording"
+            class="w-full max-w-md min-h-8 px-1 text-sm text-center text-gray-700 dark:text-white/70"
+          >
+            {{ finalText }}{{ interimText }}
+          </div>
 
           <!-- このダイアログは副体が並列で考えている間ずっと開いたままなので、
                「待つしかない」状態を作らないよう、ここからも止められるようにする -->
