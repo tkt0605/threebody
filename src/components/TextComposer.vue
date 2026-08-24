@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, nextTick, computed } from 'vue'
+import { ref, nextTick, computed, onMounted } from 'vue'
 
 // テキストで送るための入力欄。
 //
@@ -35,13 +35,14 @@ const canSubmit = computed(() => !props.disabled && text.value.trim().length > 0
 // 高さを揃えている。24px（leading-6）+ 4 + 4 = 32。
 // この padding は scrollHeight に含まれるので、autosize 側で足す必要はない
 const MAX_HEIGHT = 160
+// ここは、テキストエリアの改行に当てる。
 function autosize() {
   const el = area.value
   if (!el) return
   el.style.height = 'auto'
   el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT)}px`
 }
-
+// ここは取得したテキストを持ってきてautosize()で高さを指定し、sendイベントを起こす。
 function submit() {
   if (!canSubmit.value) return
   const value = text.value.trim()
@@ -54,6 +55,11 @@ function submit() {
 // 日本語入力では変換確定の Enter が先に来るため、変換中は絶対に送信しない。
 // isComposing だけだと一部ブラウザ（旧Safari等）で立たないことがあるので、
 // レガシーな keyCode 229 も併せて見る
+// initialText（共有ページ由来の問い）は @input を経由せず ref へ直接入るため、
+// autosize() が一度も走らないまま rows="1" 相当の高さに固定される。
+// マウント後に1回だけ測り直す
+onMounted(() => nextTick(autosize))
+
 function onKeydown(e: KeyboardEvent) {
   if (e.key !== 'Enter' || e.shiftKey) return
   if (e.isComposing || e.keyCode === 229) return
