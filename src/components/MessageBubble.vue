@@ -322,10 +322,14 @@ function handleCopyClick(event: MouseEvent) {
    v-html で描画される中身にはスコープ属性が付かないため個別に色を指定できないが、
    カスタムプロパティは .prose-content から継承されるので、変数だけ切り替えれば全体に効く */
 .prose-content {
-  --code-bg:          #f4f5f7;
+  /* コード背景はページ地色（bg-gray-50 #f9fafb、ChatView.vue）とのコントラストを
+     意図的に離す。図地分離（Gestalt）はヘッダーバー・枠だけでなく背景の明度差が
+     効いて初めて「浮いて見える」。旧値 #f4f5f7 はページ地色とほぼ同明度（コントラスト比約1.03）
+     で、枠線だけに分離を頼っていた */
+  --code-bg:          #dde0e5;
   --code-fg:          #32363d;
-  --code-border:      #d7dae0;
-  --code-header-bg:   #e9ebef;
+  --code-border:      #c3c8d0;
+  --code-header-bg:   #cdd1d8;
   --code-header-fg:   #4e5561;
   --code-lang-alpha:  0.9;
   --code-inline-bg:   rgba(110, 120, 140, 0.14);
