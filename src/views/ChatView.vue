@@ -491,6 +491,8 @@ watch(
       :error-msg="errorMsg"
       :generating="generating"
       :narrating="narrating"
+      :final-text="finalText"
+      :interim-text="interimText"
       @toggle-mic="handleSphereTap(() => recording ? stop() : start())"
       @stop="handleStop"
       @stop-narration="handleStopNarration"
