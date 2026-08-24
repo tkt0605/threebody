@@ -44,7 +44,7 @@ const answerMessage = computed<Message | null>(() => turn.value && {
 // 宛先は BYOK / Ollama 層で、この層は増えても運営のコストが増えない。
 // 問いは ?ask= で運び、送信まではしない（本人が押していないうちに枠を使わない
 const askHref = computed(() =>
-  turn.value?.question ? `/?ask=${encodeURIComponent(turn.value.question)}` : '/'
+  turn.value?.question ? `/new?ask=${encodeURIComponent(turn.value.question)}` : '/new'
 )
 </script>
 

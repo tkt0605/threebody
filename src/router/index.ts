@@ -10,7 +10,10 @@ import { supabase }  from '../lib/supabase'
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/',              component: ChatView,     meta: { requiresAuth: true } },
+    // / への直接アクセス（ブックマーク・ログイン直後など）は常に新規会話へ。
+    // 以前はChatViewを直接割り当てて最近の会話へ解決していたが、
+    // アクセスするたびに古い会話へ飛ばされるのが分かりにくいためredirectに変更した
+    { path: '/',              redirect: '/new' },
     // 「新規会話」の行き先。/ と違い、ここにいる間は最近の会話への解決（ensureConversation）を
     // 一切行わない。/ のままだとリロード時に「直近の会話」へ解決されてしまい、
     // 新規会話のつもりが古い会話に戻ってしまう

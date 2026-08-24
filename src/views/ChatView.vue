@@ -67,7 +67,7 @@ watch(() => user.value?.id, refreshCapabilities, { immediate: true })
 // 最初のメッセージ送信でconversationsに行が作られた瞬間）に、"/" または "/new" のままだった
 // URLを /c/<id> に反映する。URL同期はここ1箇所だけで行う
 watch(currentConversationId, (id) => {
-  if (id && (route.path === '/' || route.path === '/new')) router.replace(`/c/${id}`)
+  if (id && route.path === '/new') router.replace(`/c/${id}`)
 })
 
 const voiceActive = ref(false)
