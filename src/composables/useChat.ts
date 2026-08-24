@@ -319,22 +319,12 @@ function startNewConversation(): void {
   pendingNewConversation = true
 }
 
-// 現在の会話が無ければ、最終更新が最も新しい会話（無ければ新規作成した会話）を現在の会話にする
+// 現在の会話が無ければ新規作成し、それを現在の会話にする
 async function ensureConversation(userId: string): Promise<string> {
   if (currentConversationId.value) return currentConversationId.value
 
   await ensureUserProfile(userId)
-
-  if (pendingNewConversation) {
-    pendingNewConversation = false
-    return createConversation()
-  }
-
-  if (conversations.value.length > 0) {
-    currentConversationId.value = conversations.value[0]!.id
-    return currentConversationId.value
-  }
-
+  pendingNewConversation = false
   return createConversation()
 }
 
@@ -379,39 +369,16 @@ async function deleteConversation(id: string): Promise<void> {
   }
 }
 
-// URLの /c/:id からの遷移・ページ再読み込み時に呼ぶ。idを渡せばその会話に切り替え、
-// 渡さなければ最後に開いていた（無ければ新規作成した）会話を開く。開いた会話のidを返す
+// URLの /c/:id からの遷移・ページ再読み込み時に呼ぶ。idで指定された会話に切り替える。開いた会話のidを返す
 async function openConversation(id?: string): Promise<string | null> {
   const { user } = useAuth()
-  if (!user.value) return null
+  if (!user.value || !id) return null
 
   await loadConversations()
 
-  if (id) {
-    pendingNewConversation = false
-    if (id !== currentConversationId.value) await switchConversation(id)
-    return id
-  }
-
-  // 上のawait中に、別経路（sendMessage→persistMessage→ensureConversation）で
-  // 既に会話が確定していることがある。その場合は作った本人に任せ、ここではmessagesに触れない
-  if (currentConversationId.value) return currentConversationId.value
-
-  // 「新規会話」直後はDBにまだ何も無いので、ここでは何も作らない。
-  // すでにstartNewConversation()でmessages/currentConversationIdは空にしてあるので、
-  // ここで触ると「待っている間に最初のメッセージが送信済み」だった場合に消してしまうため何もしない
-  if (pendingNewConversation) {
-    return null
-  }
-
-  try {
-    const convId = await ensureConversation(user.value.id)
-    messages.value = await fetchMessages(convId)
-    return convId
-  } catch (err) {
-    console.error('会話の取得に失敗しました', err)
-    return null
-  }
+  pendingNewConversation = false
+  if (id !== currentConversationId.value) await switchConversation(id)
+  return id
 }
 
 // 保存済みのメッセージを書き換える。用途は2つ。
