@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useFeedback } from '../composables/useFeedback'
 import type { BodyPerspective, ErrorBlock } from '../types/message'
 import { marked } from 'marked'
+import { highlightCode } from '../lib/highlighter'
 import type { Message } from '../types/message'
 import DOMPurify from 'dompurify'
 import { BODY_ROLE_COLORS } from '../constants/bodyProviders'
@@ -94,7 +95,10 @@ function escapeHtml(str: string): string {
 const renderer = new marked.Renderer()
 renderer.code = ({ text, lang }) => {
   const language = (lang ?? '').trim().split(/\s+/)[0] ?? ''
-  const code = escapeHtml(text.replace(/\n$/, ''))
+  const source = text.replace(/\n$/, '')
+  // 未対応言語・shiki初期化未完了時は null。その場合は従来どおりのプレーン表示に倒す
+  const body = highlightCode(source, language)
+    ?? `<pre><code class="language-${escapeHtml(language)}">${escapeHtml(source)}\n</code></pre>`
   return `<div class="code-block">
 <div class="code-block-header">
 <span class="code-block-lang">${escapeHtml(language)}</span>
@@ -107,7 +111,7 @@ renderer.code = ({ text, lang }) => {
 </svg>
 </button>
 </div>
-<pre><code class="language-${escapeHtml(language)}">${code}\n</code></pre>
+${body}
 </div>`
 }
 marked.use({ renderer })
