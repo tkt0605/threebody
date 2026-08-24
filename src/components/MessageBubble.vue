@@ -333,6 +333,20 @@ function handleCopyClick(event: MouseEvent) {
   --code-btn-hover:   rgba(100, 110, 125, 0.13);
   --code-ok:          #16a34a;
   --code-ok-border:   rgba(22, 163, 74, 0.45);
+
+  /* shiki（renderer.code、lib/highlighter.ts）が css-variables テーマ経由で参照するトークン色。
+     --shiki-background は透明にして .code-block pre 側の background:none をそのまま効かせる */
+  --shiki-foreground:              var(--code-fg);
+  --shiki-background:              transparent;
+  --shiki-token-keyword:           #7c3aed;
+  --shiki-token-string:            #15803d;
+  --shiki-token-string-expression: #0f766e;
+  --shiki-token-comment:           #6e7781;
+  --shiki-token-constant:          #b45309;
+  --shiki-token-function:          #1d4ed8;
+  --shiki-token-parameter:         #3f3f46;
+  --shiki-token-punctuation:       #57606a;
+  --shiki-token-link:              #0969da;
 }
 .dark .prose-content {
   --code-bg:          #262a33;
@@ -346,6 +360,18 @@ function handleCopyClick(event: MouseEvent) {
   --code-btn-hover:   rgba(128, 128, 128, 0.15);
   --code-ok:          #4ade80;
   --code-ok-border:   rgba(74, 222, 128, 0.4);
+
+  --shiki-foreground:              var(--code-fg);
+  --shiki-background:              transparent;
+  --shiki-token-keyword:           #c792ea;
+  --shiki-token-string:            #9ece6a;
+  --shiki-token-string-expression: #7dcfff;
+  --shiki-token-comment:           #6b7280;
+  --shiki-token-constant:          #ff9e64;
+  --shiki-token-function:          #7aa2f7;
+  --shiki-token-parameter:         #c8ccd4;
+  --shiki-token-punctuation:       #9aa5ce;
+  --shiki-token-link:              #7aa2f7;
 }
 
 .prose-content :deep(code) {
