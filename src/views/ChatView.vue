@@ -438,7 +438,13 @@ watch(
         <!-- 文字で始める入口。音声認識に対応しないブラウザ（Firefox等）ではここが唯一の入口になり、
              対応ブラウザでも「声に出したくない・出せない」場面の逃げ道になる -->
         <div class="w-full max-w-md space-y-1.5">
-          <TextComposer :disabled="generating" :initial-text="askFromShare" @send="handleTextSend" />
+          <TextComposer
+            :disabled="generating"
+            :initial-text="askFromShare"
+            :readonly="recording"
+            :display-text="recording ? finalText + interimText : ''"
+            @send="handleTextSend"
+          />
           <p class="text-center text-[11px] text-gray-400 dark:text-white/25">
             {{ startHint }}
           </p>
