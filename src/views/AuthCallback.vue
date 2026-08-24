@@ -7,10 +7,15 @@ import { takePostLogin } from '../lib/postLogin'
 const router = useRouter()
 
 onMounted(async () => {
-  // PKCE: URLの ?code= をトークンと交換する
-  const { error } = await supabase.auth.exchangeCodeForSession(window.location.href)
-  // 共有ページから来た人は、押したときの行き先（問いを載せたURL）へ戻す
-  router.replace(error ? '/login' : (takePostLogin() ?? '/new'))
+  // PKCE: URLの ?code= をトークンと交換する。
+  // exchangeCodeForSession() は code の値そのものを要求する（URL全体を渡すと常に失敗する）
+  const code = new URL(window.location.href).searchParams.get('code') ?? ''
+  const { error } = await supabase.auth.exchangeCodeForSession(code)
+  // 失敗時（例: ログアウト直後の再ログインでcode_verifierが競合するPKCEエラー）は
+  // takePostLogin() を呼ばない＝sessionStorageの行き先は消費せずに残す。
+  // 同じタブでもう一度ログインし直せば、その時に拾い直せる
+  const dest = error ? { path: '/login', query: { authError: '1' } } : (takePostLogin() ?? '/new')
+  router.replace(dest)
 })
 </script>
 

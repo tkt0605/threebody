@@ -17,7 +17,9 @@ function isInternalPath(path: string): boolean {
 
 export function rememberPostLogin(path: string): void {
   if (!isInternalPath(path) || path === "/" ) return
-  try { sessionStorage.setItem(KEY, path) } catch { /* プライベートモード等では諦める */ }
+  try {
+    sessionStorage.setItem(KEY, path)
+  } catch (e) { console.log('[postLogin] remember: threw', e) /* プライベートモード等では諦める */ }
 }
 
 // 読むのは1回だけ。残すと、次に普通にログインした人まで前回の行き先へ飛ばされる
@@ -26,7 +28,7 @@ export function takePostLogin(): string | null {
     const path = sessionStorage.getItem(KEY)
     sessionStorage.removeItem(KEY)
     return path && isInternalPath(path) ? path : null
-  } catch {
+  } catch (e) {
     return null
   }
 }

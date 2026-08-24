@@ -9,5 +9,9 @@ export const supabase = createClient(
   {
     auth: {
       flowType: 'pkce',
+      // AuthCallback.vue が exchangeCodeForSession() で ?code= を手動交換する。
+      // デフォルト(true)のままだとSDK自身も同じcodeを自動検出して交換しにいき、
+      // 早い者勝ちで負けた側がAuthPKCECodeVerifierMissingErrorになる
+      detectSessionInUrl: false,
     },
 })

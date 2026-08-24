@@ -1,15 +1,25 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import ThreeBodyLogo from '../components/ThreeBodyLogo.vue'
 import { useAuth } from '../composables/useAuth'
 import { rememberPostLogin } from '../lib/postLogin'
 
 const { loginWithGoogle } = useAuth()
-const route = useRoute()
+const route  = useRoute()
+const router = useRouter()
 
 const error   = ref('')
 const loading = ref(false)
+
+// /auth/callback でのトークン交換失敗はここまで戻ってくる（AuthCallback.vue）。
+// クエリは一度表示したら消す。残したままリロードされると、直っていないように見える
+onMounted(() => {
+  if (route.query.authError) {
+    error.value = 'ログインに失敗しました。もう一度お試しください。'
+    router.replace({ path: '/login' })
+  }
+})
 
 async function onGoogleLogin() {
   if (loading.value) return
