@@ -16,7 +16,7 @@ function isInternalPath(path: string): boolean {
 }
 
 export function rememberPostLogin(path: string): void {
-  if (!isInternalPath(path)) return
+  if (!isInternalPath(path) || path === "/" ) return
   try { sessionStorage.setItem(KEY, path) } catch { /* プライベートモード等では諦める */ }
 }
 

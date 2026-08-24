@@ -10,7 +10,7 @@ onMounted(async () => {
   // PKCE: URLの ?code= をトークンと交換する
   const { error } = await supabase.auth.exchangeCodeForSession(window.location.href)
   // 共有ページから来た人は、押したときの行き先（問いを載せたURL）へ戻す
-  router.replace(error ? '/login' : (takePostLogin() ?? '/'))
+  router.replace(error ? '/login' : (takePostLogin() ?? '/new'))
 })
 </script>
 

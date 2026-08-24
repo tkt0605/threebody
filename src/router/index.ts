@@ -43,7 +43,7 @@ router.beforeEach(async (to) => {
   // 行き先を落とさずログインへ回す。共有ページの導線（問いを持ってアプリへ入る）は
   // ここで消えると意味が無くなる。実際の復帰は /auth/callback（lib/postLogin.ts）
   if (to.meta.requiresAuth && !authed) return { path: '/login', query: { next: to.fullPath } }
-  if ((to.path === '/login' || to.path === '/signup') && authed) return '/'
+  if ((to.path === '/login' || to.path === '/signup') && authed) return '/new'
 })
 
 export default router
