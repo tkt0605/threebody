@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, nextTick, computed, onMounted } from 'vue'
+import { ref, nextTick, computed, onMounted, watch } from 'vue'
 
 // テキストで送るための入力欄。
 //
@@ -14,10 +14,15 @@ const props = withDefaults(defineProps<{
   disabled?:    boolean
   placeholder?: string
   initialText?: string
+  // trueの間は入力欄を認識結果の表示専用に切り替える（同じ枠を用途ごとに使い分ける）
+  readonly?:    boolean
+  displayText?: string
 }>(), {
   disabled:    false,
   placeholder: 'メッセージを入力',
   initialText: '',
+  readonly:    false,
+  displayText: '',
 })
 
 const emit = defineEmits<{ send: [text: string] }>()
@@ -25,7 +30,23 @@ const emit = defineEmits<{ send: [text: string] }>()
 const text = ref(props.initialText)
 const area = ref<HTMLTextAreaElement | null>(null)
 
-const canSubmit = computed(() => !props.disabled && text.value.trim().length > 0)
+const canSubmit = computed(() => !props.disabled && !props.readonly && text.value.trim().length > 0)
+
+// readonly中はdisplayTextをそのまま映す。読み取り専用が終わったら、送信済みの認識結果を
+// 引きずらないよう空に戻す（onresultのfinalText.value += と手入力が競合しないのはreadonly属性側で担保）
+watch(
+  () => [props.readonly, props.displayText] as const,
+  ([isReadonly, display], prev) => {
+    if (isReadonly) {
+      text.value = display
+      nextTick(autosize)
+    } else if (prev?.[0]) {
+      text.value = ''
+      nextTick(autosize)
+    }
+  },
+  { immediate: true }
+)
 
 // 入力量に合わせて高さを伸ばす（最大 MAX_HEIGHT でスクロールに切り替わる）。
 // 一度 height を空にしてから scrollHeight を読まないと、縮む方向に追従しない。
@@ -61,6 +82,7 @@ function submit() {
 onMounted(() => nextTick(autosize))
 
 function onKeydown(e: KeyboardEvent) {
+  if (props.readonly) return
   if (e.key !== 'Enter' || e.shiftKey) return
   if (e.isComposing || e.keyCode === 229) return
   e.preventDefault()
@@ -83,6 +105,7 @@ function onKeydown(e: KeyboardEvent) {
       rows="1"
       :placeholder="placeholder"
       :disabled="disabled"
+      :readonly="readonly"
       class="flex-1 resize-none bg-transparent text-sm leading-6 outline-none max-h-40 min-h-8 py-1
              text-gray-900 placeholder:text-gray-400 disabled:text-gray-400
              dark:text-white/90 dark:placeholder:text-white/30 dark:disabled:text-white/30"
