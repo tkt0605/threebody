@@ -79,6 +79,9 @@ const narration = useVoiceNarration(() => { voiceActive.value = false })
 const voiceDialog = ref<InstanceType<typeof VoiceSphereDialog> | null>(null)
 const appAside = ref<InstanceType<typeof AppAside> | null>(null)
 const limitDialog = ref<InstanceType<typeof LimitReachedDialog> | null>(null)
+// 「編集して送る」の注入先。画面状態によって出ている方が違う（中央の球体画面／会話ログ下部）ため両方持つ
+const centralComposer = ref<InstanceType<typeof TextComposer> | null>(null)
+const bottomComposer = ref<InstanceType<typeof TextComposer> | null>(null)
 
 // 履歴が空の状態から中央の球体で最初の発話をした場合、思考（thinking）が終わって
 // 一体に収束するまではチャットログへ画面遷移させず、中央の球体画面のままにする
@@ -242,6 +245,20 @@ function handleTextSend(text: string) {
   if (!canSend.value) { limitDialog.value?.open(); return }
   askFromShare.value = ''
   sendMessage(text)
+}
+
+// 中断された質問の「編集して送る」。MessageBubble が孤立ペアの削除まで終えた
+// あとに質問文だけを運んでくる。表示されている方のTextComposerへ注入するだけで、
+// 送信はしない（人が編集して自分でEnter/送信ボタンを押す）
+function handleEditRequest(text: string) {
+  const composer = (messages.value.length === 0 || firstExchangeInFlight.value) ? centralComposer.value : bottomComposer.value
+  composer?.setText(text)
+}
+
+// 中断された質問の「話し直す」。削除は MessageBubble 側で済んでいるので、
+// ここでは音声ダイアログを開くだけ（canSendのゲートも requestVoiceDialog に任せる）
+function handleRedoVoiceRequest() {
+  requestVoiceDialog()
 }
 
 // 「アイリス」でウェイク → 録音開始。
@@ -439,6 +456,7 @@ watch(
              対応ブラウザでも「声に出したくない・出せない」場面の逃げ道になる -->
         <div class="w-full max-w-md space-y-1.5">
           <TextComposer
+            ref="centralComposer"
             :disabled="generating"
             :initial-text="askFromShare"
             :readonly="recording"
@@ -453,7 +471,13 @@ watch(
 
       <!-- 会話中：メッセージ一覧 + 下部に小さな球体（タップで会話継続ダイアログ） -->
       <template v-else>
-        <MessageList class="flex-1 min-h-0" :messages="messages" :draft-message="draftMessage" />
+        <MessageList
+          class="flex-1 min-h-0"
+          :messages="messages"
+          :draft-message="draftMessage"
+          @edit-request="handleEditRequest"
+          @redo-voice-request="handleRedoVoiceRequest"
+        />
         <div class="shrink-0 flex flex-col items-center gap-2 px-4 py-3">
           <!-- 生成中だけ入力欄の上に出す。Lv5は最大32Kトークンあり、止める手段が無いと
                待たされ続けたうえ共有キーの枠も1回分消える -->
@@ -475,7 +499,7 @@ watch(
               />
             </div>
             <!-- 会話の途中でも声と文字を混ぜられるようにする（片方に決め打たない） -->
-            <TextComposer class="flex-1 min-w-0" :disabled="generating" :initial-text="askFromShare" @send="handleTextSend" />
+            <TextComposer ref="bottomComposer" class="flex-1 min-w-0" :disabled="generating" :initial-text="askFromShare" @send="handleTextSend" />
           </div>
         </div>
       </template>

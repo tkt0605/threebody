@@ -1,9 +1,18 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick } from 'vue'
 import type { Message } from '../types/message'
+import { orphanReason } from '../lib/orphanReason'
 import MessageBubble from './MessageBubble.vue'
 
 const props = defineProps<{ messages: Message[]; draftMessage?: Message | null }>()
+
+// MessageBubble からの「編集して送る」「話し直す」をそのまま中継する。
+// どのTextComposer/VoiceSphereDialogを操作するかを知っているのは ChatView だけなので、
+// ここでは中身を判断せず素通しする
+const emit = defineEmits<{
+  'edit-request': [text: string]
+  'redo-voice-request': []
+}>()
 
 const container = ref<HTMLElement | null>(null)
 
@@ -30,41 +39,14 @@ watch(() => props.draftMessage, scrollToBottom, { deep: true })
 // ここで落とすことで、記録は残しつつ画面には出さない。
 const visibleMessages = computed(() => props.messages.filter(m => m.blocks.length > 0))
 
-// 答えの付いていないユーザー発言に、何が起きたのかを添える。
-//
-//   'stopped' … ユーザーが自分で止めた（停止ボタン・バージイン）
-//   'lost'    … 応答が届かなかった（エラー、保存前の離脱）
-//   null      … 孤立していない
-//
-// 判定に visibleMessages を使ってはいけない。一文字も出ないうちに終わった応答は
-// 0ブロックなのでそこから除外されており、その行こそが signals.interrupted という
-// 理由を持っているため。除外前の props.messages を見る必要がある
 // 共有するターンに添える「問い」。直前のユーザー発言を指す。
-// 判定に visibleMessages を使わないのは orphanReason と同じ理由で、
+// 判定に visibleMessages を使わないのは orphanReason（lib/orphanReason.ts）と同じ理由で、
 // 0ブロックの行も並びの一部だから
 function questionMessageId(msg: Message): string | null {
   if (msg.role !== 'assistant') return null
   const all  = props.messages
   const prev = all[all.indexOf(msg) - 1]
   return prev?.role === 'user' ? prev.id : null
-}
-
-type OrphanReason = 'stopped' | 'lost' | null
-
-function orphanReason(msg: Message): OrphanReason {
-  if (msg.role !== 'user') return null
-
-  const all  = props.messages
-  const next = all[all.indexOf(msg) + 1]
-
-  // 中身のある応答が続いていれば孤立ではない
-  if (next?.role === 'assistant' && next.blocks.length > 0) return null
-
-  // 応答の器すら無い＝保存される前に失われた
-  if (!next || next.role !== 'assistant') return 'lost'
-
-  // 器はあるが中身が無い。止めたのなら interrupted が立っている（useChat.cancelGeneration）
-  return next.signals?.interrupted ? 'stopped' : 'lost'
 }
 </script>
 
@@ -90,8 +72,10 @@ function orphanReason(msg: Message): OrphanReason {
         v-for="msg in visibleMessages"
         :key="msg.id"
         :message="msg"
-        :orphan-reason="orphanReason(msg)"
+        :orphan-reason="orphanReason(msg, messages)"
         :question-message-id="questionMessageId(msg)"
+        @edit-request="emit('edit-request', $event)"
+        @redo-voice-request="emit('redo-voice-request')"
       />
       <MessageBubble v-if="draftMessage" :message="draftMessage" />
     </div>

@@ -540,6 +540,20 @@ async function deleteMessage(id: string): Promise<void> {
   }
 }
 
+// 孤立したユーザー発言（orphanReasonが立つ質問）と、対になる中断応答（あれば）を
+// まとめて消す。応答だけを残すと、編集して送り直した／話し直した新しい質問が
+// 古い中断ペアと並んで残ってしまう
+async function deletePairedOrphan(message: Message): Promise<string> {
+  const idx  = messages.value.indexOf(message)
+  const next = messages.value[idx + 1]
+  const text = flattenText(message.blocks)
+  if (next?.role === 'assistant' && (next.blocks.length === 0 || next.signals?.interrupted)) {
+    await deleteMessage(next.id)
+  }
+  await deleteMessage(message.id)
+  return text
+}
+
 export function useChat() {
   const { settings } = useSettings()
   const { refreshCapabilities } = useCapabilities()
@@ -884,15 +898,18 @@ export function useChat() {
     }
   }
 
-  // 応答が欠けたまま宙ぶらりんになったユーザーメッセージを、削除した上で送り直す
-  async function retryMessage(message: Message): Promise<void> {
-    const text = flattenText(message.blocks)
-    await deleteMessage(message.id)
-    if (text.trim()) await sendMessage(text)
+  // 孤立したユーザー発言と、対になる中断応答をまとめて消す（MessageBubbleの「削除する」）
+  async function deleteOrphanedTurn(message: Message): Promise<void> {
+    await deletePairedOrphan(message)
+  }
+  // 孤立したユーザー発言と、対になる中断応答をまとめて消し、質問文を返す
+  // （MessageBubbleの「編集して送る」「話し直す」。送信まではしない）
+  async function editOrphanedTurn(message: Message): Promise<string> {
+    return deletePairedOrphan(message)
   }
 
   return {
-    messages, sendMessage, stopGeneration, cancelGeneration, aiState, pendingBodies, openConversation, deleteMessage, retryMessage,
+    messages, sendMessage, stopGeneration, cancelGeneration, aiState, pendingBodies, openConversation, deleteOrphanedTurn, editOrphanedTurn,
     conversations, currentConversationId, currentConversation,
     startNewConversation, deleteConversation, renameConversation,
     loadConversations,

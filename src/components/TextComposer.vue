@@ -88,6 +88,17 @@ function onKeydown(e: KeyboardEvent) {
   e.preventDefault()
   submit()
 }
+
+// 外部（中断された質問の「編集して送る」）からテキストを差し込む入口。
+// 送信はしない。押していないうちに無料枠を使う操作を始めないため、
+// Enter/送信ボタンは本人が押す
+function setText(value: string): void {
+  text.value = value
+  nextTick(autosize)
+  area.value?.focus()
+}
+
+defineExpose({ setText })
 </script>
 
 <template>

@@ -498,4 +498,50 @@ describe('useChat', () => {
       expect(pendingBodies.value).toHaveLength(0)
     })
   })
+
+  describe('孤立ターンの編集・削除', () => {
+    function userMsg(id: string, text: string): Message {
+      return { id, role: 'user', blocks: [{ type: 'text', content: text }], timestamp: new Date(), modality: 'text' }
+    }
+
+    function interruptedAssistant(id: string, content = ''): Message {
+      return {
+        id,
+        role: 'assistant',
+        blocks: content ? [{ type: 'text', content }] : [],
+        timestamp: new Date(),
+        modality: 'text',
+        signals: { interrupted: true, rephrased: 0 },
+      }
+    }
+
+    it('deleteOrphanedTurnは質問と対になる中断応答を両方消す', async () => {
+      const { messages, deleteOrphanedTurn } = useChat()
+      messages.value = [userMsg('u1', '質問'), interruptedAssistant('a1', '途中まで')]
+
+      await deleteOrphanedTurn(messages.value[0]!)
+
+      expect(messages.value).toHaveLength(0)
+    })
+
+    it('editOrphanedTurnはペアを消したうえで質問文を返す（送信はしない）', async () => {
+      const { messages, editOrphanedTurn } = useChat()
+      messages.value = [userMsg('u1', '編集したい質問'), interruptedAssistant('a1')]
+
+      const text = await editOrphanedTurn(messages.value[0]!)
+
+      expect(text).toBe('編集したい質問')
+      expect(messages.value).toHaveLength(0)
+    })
+
+    it('中断されていない完了応答は道連れにしない', async () => {
+      const { messages, deleteOrphanedTurn } = useChat()
+      const done: Message = { id: 'a1', role: 'assistant', blocks: [{ type: 'text', content: '答え' }], timestamp: new Date(), modality: 'text' }
+      messages.value = [userMsg('u1', '質問'), done]
+
+      await deleteOrphanedTurn(messages.value[0]!)
+
+      expect(messages.value).toEqual([done])
+    })
+  })
 })

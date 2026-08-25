@@ -9,18 +9,54 @@ import DOMPurify from 'dompurify'
 import { BODY_ROLE_COLORS } from '../constants/bodyProviders'
 import { useChat } from '../composables/useChat'
 import { useSharedTurn, shareUrl } from '../composables/useSharedTurn'
+import type { OrphanReason } from '../lib/orphanReason'
 // orphanReason は「答えが付いていない理由」。判定は MessageList が持つ
 // （0ブロックの応答は描画対象から外れており、その行が理由を持っているため）
 // questionMessageId は直前のユーザー発言。共有ページに問いを載せるために要る
 // （どのメッセージが直前かを知っているのは MessageList だけ）
 const props = defineProps<{
   message: Message
-  orphanReason?: 'stopped' | 'lost' | null
+  orphanReason?: OrphanReason
   readonly?: boolean
   questionMessageId?: string | null
 }>()
 
-const { retryMessage, deleteMessage } = useChat()
+const emit = defineEmits<{
+  // 編集して送る（テキスト）。削除は先に済ませてあるので、注入するだけで送信はしない
+  'edit-request': [text: string]
+  // 話し直す（音声）。削除は先に済ませてあるので、呼び出し側は音声ダイアログを開くだけでよい
+  'redo-voice-request': []
+}>()
+
+const { editOrphanedTurn, deleteOrphanedTurn } = useChat()
+
+// 孤立ターンの説明文。原因を断定しないこと。自分で止めた場合を「エラーで途切れた」と書くと、
+// 起きていない障害を報告することになる。断定できるのは stopped 系だけで、
+// それ以外（lost）は「届かなかった」という観測事実に留める
+const orphanCopy = computed(() => {
+  switch (props.orphanReason) {
+    case 'stopped-partial': return '途中で止まりました。ここまでの内容は残っています。'
+    case 'stopped-empty':   return '答えが出る前に停止しました。'
+    case 'lost':            return '応答が届きませんでした。'
+    default:                return ''
+  }
+})
+
+// 質問を送り直す導線は、送られたモダリティに合わせる。声で聞かれた質問を
+// 文字入力へ強制すると、声を主役にしてきたこのアプリの体験と断絶するため
+const isVoiceOrphan = computed(() => props.message.modality === 'voice')
+
+// 中断された質問メッセージと、対になる中断応答は先に削除しておく。
+// そうしないと編集して送った／話し直した新しい質問が古い中断ペアと並んで残る
+async function handleEdit(): Promise<void> {
+  const text = await editOrphanedTurn(props.message)
+  emit('edit-request', text)
+}
+
+async function handleRedoVoice(): Promise<void> {
+  await deleteOrphanedTurn(props.message)
+  emit('redo-voice-request')
+}
 
 // ── 共有（ROADMAP ③） ────────────────────────────────────────────────────────
 const { share, revoke, tokenFor, pending } = useSharedTurn()
@@ -263,26 +299,31 @@ function handleCopyClick(event: MouseEvent) {
       </div>
       <!-- 答えが付いていない理由を先に書く。ボタン2つだけだと「なぜ送り直す必要が
            あるのか」が分からず、押してよいのかも判断できない。
-           原因を断定しないこと。自分で止めた場合を「エラーで途切れた」と書くと、
-           起きていない障害を報告することになる。断定できるのは stopped だけで、
-           それ以外は「届かなかった」という観測事実に留める -->
+           送られたモダリティに合わせて、声の質問には話し直す（音声）を、
+           文字の質問には編集して送る（TextComposerへ注入）を出し分ける -->
       <div v-if="orphanReason && !readonly" class="pt-1 space-y-1.5">
         <p class="text-xs leading-relaxed text-gray-400 dark:text-white/35">
-          {{ orphanReason === 'stopped'
-            ? '答えが出る前に停止しました。'
-            : '応答が届きませんでした。' }}
+          {{ orphanCopy }}
         </p>
         <div class="flex gap-2">
           <button
+            v-if="isVoiceOrphan"
             class="text-xs px-3 py-1.5 rounded-lg transition-colors cursor-pointer
                    bg-gray-100 hover:bg-gray-200/70 text-gray-600
                    dark:bg-white/6 dark:hover:bg-white/10 dark:text-white/60"
-            @click="retryMessage(message)"
-          >もう一度送信</button>
+            @click="handleRedoVoice"
+          >話し直す</button>
+          <button
+            v-else
+            class="text-xs px-3 py-1.5 rounded-lg transition-colors cursor-pointer
+                   bg-gray-100 hover:bg-gray-200/70 text-gray-600
+                   dark:bg-white/6 dark:hover:bg-white/10 dark:text-white/60"
+            @click="handleEdit"
+          >編集して送る</button>
           <button
             class="text-xs px-3 py-1.5 rounded-lg transition-colors cursor-pointer
                    bg-red-500/10 hover:bg-red-500/15 text-red-400"
-            @click="deleteMessage(message.id)"
+            @click="deleteOrphanedTurn(message)"
           >削除する</button>
         </div>
       </div>
