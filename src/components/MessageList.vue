@@ -10,8 +10,8 @@ const props = defineProps<{ messages: Message[]; draftMessage?: Message | null }
 // どのTextComposer/VoiceSphereDialogを操作するかを知っているのは ChatView だけなので、
 // ここでは中身を判断せず素通しする
 const emit = defineEmits<{
-  'edit-request': [text: string]
-  'redo-voice-request': []
+  voice_dialog_run: [],
+  edit_request: [text: string]
 }>()
 
 const container = ref<HTMLElement | null>(null)
@@ -74,8 +74,8 @@ function questionMessageId(msg: Message): string | null {
         :message="msg"
         :orphan-reason="orphanReason(msg, messages)"
         :question-message-id="questionMessageId(msg)"
-        @edit-request="emit('edit-request', $event)"
-        @redo-voice-request="emit('redo-voice-request')"
+        @edit_request="emit('edit_request', $event)"
+        @voice_dialog_run="emit('voice_dialog_run')"
       />
       <MessageBubble v-if="draftMessage" :message="draftMessage" />
     </div>

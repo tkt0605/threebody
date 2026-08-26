@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useFeedback } from '../composables/useFeedback'
-import type { BodyPerspective, ErrorBlock } from '../types/message'
+import type { BodyPerspective, ErrorBlock, TextBlock } from '../types/message'
 import { marked } from 'marked'
 import { highlightCode, highlighterReady } from '../lib/highlighter'
 import type { Message } from '../types/message'
@@ -21,12 +21,7 @@ const props = defineProps<{
   questionMessageId?: string | null
 }>()
 
-const emit = defineEmits<{
-  // 編集して送る（テキスト）。削除は先に済ませてあるので、注入するだけで送信はしない
-  'edit-request': [text: string]
-  // 話し直す（音声）。削除は先に済ませてあるので、呼び出し側は音声ダイアログを開くだけでよい
-  'redo-voice-request': []
-}>()
+const emit = defineEmits<{ voice_dialog_run: [], edit_request: [text: string] }>()
 
 const { editOrphanedTurn, deleteOrphanedTurn } = useChat()
 
@@ -48,14 +43,41 @@ const isVoiceOrphan = computed(() => props.message.modality === 'voice')
 
 // 中断された質問メッセージと、対になる中断応答は先に削除しておく。
 // そうしないと編集して送った／話し直した新しい質問が古い中断ペアと並んで残る
+const isEditing = ref(false);
 async function handleEdit(): Promise<void> {
-  const text = await editOrphanedTurn(props.message)
-  emit('edit-request', text)
+  if(isEditing.value) return
+  isEditing.value = true
+  try {
+    // 削除する前にテキストの内容を取得し
+    const text = props.message.blocks
+      .filter((b): b is TextBlock => b.type === "text")
+      .map(b => b.content)
+      .join("")
+    emit('edit_request', text)
+    await editOrphanedTurn(props.message)
+  } catch (error) {
+    console.log('テキスト編集機能・呼び出し失敗:', error)
+  }finally{
+    isEditing.value = false
+  }
 }
 
+const isRecording = ref(false);
 async function handleRedoVoice(): Promise<void> {
-  await deleteOrphanedTurn(props.message)
-  emit('redo-voice-request')
+  if(isRecording.value) return
+  isRecording.value = true
+  try {
+    // Voice用のダイヤログを呼び出し
+    emit('voice_dialog_run')
+    // deleteを呼び出している。ここは削除。
+    await deleteOrphanedTurn(props.message)
+    console.log("再投稿・音声認識ダイヤログ・呼び出し成功")
+    // 呼び出しのemitまでは成功
+  } catch (error) {
+    console.log('音声取り直し失敗:', error)
+  }finally{
+    isRecording.value = false
+  }
 }
 
 // ── 共有（ROADMAP ③） ────────────────────────────────────────────────────────
@@ -306,6 +328,7 @@ function handleCopyClick(event: MouseEvent) {
           {{ orphanCopy }}
         </p>
         <div class="flex gap-2">
+          <!-- 修正すべき点はここのhandleRedoVoiceとhandleEdit -->
           <button
             v-if="isVoiceOrphan"
             class="text-xs px-3 py-1.5 rounded-lg transition-colors cursor-pointer
@@ -320,6 +343,7 @@ function handleCopyClick(event: MouseEvent) {
                    dark:bg-white/6 dark:hover:bg-white/10 dark:text-white/60"
             @click="handleEdit"
           >編集して送る</button>
+          <!-- ここの削除の処理は良い。 -->
           <button
             class="text-xs px-3 py-1.5 rounded-lg transition-colors cursor-pointer
                    bg-red-500/10 hover:bg-red-500/15 text-red-400"

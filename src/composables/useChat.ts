@@ -901,10 +901,12 @@ export function useChat() {
   // 孤立したユーザー発言と、対になる中断応答をまとめて消す（MessageBubbleの「削除する」）
   async function deleteOrphanedTurn(message: Message): Promise<void> {
     await deletePairedOrphan(message)
+    console.log('対象メッセ削除・完了')
   }
   // 孤立したユーザー発言と、対になる中断応答をまとめて消し、質問文を返す
   // （MessageBubbleの「編集して送る」「話し直す」。送信まではしない）
   async function editOrphanedTurn(message: Message): Promise<string> {
+    // deleteになってる。
     return deletePairedOrphan(message)
   }
 

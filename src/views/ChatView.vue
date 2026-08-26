@@ -221,7 +221,9 @@ const { recording, finalText, interimText, bars, errorMsg, start, stop } =
     // 送信した瞬間から「AIが喋る側」の担当が始まる。
     // 三体モードは副体の並列ラウンドぶんだけ無音が空くので、ここから相槌を用意する
     narration.begin(activeBodyCount.value, ttsLang.value)
-    sendMessage(text)
+    // modalityを明示しないと既定の'text'になり、中断時に「話し直す」ではなく
+    // 「編集して送る」が出てしまう（MessageBubbleのisVoiceOrphan判定）
+    sendMessage(text, 'voice')
   })
 
 // 録音を始めるすべての入口（中央の球体・下部の球体・ウェイクワード）はここを通す。
@@ -233,9 +235,14 @@ function requestStart() {
 }
 
 function requestVoiceDialog() {
+  console.log("Voiceダイヤログ: 開")
+  console.log("canSend値:", canSend.value);
   if (!canSend.value) { limitDialog.value?.open(); return }
+  console.log('voiceDialog値:', voiceDialog.value);
   voiceDialog.value?.open()
 }
+
+
 
 // テキスト入力からの送信。
 // narration.begin() を呼ばないのが音声経路との唯一の違いで、これは意図的：
@@ -258,7 +265,12 @@ function handleEditRequest(text: string) {
 // 中断された質問の「話し直す」。削除は MessageBubble 側で済んでいるので、
 // ここでは音声ダイアログを開くだけ（canSendのゲートも requestVoiceDialog に任せる）
 function handleRedoVoiceRequest() {
-  requestVoiceDialog()
+  try {
+    requestVoiceDialog()
+    console.log('request_voice_dialog成功')
+  } catch (error) {
+    console.error('request_voice_dialog失敗:', error)
+  }
 }
 
 // 「アイリス」でウェイク → 録音開始。
@@ -476,7 +488,7 @@ watch(
           :messages="messages"
           :draft-message="draftMessage"
           @edit-request="handleEditRequest"
-          @redo-voice-request="handleRedoVoiceRequest"
+          @voice_dialog_run="() => requestVoiceDialog()"
         />
         <div class="shrink-0 flex flex-col items-center gap-2 px-4 py-3">
           <!-- 生成中だけ入力欄の上に出す。Lv5は最大32Kトークンあり、止める手段が無いと
