@@ -10,6 +10,7 @@ import { BODY_ROLE_COLORS } from '../constants/bodyProviders'
 import { useChat } from '../composables/useChat'
 import { useSharedTurn, shareUrl } from '../composables/useSharedTurn'
 import type { OrphanReason } from '../lib/orphanReason'
+import { log } from 'node:console'
 // orphanReason は「答えが付いていない理由」。判定は MessageList が持つ
 // （0ブロックの応答は描画対象から外れており、その行が理由を持っているため）
 // questionMessageId は直前のユーザー発言。共有ページに問いを載せるために要る
@@ -53,6 +54,7 @@ async function handleEdit(): Promise<void> {
       .filter((b): b is TextBlock => b.type === "text")
       .map(b => b.content)
       .join("")
+    console.log("テキスト内容の取得:", text)
     emit('edit_request', text)
     await editOrphanedTurn(props.message)
   } catch (error) {

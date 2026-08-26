@@ -259,6 +259,7 @@ function handleTextSend(text: string) {
 // 送信はしない（人が編集して自分でEnter/送信ボタンを押す）
 function handleEditRequest(text: string) {
   const composer = (messages.value.length === 0 || firstExchangeInFlight.value) ? centralComposer.value : bottomComposer.value
+  console.log("composerの内訳:", composer);
   composer?.setText(text)
 }
 
@@ -487,7 +488,7 @@ watch(
           class="flex-1 min-h-0"
           :messages="messages"
           :draft-message="draftMessage"
-          @edit-request="handleEditRequest"
+          @edit_request="handleEditRequest"
           @voice_dialog_run="() => requestVoiceDialog()"
         />
         <div class="shrink-0 flex flex-col items-center gap-2 px-4 py-3">
