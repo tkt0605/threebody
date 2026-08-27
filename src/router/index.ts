@@ -4,17 +4,17 @@ import LoginView     from '../views/LoginView.vue'
 import AuthCallback  from '../views/AuthCallback.vue'
 import TermsView     from '../views/TermsView.vue'
 import PrivacyView   from '../views/PrivacyView.vue'
-import DetailsView   from '../views/DetailsView.vue'
+import LandingView   from '../views/LandingView.vue'
+import HelpView      from '../views/HelpView.vue'
 import SharedTurnView from '../views/SharedTurnView.vue'
 import { supabase }  from '../lib/supabase'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    // / への直接アクセス（ブックマーク・ログイン直後など）は常に新規会話へ。
-    // 以前はChatViewを直接割り当てて最近の会話へ解決していたが、
-    // アクセスするたびに古い会話へ飛ばされるのが分かりにくいためredirectに変更した
-    { path: '/',              redirect: '/new' },
+    // / は未ログイン向けのランディング（獲得目的）。requiresAuth は付けない。
+    // ログイン済みが踏んだ場合は beforeEach 側で /new へ流す（/login と同じ扱い）
+    { path: '/',              component: LandingView  },
     // 「新規会話」の行き先。/ と違い、ここにいる間は最近の会話への解決（ensureConversation）を
     // 一切行わない。/ のままだとリロード時に「直近の会話」へ解決されてしまい、
     // 新規会話のつもりが古い会話に戻ってしまう
@@ -30,9 +30,12 @@ const router = createRouter({
     // 審査もこのURLへ未ログインで到達できることを前提にしている
     { path: '/terms',        component: TermsView    },
     { path: '/privacy',      component: PrivacyView  },
-    // 使い方の説明。/terms と同様 requiresAuth を付けない。ログイン前（LoginView）
+    // 使い方（操作方法）の説明。/terms と同様 requiresAuth を付けない。ログイン前（LoginView）
     // からも読めないと「初めての人向け」の役目を果たせない
-    { path: '/details',      component: DetailsView  },
+    { path: '/help',         component: HelpView     },
+    // 旧パス。サイドバー・LoginView は /help に直接張り替え済みだが、外部から張られた
+    // 既存リンクが切れないようにリダイレクトだけ残す
+    { path: '/details',      redirect: '/help'       },
     // 共有された1ターン（ROADMAP ③）。requiresAuth を付けない。
     // 未ログインで開けないと、そもそもこの機能の存在理由（閲覧者にLLMを呼ばせず、
     // 何人見ても無料枠が減らない拡散経路）が無くなる
@@ -50,7 +53,8 @@ router.beforeEach(async (to) => {
   // 行き先を落とさずログインへ回す。共有ページの導線（問いを持ってアプリへ入る）は
   // ここで消えると意味が無くなる。実際の復帰は /auth/callback（lib/postLogin.ts）
   if (to.meta.requiresAuth && !authed) return { path: '/login', query: { next: to.fullPath } }
-  if ((to.path === '/login' || to.path === '/signup') && authed) return '/new'
+  // / と /login /signup はログイン前提の入口なので、ログイン済みなら常に /new へ流す
+  if ((to.path === '/' || to.path === '/login' || to.path === '/signup') && authed) return '/new'
 })
 
 export default router

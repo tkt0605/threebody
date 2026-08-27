@@ -3,9 +3,13 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ThreeBodyLogo from '../components/ThreeBodyLogo.vue'
 import { useAuth } from '../composables/useAuth'
+import { useTheme } from '../composables/useTheme'
 import { rememberPostLogin } from '../lib/postLogin'
 
 const { loginWithGoogle } = useAuth()
+// 既定はライト、他ページ（LegalPage 等）と同じ isDark singleton をそのまま使う。
+// 以前は bg-gray-950 を固定で敷いていたため、設定がライトでもここだけ常時ダークだった
+const { isDark, toggle } = useTheme()
 const route  = useRoute()
 const router = useRouter()
 
@@ -39,33 +43,54 @@ async function onGoogleLogin() {
 </script>
 
 <template>
-  <div class="flex items-center justify-center min-h-screen bg-gray-950">
+  <div class="relative flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-950 overflow-hidden">
+    <!-- 新色は増やさず、既存のブランド色（indigo）だけで奥行きを作る -->
     <div class="absolute inset-0 overflow-hidden pointer-events-none">
-      <div class="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-indigo-600/8 rounded-full blur-3xl" />
+      <div class="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[28rem] h-[28rem] bg-indigo-600/10 dark:bg-indigo-500/10 rounded-full blur-3xl" />
+      <div class="absolute bottom-0 -right-24 w-72 h-72 bg-indigo-400/10 dark:bg-indigo-400/8 rounded-full blur-3xl" />
     </div>
 
+    <button
+      class="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg transition-colors cursor-pointer
+             text-gray-400 hover:text-gray-700 hover:bg-gray-200/60
+             dark:text-white/40 dark:hover:text-white/80 dark:hover:bg-white/8"
+      :title="isDark ? 'ライトモードに切替' : 'ダークモードに切替'"
+      @click="toggle"
+    >
+      <svg v-if="isDark" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <circle cx="12" cy="12" r="4"/>
+        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" stroke-linecap="round"/>
+      </svg>
+      <svg v-else class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+
     <div class="relative w-full max-w-sm px-4">
-      <div class="flex flex-col items-center mb-10 gap-3">
-        <ThreeBodyLogo class="scale-125" />
-        <span class="text-white/80 font-semibold tracking-widest text-xl">ThreeBody</span>
-        <router-link to="/details" class="text-[11px] text-white/35 underline underline-offset-2 hover:text-white/60">使い方を見る</router-link>
+      <div class="flex items-center justify-center mb-10 gap-3">
+        <div class="relative">
+          <div class="absolute inset-0 rounded-full bg-indigo-500/25 blur-2xl scale-150" aria-hidden="true" />
+          <ThreeBodyLogo class="relative scale-150" />
+        </div>
+        <span class="text-gray-900 dark:text-white/80 font-semibold tracking-widest text-xl">ThreeBody</span>
       </div>
 
-      <div class="bg-gray-900 border border-white/8 rounded-2xl p-8 shadow-2xl space-y-6">
+      <div class="bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-black/8 dark:border-white/8 rounded-2xl p-8 shadow-2xl shadow-indigo-600/10 dark:shadow-black/40 space-y-6">
         <div class="text-center space-y-1.5">
-          <h1 class="text-white/90 font-semibold text-base">ログイン</h1>
-          <p class="text-xs text-white/35">Google アカウントで続行</p>
+          <h1 class="text-gray-900 dark:text-white/90 font-semibold text-base">ログイン</h1>
+          <p class="text-xs text-gray-400 dark:text-white/35">Google アカウントで続行</p>
         </div>
 
-        <p v-if="error" class="text-xs text-rose-400/90 text-center bg-rose-500/8 border border-rose-500/15 rounded-lg px-3 py-2">
+        <p v-if="error" class="text-xs text-rose-500 dark:text-rose-400/90 text-center bg-rose-500/8 border border-rose-500/15 rounded-lg px-3 py-2">
           {{ error }}
         </p>
 
         <button
-          class="w-full py-2.5 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-3"
+          class="w-full py-2.5 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-3
+                 border border-black/8 dark:border-white/8"
           :class="loading
-            ? 'bg-white/10 dark:bg-gray-800 text-white/40 cursor-not-allowed'
-            : 'bg-white dark:bg-gray-800 text-gray-800 hover:bg-white/90 cursor-pointer'"
+            ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-white/40 cursor-not-allowed'
+            : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-white/90 hover:bg-gray-50 dark:hover:bg-gray-700 hover:shadow-md hover:-translate-y-0.5 cursor-pointer'"
           :disabled="loading"
           @click="onGoogleLogin"
         >
@@ -83,8 +108,10 @@ async function onGoogleLogin() {
 
         <!-- 同意を求める以上、その場で全文を読めなければ同意は成立しない。
              リンク先は requiresAuth 無しのため、ログインせずに開ける -->
-        <p class="text-center text-[11px] text-white/30 leading-relaxed">
-          続行すると<router-link to="/terms" class="text-white/55 underline underline-offset-2 hover:text-white/80">利用規約</router-link>および<router-link to="/privacy" class="text-white/55 underline underline-offset-2 hover:text-white/80">プライバシーポリシー</router-link>に同意したものとみなされます。
+        <p class="text-center text-[11px] text-gray-400 dark:text-white/30 leading-relaxed">
+          続行すると<router-link to="/terms" class="text-gray-600 dark:text-white/55 underline underline-offset-2 hover:text-gray-800 dark:hover:text-white/80">利用規約</router-link>および<router-link to="/privacy" class="text-gray-600 dark:text-white/55 underline underline-offset-2 hover:text-gray-800 dark:hover:text-white/80">プライバシーポリシー</router-link>に同意したものとみなされます。  
+          詳しい使い方は
+          <router-link to="/help" class="text-[11px] text-gray-400 dark:text-white/35 underline underline-offset-2 hover:text-gray-600 dark:hover:text-white/60">こちら</router-link>
         </p>
       </div>
     </div>

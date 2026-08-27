@@ -189,12 +189,12 @@ defineExpose({ openSettings })
     >
     <!-- ロゴ -->
     <div class="flex shrink-0 items-center gap-2.5 px-5 py-3 border-b border-black/8 dark:border-white/8">
-      <ThreeBodyLogo />
+      <ThreeBodyLogo class="w-5 h-5" />
       <span class="text-gray-900 dark:text-white/90 font-semibold tracking-wide text-sm">ThreeBody</span>
     </div>
 
     <!-- 新規会話・設定・使い方 -->
-    <div class="px-3 py-3 shrink-0 border-b border-black/8 dark:border-white/8 space-y-1.5">
+    <div class="px-3 py-3 shrink-0 border-b border-black/8 dark:border-white/8">
       <button
         class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer"
         :class="route.path === '/new' || route.path.startsWith('/c/')
@@ -222,9 +222,9 @@ defineExpose({ openSettings })
         設定
       </button>
       <router-link
-        to="/details"
+        to="/help"
         class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer"
-        :class="route.path === '/details'
+        :class="route.path === '/help'
           ? 'bg-indigo-600/12 text-indigo-600 dark:text-indigo-400'
           : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70 dark:text-white/55 dark:hover:text-white/90 dark:hover:bg-white/6'"
         @click="closeAside"

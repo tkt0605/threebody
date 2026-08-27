@@ -361,19 +361,30 @@ function handleCopyClick(event: MouseEvent) {
             >{{ copied ? 'コピーしました' : 'コピー' }}</button>
           </div>
           <button
-            class="text-[11px] underline underline-offset-2 text-gray-400 dark:text-white/35 cursor-pointer
-                   disabled:cursor-default disabled:no-underline"
+            class="text-[11px] px-2.5 py-1 rounded-lg transition-colors cursor-pointer
+                   bg-gray-100 hover:bg-gray-200/70 text-gray-500
+                   dark:bg-white/6 dark:hover:bg-white/10 dark:text-white/45
+                   disabled:cursor-default disabled:opacity-60"
             :disabled="pending === message.id"
             @click="revoke(message.id)"
           >公開をやめる</button>
         </div>
         <button
           v-else
-          class="text-[11px] underline underline-offset-2 text-gray-400 dark:text-white/35 cursor-pointer
-                 disabled:cursor-default disabled:no-underline"
+          class="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg transition-colors cursor-pointer
+                 bg-gray-100 hover:bg-gray-200/70 text-gray-600
+                 dark:bg-white/6 dark:hover:bg-white/10 dark:text-white/60
+                 disabled:cursor-default disabled:opacity-60"
           :disabled="pending === message.id"
           @click="onShare"
-        >{{ pending === message.id ? 'リンクを作成中…' : 'この検算を共有する' }}</button>
+        >
+          <svg v-if="pending !== message.id" class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <circle cx="18" cy="5" r="3"/>
+            <circle cx="6" cy="12" r="3"/>
+            <circle cx="18" cy="19" r="3"/>
+            <path d="M8.59 13.51l6.83 3.98M15.41 6.51L8.59 10.49" stroke-linecap="round"/>
+          </svg>
+          {{ pending === message.id ? 'リンクを作成中…' : '共有する' }}</button>
       </div>
       <!-- 答えが付いていない理由を先に書く。ボタン2つだけだと「なぜ送り直す必要が
            あるのか」が分からず、押してよいのかも判断できない。

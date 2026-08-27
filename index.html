@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>ThreeBody</title>
+    <!-- OGP/SEOの既知の未対応点（このSPAはSSRもプリレンダリングも無く、per-route出し分けができない）:
+         - og:image が無い → ほとんどのクライアントで画像なしの小さいカードになる
+         - og:url / canonical が無い → 本番ドメインが確定していないため未設定（決まったらここに追記）
+         - /s/:token 個別ページの動的OGP（問いの内容をカードに出す等）は無い
+           — 静的HTMLなので原理的にルートごとの出し分けは不可（SSR/プリレンダリング/エッジ関数が要る）。
+           ROADMAP ③でも「OGP自動生成はやらない」と明記済み -->
+    <meta name="description" content="ThreeBody は、AI の答えをもう一度別の AI に確かめさせる音声チャットです。1つの問いに1つの答えが返り、その答えを最大2つの別モデルが検算します。">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="ThreeBody">
+    <meta property="og:description" content="AI の答えをもう一度別の AI に確かめさせる音声チャット。1つの問いに1つの答え、その答えを最大2つの別モデルが検算します。">
+    <meta name="twitter:card" content="summary">
 </head>
 <body>
     <div id="app"></div>
