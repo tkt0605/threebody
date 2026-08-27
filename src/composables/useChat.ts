@@ -306,17 +306,12 @@ async function switchConversation(id: string): Promise<void> {
   messages.value = await fetchMessages(id)
 }
 
-// 「新規会話」ボタン用のフラグ。trueの間は、次にensureConversationが呼ばれても
-// 既存の会話を再利用せず、新しい会話を作る（＝最初のメッセージが送られるまでDBには何も書き込まない）
-let pendingNewConversation = false
-
 // 画面をまっさらな状態に戻すだけで、conversationsテーブルへの書き込みは行わない。
 // 実際に会話が作られるのは、ここから最初のメッセージが送信されたタイミング（persistMessage経由）
 function startNewConversation(): void {
   stopGeneration('switch')
   currentConversationId.value = null
   messages.value = []
-  pendingNewConversation = true
 }
 
 // 現在の会話が無ければ新規作成し、それを現在の会話にする
@@ -324,7 +319,6 @@ async function ensureConversation(userId: string): Promise<string> {
   if (currentConversationId.value) return currentConversationId.value
 
   await ensureUserProfile(userId)
-  pendingNewConversation = false
   return createConversation()
 }
 
@@ -376,7 +370,6 @@ async function openConversation(id?: string): Promise<string | null> {
 
   await loadConversations()
 
-  pendingNewConversation = false
   if (id !== currentConversationId.value) await switchConversation(id)
   return id
 }

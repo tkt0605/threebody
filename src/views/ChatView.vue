@@ -262,17 +262,6 @@ function handleEditRequest(text: string) {
   composer?.setText(text)
 }
 
-// 中断された質問の「話し直す」。削除は MessageBubble 側で済んでいるので、
-// ここでは音声ダイアログを開くだけ（canSendのゲートも requestVoiceDialog に任せる）
-function handleRedoVoiceRequest() {
-  try {
-    requestVoiceDialog()
-    console.log('request_voice_dialog成功')
-  } catch (error) {
-    console.error('request_voice_dialog失敗:', error)
-  }
-}
-
 // 「アイリス」でウェイク → 録音開始。
 // AIが喋っている最中は、ウェイクワードを言い直させずに話し始めただけで割り込ませる
 const { listening: wakeListening, idle: wakeIdle, startListening, stopListening, resetIdle } = useWakeWord(
@@ -416,8 +405,8 @@ watch(
 
     <main class="flex-1 min-h-0 flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950 ">
       <!-- いまどのキーで答えているか。共有キーの使用状況と、Ollamaへ落ちていることの表示を1つの帯にまとめる（上限到達後もここで「使い切った」ことが分かる） -->
-      <div v-if="usingLocalLLM || usingSharedKey" 
-        class="shrink-0 text-center text-xs py-1.5":class="usingLocalLLM
+      <div v-if="usingLocalLLM || usingSharedKey"
+        class="shrink-0 text-center text-xs py-1.5" :class="usingLocalLLM
         ? 'text-emerald-700/90 bg-emerald-600/8 dark:text-emerald-300/80 dark:bg-emerald-400/10'
         : limitReached
         ? 'text-amber-600/90 bg-amber-500/10 dark:text-amber-300/90 dark:bg-amber-400/10'

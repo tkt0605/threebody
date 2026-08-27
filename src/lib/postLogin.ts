@@ -28,7 +28,7 @@ export function takePostLogin(): string | null {
     const path = sessionStorage.getItem(KEY)
     sessionStorage.removeItem(KEY)
     return path && isInternalPath(path) ? path : null
-  } catch (e) {
+  } catch {
     return null
   }
 }
