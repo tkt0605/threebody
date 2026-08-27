@@ -152,6 +152,19 @@ function visibleBodies(bodies: BodyPerspective[]): BodyPerspective[] {
   return bodies.filter(b => !(b.done === true && (b.hasFinding === false || !b.content.trim())))
 }
 
+// 検算カードのタブ選択。ブロックは1メッセージに複数並びうるので block index で選択状態を分ける。
+// 未選択時は先頭の体を既定にする
+const activeReviewTab = ref<Record<number, number>>({})
+function selectReviewTab(blockIndex: number, bodyIndex: number): void {
+  activeReviewTab.value[blockIndex] = bodyIndex
+}
+function isActiveReviewTab(blockIndex: number, bodies: BodyPerspective[], bodyIndex: number): boolean {
+  return (activeReviewTab.value[blockIndex] ?? bodies[0]?.bodyIndex) === bodyIndex
+}
+function activeReviewBody(blockIndex: number, bodies: BodyPerspective[]): BodyPerspective | undefined {
+  return bodies.find(b => b.bodyIndex === activeReviewTab.value[blockIndex]) ?? bodies[0]
+}
+
 marked.setOptions({ breaks: true })
 
 function escapeHtml(str: string): string {
@@ -183,6 +196,25 @@ renderer.code = ({ text, lang }) => {
 </button>
 </div>
 ${body}
+</div>`
+}
+// 表はデフォルトのまま出すと、スマホ幅ではセルが縮んで潰れる（ブラウザの table-layout: auto が
+// 列幅を container 幅に合わせて詰めるため）。.table-wrap で横スクロールに逃がし、
+// セル自体は折り返させない（table-scroll.css 側の white-space: nowrap）
+renderer.table = ({ header, rows }) => {
+  const cell = (c: { text: string; header: boolean; align: 'center' | 'left' | 'right' | null }): string => {
+    const tag = c.header ? 'th' : 'td'
+    const inline = marked.parseInline(c.text, { async: false })
+    return c.align ? `<${tag} align="${c.align}">${inline}</${tag}>\n` : `<${tag}>${inline}</${tag}>\n`
+  }
+  const headHtml = header.map(cell).join('')
+  const bodyHtml = rows.map(row => `<tr>\n${row.map(cell).join('')}</tr>\n`).join('')
+  return `<div class="table-wrap"><table>
+<thead>
+<tr>
+${headHtml}</tr>
+</thead>
+${bodyHtml ? `<tbody>\n${bodyHtml}</tbody>\n` : ''}</table>
 </div>`
 }
 marked.use({ renderer })
@@ -259,24 +291,35 @@ function handleCopyClick(event: MouseEvent) {
             他の体がこの答えを検算
             <span class="flex-1 border-t border-dashed border-black/10 dark:border-white/10" />
           </div>
-          <!-- ここは二・三体の答えの出力フィールド -->
-          <div class="grid gap-2" :class="visibleBodies(block.bodies).length > 1 ? 'grid-cols-2' : 'grid-cols-1'">
-            <div
+          <!-- ここは二・三体の答えの出力フィールド。並べて全部見せず、タブで1体ずつ切り替える -->
+          <div class="flex gap-1.5">
+            <button
               v-for="b in visibleBodies(block.bodies)"
               :key="b.bodyIndex"
-              class="rounded-xl border px-3 py-2.5 text-xs leading-relaxed bg-black/[0.02] dark:bg-white/[0.03]"
-              :style="{ borderColor: roleColor(b.bodyIndex) + '40' }"
+              type="button"
+              class="flex-1 flex items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition-colors cursor-pointer"
+              :class="isActiveReviewTab(i, visibleBodies(block.bodies), b.bodyIndex) ? '' : 'opacity-45 hover:opacity-75'"
+              :style="{
+                color: roleColor(b.bodyIndex),
+                borderColor: roleColor(b.bodyIndex) + '40',
+                background: isActiveReviewTab(i, visibleBodies(block.bodies), b.bodyIndex) ? roleColor(b.bodyIndex) + '14' : 'transparent',
+              }"
+              @click="selectReviewTab(i, b.bodyIndex)"
             >
-              <div class="flex items-center gap-1.5 mb-1.5 font-medium" :style="{ color: roleColor(b.bodyIndex) }">
-                <span class="w-1.5 h-1.5 rounded-full shrink-0" :style="{ background: roleColor(b.bodyIndex) }" />
-                {{ b.name }}
-              </div>
-              <div
-                class="prose-content text-gray-600 dark:text-white/60"
-                v-html="DOMPurify.sanitize(renderMarkdown(b.content)) + (!b.done ? '<span class=\'animate-pulse\' aria-hidden=\'true\'>▍</span>' : '')"
-                @click="handleCopyClick"
-              />
-            </div>
+              <span class="w-1.5 h-1.5 rounded-full shrink-0" :style="{ background: roleColor(b.bodyIndex) }" />
+              {{ b.name }}
+            </button>
+          </div>
+          <div
+            v-if="activeReviewBody(i, visibleBodies(block.bodies))"
+            class="rounded-xl border px-3 py-2.5 text-xs leading-relaxed bg-black/[0.02] dark:bg-white/[0.03]"
+            :style="{ borderColor: roleColor(activeReviewBody(i, visibleBodies(block.bodies))!.bodyIndex) + '40' }"
+          >
+            <div
+              class="prose-content text-gray-600 dark:text-white/60"
+              v-html="DOMPurify.sanitize(renderMarkdown(activeReviewBody(i, visibleBodies(block.bodies))!.content)) + (!activeReviewBody(i, visibleBodies(block.bodies))!.done ? '<span class=\'animate-pulse\' aria-hidden=\'true\'>▍</span>' : '')"
+              @click="handleCopyClick"
+            />
           </div>
         </div>
         <div
@@ -563,5 +606,36 @@ function handleCopyClick(event: MouseEvent) {
   border: none;
   border-top: 1px solid rgba(128, 128, 128, 0.25);
   margin: 0.75em 0;
+}
+/* コードブロックと表は横スクロールで逃がす。潰さない代わりに、はみ出た分は
+   .table-wrap / .code-block 自身の中でだけスクロールさせ、ページ全体を横に広げない */
+.prose-content :deep(.table-wrap) {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+  margin-bottom: 0.5em;
+  border: 1px solid var(--code-border);
+  border-radius: 0.5em;
+}
+.prose-content :deep(table) {
+  border-collapse: collapse;
+  width: max-content;
+  min-width: 100%;
+  font-size: 0.85em;
+}
+.prose-content :deep(th),
+.prose-content :deep(td) {
+  border: 1px solid var(--code-border);
+  padding: 0.4em 0.75em;
+  text-align: left;
+  white-space: nowrap;
+}
+.prose-content :deep(th) {
+  background: var(--code-header-bg);
+  color: var(--code-header-fg);
+  font-weight: 600;
+}
+.prose-content :deep(tbody tr:nth-child(even)) {
+  background: var(--code-inline-bg);
 }
 </style>
