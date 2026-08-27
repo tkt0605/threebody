@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>ThreeBody</title>
+    <!-- ThreeBodyLogo（静止した三角形+中心シルバー）をファビコン化。SVGはpublic/favicon.svgで生成、
+         PNG/ICOはそこから ImageMagick で書き出した派生物（scripts等には残していない） -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="icon" type="image/png" href="/favicon.ico">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <!-- OGP/SEOの既知の未対応点（このSPAはSSRもプリレンダリングも無く、per-route出し分けができない）:
          - og:image が無い → ほとんどのクライアントで画像なしの小さいカードになる
          - og:url / canonical が無い → 本番ドメインが確定していないため未設定（決まったらここに追記）

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- ThreeBodyLogo（静止した三角形+中心シルバー）そのまま。背景は透明、三角形の頂点は黒、
+       中心だけシルバー固定色（ThreeBodyLogo.vueのライト配色 fill-gray-900 と同じ） -->
+
+  <!-- 三角形の辺（頂点間の距離を1.5倍にして枠いっぱいまで拡大） -->
+  <line x1="16" y1="5.88" x2="27.69" y2="26.13" stroke="#111827" stroke-opacity="0.45" stroke-width="1"/>
+  <line x1="27.69" y1="26.13" x2="4.31" y2="26.13" stroke="#111827" stroke-opacity="0.45" stroke-width="1"/>
+  <line x1="4.31" y1="26.13" x2="16" y2="5.88" stroke="#111827" stroke-opacity="0.45" stroke-width="1"/>
+
+  <!-- 中心への軸 -->
+  <line x1="16" y1="5.88" x2="16" y2="19.38" stroke="#111827" stroke-opacity="0.3" stroke-width="0.7"/>
+  <line x1="27.69" y1="26.13" x2="16" y2="19.38" stroke="#111827" stroke-opacity="0.3" stroke-width="0.7"/>
+  <line x1="4.31" y1="26.13" x2="16" y2="19.38" stroke="#111827" stroke-opacity="0.3" stroke-width="0.7"/>
+
+  <!-- 中心のシルバー -->
+  <circle cx="16" cy="19.38" r="1.6" fill="#c4c9d4"/>
+
+  <!-- 三体（黒点） -->
+  <circle cx="16" cy="5.88" r="2.2" fill="#111827"/>
+  <circle cx="27.69" cy="26.13" r="2.2" fill="#111827"/>
+  <circle cx="4.31" cy="26.13" r="2.2" fill="#111827"/>
+</svg>
