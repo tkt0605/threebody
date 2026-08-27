@@ -48,6 +48,7 @@ async function onGoogleLogin() {
       <div class="flex flex-col items-center mb-10 gap-3">
         <ThreeBodyLogo class="scale-125" />
         <span class="text-white/80 font-semibold tracking-widest text-xl">ThreeBody</span>
+        <router-link to="/details" class="text-[11px] text-white/35 underline underline-offset-2 hover:text-white/60">使い方を見る</router-link>
       </div>
 
       <div class="bg-gray-900 border border-white/8 rounded-2xl p-8 shadow-2xl space-y-6">

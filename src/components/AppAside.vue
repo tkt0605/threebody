@@ -31,6 +31,7 @@ function formatConversationLabel(conv: { title: string | null; createdAt: Date }
 
 async function handleLogout() {
   console.log('Logging out...')
+  userMenuOpen.value = false
   closeAside()
   await logout()
   router.push('/login')
@@ -121,8 +122,24 @@ function requestDeleteConversation(conv: { id: string; title: string | null; cre
 }
 
 function openDeleteAccount() {
+  userMenuOpen.value = false
   closeAside()
   deleteAccountDialog.value?.open()
+}
+
+function closeUserMenuAndAside() {
+  userMenuOpen.value = false
+  closeAside()
+}
+
+// アカウント詳細メニュー（ログアウト・規約・プライバシー・退会）。会話の詳細メニューと
+// 同じ「3点ドット→小さいダイアログ」の形に揃える（ROADMAP: 押し間違いを避ける導線の一貫性）
+const userMenuOpen = ref(false)
+function toggleUserMenu() {
+  userMenuOpen.value = !userMenuOpen.value
+}
+function closeUserMenu() {
+  userMenuOpen.value = false
 }
 
 // 削除が完了した時点でセッションは消えている。ログイン画面へ戻さないと、
@@ -134,16 +151,21 @@ function onAccountDeleted() {
 function onKeydown(e: KeyboardEvent) {
   if (e.key !== 'Escape') return
   if (menuOpenId.value) { closeConvMenu(); return }
+  if (userMenuOpen.value) { closeUserMenu(); return }
   if (editingId.value) { cancelRenameConversation(); return }
   if (asideOpen.value) closeAside()
 }
+function closeMenus() {
+  closeConvMenu()
+  closeUserMenu()
+}
 onMounted(() => {
   document.addEventListener('keydown', onKeydown)
-  document.addEventListener('click', closeConvMenu)
+  document.addEventListener('click', closeMenus)
 })
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown)
-  document.removeEventListener('click', closeConvMenu)
+  document.removeEventListener('click', closeMenus)
 })
 
 defineExpose({ openSettings })
@@ -171,20 +193,8 @@ defineExpose({ openSettings })
       <span class="text-gray-900 dark:text-white/90 font-semibold tracking-wide text-sm">ThreeBody</span>
     </div>
 
-    <!-- 設定 -->
+    <!-- 新規会話・設定・使い方 -->
     <div class="px-3 py-3 shrink-0 border-b border-black/8 dark:border-white/8 space-y-1.5">
-      <button
-        class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer
-               text-gray-600 hover:text-gray-900 hover:bg-gray-200/70
-               dark:text-white/55 dark:hover:text-white/90 dark:hover:bg-white/6"
-        @click="openSettings"
-      >
-        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-          <path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/>
-          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        設定
-      </button>
       <button
         class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer"
         :class="route.path === '/new' || route.path.startsWith('/c/')
@@ -199,6 +209,32 @@ defineExpose({ openSettings })
       </svg>
         新規会話
       </button>
+      <button
+        class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer
+               text-gray-600 hover:text-gray-900 hover:bg-gray-200/70
+               dark:text-white/55 dark:hover:text-white/90 dark:hover:bg-white/6"
+        @click="openSettings"
+      >
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/>
+          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        設定
+      </button>
+      <router-link
+        to="/details"
+        class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer"
+        :class="route.path === '/details'
+          ? 'bg-indigo-600/12 text-indigo-600 dark:text-indigo-400'
+          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/70 dark:text-white/55 dark:hover:text-white/90 dark:hover:bg-white/6'"
+        @click="closeAside"
+      >
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 17v-5M12 8h.01" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        使い方
+      </router-link>
     </div>
 
     <!-- ナビゲーション -->
@@ -288,37 +324,79 @@ defineExpose({ openSettings })
     </nav>
     <!-- ユーザー -->
     <div class="px-2 py-4 border-t border-black/8 dark:border-white/8 shrink-0">
-      <!-- ユーザー -->
-      <div class="flex items-center gap-2 px-3 py-2 rounded-xl group">
+      <div class="relative flex items-center gap-2 px-3 py-2 rounded-xl">
         <div class="w-6 h-6 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center shrink-0">
           <span class="text-indigo-600 dark:text-indigo-300 text-[10px] font-semibold uppercase">{{ displayName.charAt(0) }}</span>
         </div>
         <span class="flex-1 text-xs text-gray-400 dark:text-white/35 truncate">{{ displayName }}</span>
+
+        <!-- アカウントの詳細（ログアウト・規約・プライバシー・退会）。会話の詳細メニューと
+             同じく、常時出さずここに畳む -->
         <button
-          class="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all cursor-pointer text-gray-400 hover:text-rose-500 dark:text-white/25 dark:hover:text-rose-400"
-          title="ログアウト"
-          @click="handleLogout"
+          class="shrink-0 text-gray-400 dark:text-white/30 hover:text-gray-700 dark:hover:text-white/70 cursor-pointer p-0.5 rounded"
+          title="アカウントの詳細"
+          aria-label="アカウントの詳細"
+          @click.stop="toggleUserMenu"
         >
-          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" stroke-linecap="round" stroke-linejoin="round"/>
-            <polyline points="16 17 21 12 16 7" stroke-linecap="round" stroke-linejoin="round"/>
-            <line x1="21" y1="12" x2="9" y2="12" stroke-linecap="round"/>
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="12" cy="5" r="1.6"/>
+            <circle cx="12" cy="12" r="1.6"/>
+            <circle cx="12" cy="19" r="1.6"/>
           </svg>
         </button>
-      </div>
 
-      <!-- 退会と規約類。ログアウトの隣ではなく一段下げて置く（押し間違いを避ける）。
-           プライバシーポリシーが「サイドバーの『アカウントを削除』から」と案内しているため、
-           場所を変えるときはそちらの記述も直すこと -->
-      <div class="mt-1 px-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-gray-400 dark:text-white/25">
-        <router-link to="/terms" class="hover:text-gray-600 dark:hover:text-white/50" @click="closeAside">利用規約</router-link>
-        <span aria-hidden="true">·</span>
-        <router-link to="/privacy" class="hover:text-gray-600 dark:hover:text-white/50" @click="closeAside">プライバシー</router-link>
-        <span aria-hidden="true">·</span>
-        <button
-          class="cursor-pointer hover:text-rose-500 dark:hover:text-rose-400"
-          @click="openDeleteAccount"
-        >アカウントを削除</button>
+        <!-- サイドバー最下段のため、会話メニュー（下に開く）と違い上に開く -->
+        <div
+          v-if="userMenuOpen"
+          class="absolute right-0 bottom-full mb-1 w-40 rounded-xl shadow-lg p-1.5 z-10
+                 bg-white border border-black/8 dark:bg-gray-900 dark:border-white/10"
+          @click.stop
+        >
+          <button
+            class="flex items-center gap-3 w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-gray-600 hover:bg-gray-100 dark:text-white/70 dark:hover:bg-white/6 cursor-pointer"
+            @click="handleLogout"
+          >
+            <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" stroke-linecap="round" stroke-linejoin="round"/>
+              <polyline points="16 17 21 12 16 7" stroke-linecap="round" stroke-linejoin="round"/>
+              <line x1="21" y1="12" x2="9" y2="12" stroke-linecap="round"/>
+            </svg>
+            ログアウト
+          </button>
+          <router-link
+            to="/terms"
+            class="flex items-center gap-3 w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-gray-600 hover:bg-gray-100 dark:text-white/70 dark:hover:bg-white/6 cursor-pointer"
+            @click="closeUserMenuAndAside"
+          >
+            <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke-linecap="round" stroke-linejoin="round"/>
+              <polyline points="14 2 14 8 20 8" stroke-linecap="round" stroke-linejoin="round"/>
+              <line x1="8" y1="13" x2="16" y2="13" stroke-linecap="round"/>
+              <line x1="8" y1="17" x2="16" y2="17" stroke-linecap="round"/>
+            </svg>
+            利用規約
+          </router-link>
+          <router-link
+            to="/privacy"
+            class="flex items-center gap-3 w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-gray-600 hover:bg-gray-100 dark:text-white/70 dark:hover:bg-white/6 cursor-pointer"
+            @click="closeUserMenuAndAside"
+          >
+            <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            プライバシー
+          </router-link>
+          <button
+            class="flex items-center gap-3 w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-rose-500 hover:bg-rose-500/10 dark:text-rose-400 cursor-pointer"
+            @click="openDeleteAccount"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="shrink-0" viewBox="0 0 16 16">
+              <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+              <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+            </svg>
+            アカウントを削除
+          </button>
+        </div>
       </div>
     </div>
   </aside>
