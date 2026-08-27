@@ -4,10 +4,11 @@ import { useRouter } from 'vue-router'
 import { useTheme } from '../composables/useTheme'
 import { useChat } from '../composables/useChat'
 import { useAsideDrawer } from '../composables/useAsideDrawer'
+import ConfirmDialog from './ConfirmDialog.vue'
 defineProps<{ size?: number | string }>()
 const router = useRouter()
 const { isDark, toggle } = useTheme()
-const { currentConversation, startNewConversation, renameConversation } = useChat()
+const { currentConversation, startNewConversation, renameConversation, deleteConversation } = useChat()
 const { toggleAside } = useAsideDrawer()
 
 const menuOpen = ref(false)
@@ -31,11 +32,15 @@ function handleNewConversation() {
 const editingTitle = ref(false)
 const editTitleValue = ref('')
 const titleInput = ref<HTMLInputElement | null>(null)
+// IME変換確定のEnterがkeyupまで漏れてくることがあるため、1回目のEnterでは確定せず
+// 「もう一度押したら確定」の待ち状態に入るだけにする。入力があれば待ち状態は解除
+const titleEnterArmed = ref(false)
 
 async function startEditTitle() {
   menuOpen.value = false
   editTitleValue.value = currentConversation.value?.title ?? ''
   editingTitle.value = true
+  titleEnterArmed.value = false
   await nextTick()
   titleInput.value?.focus()
   titleInput.value?.select()
@@ -44,12 +49,37 @@ async function startEditTitle() {
 async function saveTitle() {
   if (!editingTitle.value) return
   editingTitle.value = false
+  titleEnterArmed.value = false
   const id = currentConversation.value?.id
   if (id) await renameConversation(id, editTitleValue.value)
 }
 
 function cancelEditTitle() {
   editingTitle.value = false
+  titleEnterArmed.value = false
+}
+
+function onTitleEnter() {
+  if (titleEnterArmed.value) { saveTitle(); return }
+  titleEnterArmed.value = true
+}
+
+// 会話削除は取り消せない。AppAside・MessageBubble と同じ ConfirmDialog で確認を挟む
+const confirmDeleteDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null)
+
+function requestDeleteConversation() {
+  menuOpen.value = false
+  const conv = currentConversation.value
+  if (!conv) return
+  confirmDeleteDialog.value?.open({
+    title: 'この会話を削除',
+    message: `「${title.value}」を削除します。この操作は取り消せません。`,
+    confirmLabel: '削除する',
+    onConfirm: async () => {
+      await deleteConversation(conv.id)
+      router.push('/new')
+    },
+  })
 }
 
 onUnmounted(() => document.removeEventListener('click', closeMenu))
@@ -89,21 +119,11 @@ document.addEventListener('click', closeMenu)
         v-model="editTitleValue"
         class="text-sm bg-transparent border-b border-indigo-400 outline-none text-gray-800 dark:text-white/90 w-40"
         @click.stop
-        @keyup.enter="saveTitle"
+        @input="titleEnterArmed = false"
+        @keyup.enter="onTitleEnter"
         @keyup.escape="cancelEditTitle"
         @blur="saveTitle"
       />
-      <button
-        v-if="!editingTitle && currentConversation"
-        class="shrink-0 text-gray-400 hover:text-indigo-500 dark:text-white/25 dark:hover:text-indigo-400 cursor-pointer p-2 hover:bg-gray-200 rounded-lg"
-        title="タイトルを編集"
-        aria-label="タイトルを編集"
-        @click.stop="startEditTitle"
-      >
-        <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-          <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </button>
       <div
         v-if="menuOpen"
         class="absolute left-0 top-full mt-1 w-40 rounded-xl shadow-lg p-3 z-10
@@ -111,7 +131,7 @@ document.addEventListener('click', closeMenu)
         @click.stop
       >
         <button
-          class="flex items-center gap-1 w-full text-left px-3 py-2 rounded-lg text-xs text-gray-600 hover:bg-gray-100 dark:text-white/70 dark:hover:bg-white/6 cursor-pointer"
+          class="flex items-center gap-3 w-full text-left px-3 py-2 rounded-lg text-xs text-gray-600 hover:bg-gray-100 dark:text-white/70 dark:hover:bg-white/6 cursor-pointer"
           @click="handleNewConversation"
         >
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -120,6 +140,29 @@ document.addEventListener('click', closeMenu)
           <path d="M10 10v5M7.5 12.5h5" />
         </svg>
           新規会話
+        </button> 
+        <button
+          v-if="!editingTitle && currentConversation"
+          class="flex items-center gap-3  w-full text-left px-3 py-2 rounded-lg text-xs text-gray-600 hover:bg-gray-100 dark:text-white/70 dark:hover:bg-white/6 cursor-pointer"
+          title="タイトルを編集"
+          aria-label="タイトルを編集"
+          @click.stop="startEditTitle"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          名前を変更
+        </button>
+        <button
+          v-if="currentConversation"
+          class="flex items-center gap-3 w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-rose-500 hover:bg-rose-500/10 dark:text-rose-400 cursor-pointer"
+          @click="requestDeleteConversation"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16">
+            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+            <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+          </svg>
+          削除
         </button>
       </div>
     </div>
@@ -142,4 +185,6 @@ document.addEventListener('click', closeMenu)
       </svg>
     </button>
   </header>
+
+  <ConfirmDialog ref="confirmDeleteDialog" />
 </template>

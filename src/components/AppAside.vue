@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import ThreeBodyLogo from './ThreeBodyLogo.vue'
 import SettingsDialog from './SettingsDialog.vue'
 import DeleteAccountDialog from './DeleteAccountDialog.vue'
+import ConfirmDialog from './ConfirmDialog.vue'
 import { useAuth } from '../composables/useAuth'
 import { useChat } from '../composables/useChat'
 import { useAsideDrawer } from '../composables/useAsideDrawer'
@@ -11,11 +12,12 @@ defineProps<{ size?: number | string }>()
 const router = useRouter()
 const route  = useRoute()
 const { user, logout } = useAuth()
-const { conversations, currentConversationId, startNewConversation, deleteConversation } = useChat()
+const { conversations, currentConversationId, startNewConversation, deleteConversation, renameConversation } = useChat()
 const { asideOpen, closeAside } = useAsideDrawer()
 
 const settingsDialog = ref<InstanceType<typeof SettingsDialog> | null>(null)
 const deleteAccountDialog = ref<InstanceType<typeof DeleteAccountDialog> | null>(null)
+const confirmDeleteDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null)
 
 const displayName = computed(() =>
   user.value?.user_metadata?.full_name ?? user.value?.user_metadata?.name ?? user.value?.email ?? 'ゲスト'
@@ -57,6 +59,67 @@ async function handleDeleteConversation(id: string) {
   if (wasCurrent) router.push('/')
 }
 
+// 会話ごとの詳細メニュー（名前の変更／削除）。ゴミ箱アイコンが常時見えていると
+// 押し間違いの導線になるため、詳細アイコンの奥に畳む
+const menuOpenId = ref<string | null>(null)
+
+function toggleConvMenu(id: string) {
+  menuOpenId.value = menuOpenId.value === id ? null : id
+}
+
+function closeConvMenu() {
+  menuOpenId.value = null
+}
+
+// タイトル編集は AppHeader と同じインライン入力パターン。編集対象は一度に1件のみ
+const editingId = ref<string | null>(null)
+const editTitleValue = ref('')
+// v-for 内の ref は配列になる（同時に描画されるのは編集中の1件のみ）
+const editInput = ref<HTMLInputElement[]>([])
+// IME変換確定のEnterがkeyupまで漏れてくることがあるため、1回目のEnterでは確定せず
+// 「もう一度押したら確定」の待ち状態に入るだけにする。入力があれば待ち状態は解除
+const editEnterArmed = ref(false)
+
+async function startRenameConversation(conv: { id: string; title: string | null }) {
+  menuOpenId.value = null
+  editingId.value = conv.id
+  editTitleValue.value = conv.title ?? ''
+  editEnterArmed.value = false
+  await nextTick()
+  editInput.value[0]?.focus()
+  editInput.value[0]?.select()
+}
+
+async function saveRenameConversation() {
+  const id = editingId.value
+  if (!id) return
+  editingId.value = null
+  editEnterArmed.value = false
+  await renameConversation(id, editTitleValue.value)
+}
+
+function cancelRenameConversation() {
+  editingId.value = null
+  editEnterArmed.value = false
+}
+
+function onRenameEnter() {
+  if (editEnterArmed.value) { saveRenameConversation(); return }
+  editEnterArmed.value = true
+}
+
+// 会話削除の確認。MessageBubble の孤立ターン削除と同じ ConfirmDialog を使い、
+// 「取り消せない削除」の扱いをアプリ内で揃える
+function requestDeleteConversation(conv: { id: string; title: string | null; createdAt: Date }) {
+  menuOpenId.value = null
+  confirmDeleteDialog.value?.open({
+    title: 'この会話を削除',
+    message: `「${formatConversationLabel(conv)}」を削除します。この操作は取り消せません。`,
+    confirmLabel: '削除する',
+    onConfirm: () => handleDeleteConversation(conv.id),
+  })
+}
+
 function openDeleteAccount() {
   closeAside()
   deleteAccountDialog.value?.open()
@@ -69,10 +132,19 @@ function onAccountDeleted() {
 }
 
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape' && asideOpen.value) closeAside()
+  if (e.key !== 'Escape') return
+  if (menuOpenId.value) { closeConvMenu(); return }
+  if (editingId.value) { cancelRenameConversation(); return }
+  if (asideOpen.value) closeAside()
 }
-onMounted(() => document.addEventListener('keydown', onKeydown))
-onUnmounted(() => document.removeEventListener('keydown', onKeydown))
+onMounted(() => {
+  document.addEventListener('keydown', onKeydown)
+  document.addEventListener('click', closeConvMenu)
+})
+onUnmounted(() => {
+  document.removeEventListener('keydown', onKeydown)
+  document.removeEventListener('click', closeConvMenu)
+})
 
 defineExpose({ openSettings })
 </script>
@@ -145,24 +217,73 @@ defineExpose({ openSettings })
           </svg>
         </button>
       </div>
-      <button
+      <div
         v-for="conv in conversations"
         :key="conv.id"
-        class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-colors cursor-pointer"
+        class="relative w-full flex items-center gap-1 px-3 py-2 rounded-lg text-xs transition-colors"
         :class="conv.id === currentConversationId
           ? 'bg-indigo-600/12 text-indigo-600 dark:text-indigo-400'
           : 'text-gray-500 hover:text-gray-800 hover:bg-gray-200/70 dark:text-white/45 dark:hover:text-white/80 dark:hover:bg-white/6'"
-        @click="selectConversation(conv.id)"
       >
-        <span class="truncate">{{ formatConversationLabel(conv) }}</span>
-        <!-- 会話の削除 -->
-        <span class="ml-auto text-gray-400 dark:text-white/30 hover:text-rose-500 dark:hover:text-rose-400" @click.stop="handleDeleteConversation(conv.id)">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16">
-            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
-            <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+        <input
+          v-if="editingId === conv.id"
+          ref="editInput"
+          v-model="editTitleValue"
+          class="flex-1 min-w-0 bg-transparent border-b border-indigo-400 outline-none text-gray-800 dark:text-white/90"
+          @click.stop
+          @input="editEnterArmed = false"
+          @keyup.enter="onRenameEnter"
+          @keyup.escape="cancelRenameConversation"
+          @blur="saveRenameConversation"
+        />
+        <button
+          v-else
+          class="flex-1 min-w-0 text-left truncate cursor-pointer"
+          @click="selectConversation(conv.id)"
+        >{{ formatConversationLabel(conv) }}</button>
+
+        <!-- 会話の詳細（名前の変更・削除）。ゴミ箱を常時出さず、ここに畳む -->
+        <button
+          v-if="editingId !== conv.id"
+          class="shrink-0 text-gray-400 dark:text-white/30 hover:text-gray-700 dark:hover:text-white/70 cursor-pointer p-0.5 rounded"
+          title="会話の詳細"
+          aria-label="会話の詳細"
+          @click.stop="toggleConvMenu(conv.id)"
+        >
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="12" cy="5" r="1.6"/>
+            <circle cx="12" cy="12" r="1.6"/>
+            <circle cx="12" cy="19" r="1.6"/>
           </svg>
-        </span>
-      </button>
+        </button>
+
+        <div
+          v-if="menuOpenId === conv.id"
+          class="absolute right-0 top-full mt-1 w-32 rounded-xl shadow-lg p-1.5 z-10
+                 bg-white border border-black/8 dark:bg-gray-900 dark:border-white/10"
+          @click.stop
+        >
+          <button
+            class="flex items-center gap-3 w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-gray-600 hover:bg-gray-100 dark:text-white/70 dark:hover:bg-white/6 cursor-pointer"
+            @click="startRenameConversation(conv)"
+          >
+            <svg class="w-3 h-3" width="16" height="16"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.0">
+              <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            名前を変更
+          </button>
+          <button
+            class="flex items-center gap-3 w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-rose-500 hover:bg-rose-500/10 dark:text-rose-400 cursor-pointer"
+            @click="requestDeleteConversation(conv)"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16">
+              <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+              <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+            </svg>
+            削除
+          </button>
+        </div>
+      </div>
     </div>
     </nav>
     <!-- ユーザー -->
@@ -205,6 +326,7 @@ defineExpose({ openSettings })
 
   <SettingsDialog ref="settingsDialog" />
   <DeleteAccountDialog ref="deleteAccountDialog" @deleted="onAccountDeleted" />
+  <ConfirmDialog ref="confirmDeleteDialog" />
 </template>
 
 <style scoped>

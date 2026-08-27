@@ -259,7 +259,6 @@ function handleTextSend(text: string) {
 // 送信はしない（人が編集して自分でEnter/送信ボタンを押す）
 function handleEditRequest(text: string) {
   const composer = (messages.value.length === 0 || firstExchangeInFlight.value) ? centralComposer.value : bottomComposer.value
-  console.log("composerの内訳:", composer);
   composer?.setText(text)
 }
 
@@ -445,7 +444,7 @@ watch(
       </div>
 
       <!-- 設定済み・会話なし（最初の発話が思考中の場合も含む）：中央に大きな球体 -->
-      <div v-else-if="messages.length === 0 || firstExchangeInFlight" class="flex-1 flex flex-col items-center justify-center px-6 gap-5 bg-gray-550">
+      <div v-else-if="messages.length === 0 || firstExchangeInFlight" class="flex-1 flex flex-col items-center justify-center px-6 bg-gray-550">
         <div class="w-56 h-56 sm:w-72 sm:h-72">
           <VoiceSphere
             :recording="recording"

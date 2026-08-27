@@ -9,6 +9,7 @@ import DOMPurify from 'dompurify'
 import { BODY_ROLE_COLORS } from '../constants/bodyProviders'
 import { useChat } from '../composables/useChat'
 import { useSharedTurn, shareUrl } from '../composables/useSharedTurn'
+import ConfirmDialog from './ConfirmDialog.vue'
 import type { OrphanReason } from '../lib/orphanReason'
 import { log } from 'node:console'
 // orphanReason は「答えが付いていない理由」。判定は MessageList が持つ
@@ -54,7 +55,6 @@ async function handleEdit(): Promise<void> {
       .filter((b): b is TextBlock => b.type === "text")
       .map(b => b.content)
       .join("")
-    console.log("テキスト内容の取得:", text)
     emit('edit_request', text)
     await editOrphanedTurn(props.message)
   } catch (error) {
@@ -62,6 +62,18 @@ async function handleEdit(): Promise<void> {
   }finally{
     isEditing.value = false
   }
+}
+
+// 孤立ターンの削除は取り消せない。即実行だと押し間違いがそのまま消失になるため、
+// DeleteAccountDialog と同じ確認フローに揃える（ROADMAP: 削除の重さの一貫性）
+const confirmDeleteDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null)
+function requestDeleteOrphanedTurn(): void {
+  confirmDeleteDialog.value?.open({
+    title: 'この会話を削除',
+    message: 'この会話と、対応する状態が完全に削除されます。この操作は取り消せません。',
+    confirmLabel: '削除する',
+    onConfirm: () => deleteOrphanedTurn(props.message),
+  })
 }
 
 const isRecording = ref(false);
@@ -345,16 +357,16 @@ function handleCopyClick(event: MouseEvent) {
                    dark:bg-white/6 dark:hover:bg-white/10 dark:text-white/60"
             @click="handleEdit"
           >編集して送る</button>
-          <!-- ここの削除の処理は良い。 -->
           <button
             class="text-xs px-3 py-1.5 rounded-lg transition-colors cursor-pointer
                    bg-red-500/10 hover:bg-red-500/15 text-red-400"
-            @click="deleteOrphanedTurn(message)"
+            @click="requestDeleteOrphanedTurn"
           >削除する</button>
         </div>
       </div>
     </div>
   </div>
+  <ConfirmDialog ref="confirmDeleteDialog" />
 </template>
 
 <style scoped>

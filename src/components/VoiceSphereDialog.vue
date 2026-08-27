@@ -39,7 +39,7 @@ defineExpose({ open, close })
     >
       <div class="flex flex-col items-center h-full w-full px-6 py-8">
         <!-- 大きな球体 -->
-        <div class="flex-1 flex flex-col items-center justify-center gap-6 min-h-0">
+        <div class="flex-1 flex flex-col items-center justify-center min-h-0">
           <div class="w-64 h-64 sm:w-80 sm:h-80">
             <VoiceSphere
               :recording="recording"
