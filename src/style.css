@@ -7,3 +7,19 @@
 dialog:not([open]) {
   display: none;
 }
+
+/* 指を上下に動かすとページ全体が引っ張られて動く（ラバーバンド/オーバースクロール）のを止める。
+   通常のスクロール自体は各ビューの overflow 設定に従うので、ここは行き過ぎ分の動きだけを殺す */
+html, body {
+  overscroll-behavior: none;
+}
+
+/* iOS Safari は font-size が16px未満の input/textarea にフォーカスすると
+   ページを自動でズームインする。TextComposer(text-sm)や会話タイトル編集(継承でtext-xs)は
+   これに該当し、キーボード表示と同時に画面が拡大されたように見える。
+   Tailwindのユーティリティは @layer 内なので、layer外のこの指定が特異性に関係なく勝つ */
+@media (max-width: 767px) {
+  input, textarea, select {
+    font-size: 16px;
+  }
+}

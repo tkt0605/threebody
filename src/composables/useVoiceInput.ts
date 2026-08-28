@@ -106,6 +106,13 @@ export function useVoiceInput(onFinish: (text: string) => void) {
       return
     }
 
+    // ここで先に recording を立てる。ChatView の syncListening() はこの変更を
+    // watch でも受けて、ウェイクワード待機中の認識器を止める。await getUserMedia の
+    // 間に watch のジョブ（マイクロタスク）が消化されるため、ここより後で
+    // 立てると「まだ止まっていないウェイクワード側の認識器」と「これから作る
+    // 認識器」が一瞬並走してしまい、2回目以降だけ認識が始まらない不具合になる
+    recording.value = true
+
     try {
       // audio: true（既定まかせ）だと、スピーカーから出ている自分の応答音声を
       // マイクが拾い直してしまう。ブラウザ既定でエコーキャンセルが入る環境も多いが、
@@ -120,6 +127,7 @@ export function useVoiceInput(onFinish: (text: string) => void) {
         },
       })
     } catch {
+      recording.value = false
       errorMsg.value = 'マイクへのアクセスが拒否されました'
       return
     }
@@ -153,7 +161,6 @@ export function useVoiceInput(onFinish: (text: string) => void) {
     recognition.onend = () => { if (recording.value) recognition?.start() }
     recognition.start()
 
-    recording.value = true
     finalText.value = ''
     interimText.value = ''
   }
