@@ -43,9 +43,16 @@ const answerMessage = computed<Message | null>(() => turn.value && {
 // 導線は「登録する」ではなく「同じ問いを自分のモデルで検算させる」（ROADMAP 2章）。
 // 宛先は BYOK / Ollama 層で、この層は増えても運営のコストが増えない。
 // 問いは ?ask= で運び、送信まではしない（本人が押していないうちに枠を使わない
-const askHref = computed(() =>
-  turn.value?.question ? `/new?ask=${encodeURIComponent(turn.value.question)}` : '/new'
-)
+//
+// from= は共有リンク経由の再実行を計測するためのトークン（このページの route.params.token
+// をそのまま横流しする。ChatView 側で読み、会話作成時に conversations.shared_from へ書く）
+const askHref = computed(() => {
+  if (!turn.value?.question) return '/new'
+  const params = new URLSearchParams({ ask: turn.value.question })
+  const token = route.params.token
+  if (typeof token === 'string') params.set('from', token)
+  return `/new?${params.toString()}`
+})
 </script>
 
 <template>
