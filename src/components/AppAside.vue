@@ -62,10 +62,25 @@ async function handleDeleteConversation(id: string) {
 
 // 会話ごとの詳細メニュー（名前の変更／削除）。ゴミ箱アイコンが常時見えていると
 // 押し間違いの導線になるため、詳細アイコンの奥に畳む
+//
+// メニュー本体は body へ Teleport し、fixed 座標で出す。会話一覧が
+// overflow-y-auto のスクロールコンテナで、その中に absolute で置くと、
+// 一番下の会話でメニューを開いた瞬間だけスクロール可能領域（scrollHeight）が
+// メニューの高さぶん増えて、それまで無かったスクロールバーが急に現れていた
 const menuOpenId = ref<string | null>(null)
+const menuOpenConv = computed(
+  () => conversations.value.find(c => c.id === menuOpenId.value) ?? null
+)
+const convMenuPos = ref<{ top: number; right: number }>({ top: 0, right: 0 })
 
-function toggleConvMenu(id: string) {
-  menuOpenId.value = menuOpenId.value === id ? null : id
+function toggleConvMenu(id: string, event: MouseEvent) {
+  if (menuOpenId.value === id) { 
+    menuOpenId.value = null; 
+    return
+  }
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  convMenuPos.value = { top: rect.bottom + 4, right: window.innerWidth - rect.right }
+  menuOpenId.value = id
 }
 
 function closeConvMenu() {
@@ -162,10 +177,14 @@ function closeMenus() {
 onMounted(() => {
   document.addEventListener('keydown', onKeydown)
   document.addEventListener('click', closeMenus)
+  // 会話一覧をスクロールされると fixed 座標が古くなるので、そのときは閉じる
+  // （scroll はバブリングしないため capture で拾う）
+  document.addEventListener('scroll', closeConvMenu, true)
 })
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown)
   document.removeEventListener('click', closeMenus)
+  document.removeEventListener('scroll', closeConvMenu, true)
 })
 
 defineExpose({ openSettings })
@@ -284,7 +303,7 @@ defineExpose({ openSettings })
           class="shrink-0 text-gray-400 dark:text-white/30 hover:text-gray-700 dark:hover:text-white/70 cursor-pointer p-0.5 rounded"
           title="会話の詳細"
           aria-label="会話の詳細"
-          @click.stop="toggleConvMenu(conv.id)"
+          @click.stop="toggleConvMenu(conv.id, $event)"
         >
           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
             <circle cx="12" cy="5" r="1.6"/>
@@ -292,36 +311,43 @@ defineExpose({ openSettings })
             <circle cx="12" cy="19" r="1.6"/>
           </svg>
         </button>
-
-        <div
-          v-if="menuOpenId === conv.id"
-          class="absolute right-0 top-full mt-1 w-32 rounded-xl shadow-lg p-1.5 z-10
-                 bg-white border border-black/8 dark:bg-gray-900 dark:border-white/10"
-          @click.stop
-        >
-          <button
-            class="flex items-center gap-3 w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-gray-600 hover:bg-gray-100 dark:text-white/70 dark:hover:bg-white/6 cursor-pointer"
-            @click="startRenameConversation(conv)"
-          >
-            <svg class="w-3 h-3" width="16" height="16"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.0">
-              <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            名前を変更
-          </button>
-          <button
-            class="flex items-center gap-3 w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-rose-500 hover:bg-rose-500/10 dark:text-rose-400 cursor-pointer"
-            @click="requestDeleteConversation(conv)"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16">
-              <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
-              <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
-            </svg>
-            削除
-          </button>
-        </div>
       </div>
     </div>
     </nav>
+
+    <!-- 会話の詳細メニュー本体。body へ Teleport した fixed 配置。
+         会話一覧の overflow-y-auto の中に absolute で置いていた頃は、一番下の会話で
+         開いた瞬間だけスクロール可能領域が広がり、それまで無かったスクロールバーが
+         急に現れていた -->
+    <Teleport to="body">
+      <div
+        v-if="menuOpenConv"
+        class="fixed w-32 rounded-xl shadow-lg p-1.5 z-50
+               bg-white border border-black/8 dark:bg-gray-900 dark:border-white/10"
+        :style="{ top: `${convMenuPos.top}px`, right: `${convMenuPos.right}px` }"
+        @click.stop
+      >
+        <button
+          class="flex items-center gap-3 w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-gray-600 hover:bg-gray-100 dark:text-white/70 dark:hover:bg-white/6 cursor-pointer"
+          @click="startRenameConversation(menuOpenConv)"
+        >
+          <svg class="w-3 h-3" width="16" height="16"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.0">
+            <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          名前を変更
+        </button>
+        <button
+          class="flex items-center gap-3 w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-rose-500 hover:bg-rose-500/10 dark:text-rose-400 cursor-pointer"
+          @click="requestDeleteConversation(menuOpenConv)"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16">
+            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+            <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+          </svg>
+          削除
+        </button>
+      </div>
+    </Teleport>
     <!-- ユーザー -->
     <div class="px-2 py-4 border-t border-black/8 dark:border-white/8 shrink-0">
       <div class="relative flex items-center gap-2 px-3 py-2 rounded-xl">
