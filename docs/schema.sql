@@ -106,6 +106,9 @@ create table public.conversations (
   id          uuid primary key default gen_random_uuid(),
   user_id     uuid not null references public.user_setting (id) on delete cascade,
   title       text,
+  -- 共有リンク経由の再実行を計測するための、元になった shared_messages.token の写し。
+  -- 会話作成時に一度だけ書き、クライアントが読み終えたら null に戻す（永続属性ではない）
+  shared_from text,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
