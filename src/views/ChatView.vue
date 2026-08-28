@@ -56,6 +56,12 @@ watch(() => [route.path, route.params.id], syncRouteConversation)
 // 始めないため。読むのはマウント時の1回だけで、以降は普通の入力欄に戻る
 const askFromShare = ref(typeof route.query.ask === 'string' ? route.query.ask : '')
 
+// 共有リンク経由の再実行を計測するための ?from=<shared_messages.token>。
+// askFromShare と同様、読むのはマウント時の1回だけ。実際に送信されたタイミングで
+// useChat 側（conversations.shared_from）へ渡し、渡した後はここでクリアする
+// （同じタブで別の新規会話を作るときに古いトークンを使い回さないため）
+const sharedFromToken = ref(typeof route.query.from === 'string' ? route.query.from : '')
+
 // 共有状態（どのターンを公開しているか）は自分のぶんだけを1回引く。
 // MessageBubble の「この検算を共有する」がここを読む
 onMounted(loadLiveTokens)
@@ -223,7 +229,9 @@ const { recording, finalText, interimText, bars, errorMsg, start, stop } =
     narration.begin(activeBodyCount.value, ttsLang.value)
     // modalityを明示しないと既定の'text'になり、中断時に「話し直す」ではなく
     // 「編集して送る」が出てしまう（MessageBubbleのisVoiceOrphan判定）
-    sendMessage(text, 'voice')
+    const sharedFrom = sharedFromToken.value || null
+    sharedFromToken.value = ''
+    sendMessage(text, 'voice', sharedFrom)
   })
 
 // 録音を始めるすべての入口（中央の球体・下部の球体・ウェイクワード）はここを通す。
@@ -251,7 +259,9 @@ function requestVoiceDialog() {
 function handleTextSend(text: string) {
   if (!canSend.value) { limitDialog.value?.open(); return }
   askFromShare.value = ''
-  sendMessage(text)
+  const sharedFrom = sharedFromToken.value || null
+  sharedFromToken.value = ''
+  sendMessage(text, 'text', sharedFrom)
 }
 
 // 中断された質問の「編集して送る」。MessageBubble が孤立ペアの削除まで終えた

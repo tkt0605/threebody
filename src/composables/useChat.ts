@@ -205,7 +205,10 @@ async function loadConversations(): Promise<void> {
 }
 
 // 新規会話を作成し、現在表示中の会話として切り替える
-async function createConversation(): Promise<string> {
+// sharedFrom: 共有リンク経由の再実行を計測するための shared_messages.token。
+// 会話作成時に一度だけ書く。呼び出し側（ChatView）が使用後にクリアするため、ここでは
+// 受け取った値をそのまま insert するだけでよい
+async function createConversation(sharedFrom: string | null = null): Promise<string> {
   const { user } = useAuth()
   if (!user.value) throw new Error('ログインしていません')
 
@@ -214,7 +217,12 @@ async function createConversation(): Promise<string> {
   const now = new Date()
   const { data: created, error } = await supabase
     .from('conversations')
-    .insert({ user_id: user.value.id, created_at: now.toISOString(), updated_at: now.toISOString() })
+    .insert({
+      user_id: user.value.id,
+      shared_from: sharedFrom,
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+    })
     .select('id')
     .single()
   if (error) throw error
@@ -314,12 +322,13 @@ function startNewConversation(): void {
   messages.value = []
 }
 
-// 現在の会話が無ければ新規作成し、それを現在の会話にする
-async function ensureConversation(userId: string): Promise<string> {
+// 現在の会話が無ければ新規作成し、それを現在の会話にする。
+// sharedFrom は新規作成時にしか使わない（既存の会話が既にあれば無視される）
+async function ensureConversation(userId: string, sharedFrom: string | null = null): Promise<string> {
   if (currentConversationId.value) return currentConversationId.value
 
   await ensureUserProfile(userId)
-  return createConversation()
+  return createConversation(sharedFrom)
 }
 
 // 会話のタイトルを変更する（空文字なら未設定=nullに戻す）
@@ -462,8 +471,9 @@ async function updatePersistedMessage(message: Message, prevWrite: Promise<unkno
   if (blockRows.length > 0) await insertBlockRows(blockRows)
 }
 
-// エラーブロックは一時的な表示のみ。DBのblock_type enumに'error'が無いため永続化しない
-async function persistMessage(message: Message): Promise<void> {
+// エラーブロックは一時的な表示のみ。DBのblock_type enumに'error'が無いため永続化しない。
+// sharedFrom は ensureConversation を経由して、会話が新規作成される場合にだけ効く
+async function persistMessage(message: Message, sharedFrom: string | null = null): Promise<void> {
   const { user } = useAuth()
   if (!user.value) return
 
@@ -487,7 +497,7 @@ async function persistMessage(message: Message): Promise<void> {
   // 中身もシグナルも無いものだけが、記録する価値のない空メッセージ
   if (blockRowsToWrite.length === 0 && !hasSignal(message.signals)) return
 
-  const convId = await ensureConversation(user.value.id)
+  const convId = await ensureConversation(user.value.id, sharedFrom)
 
   const { data: inserted, error: msgErr } = await supabase
     .from('messages')
@@ -551,7 +561,9 @@ export function useChat() {
   const { settings } = useSettings()
   const { refreshCapabilities } = useCapabilities()
 
-  async function sendMessage(text: string, modality: Modality='text') {
+  // sharedFrom: 共有ページ由来の再実行を計測するトークン（ChatViewが?from=から渡す）。
+  // 会話が新規作成される最初の一言にだけ意味があり、それ以外では無視される
+  async function sendMessage(text: string, modality: Modality='text', sharedFrom: string | null = null) {
     // 直前が user のまま＝その発言に応答が付いていない（バージインや停止で捨てられた）。
     // このとき次の発話は「新しい問い」ではなく「言い直し」なので、並べずに置き換える。
     // 並べると同じ主旨の断片が2つ残り、履歴としても次のリクエストの文脈としても壊れる。
@@ -588,7 +600,7 @@ export function useChat() {
         modality,
       }
       messages.value.push(userMsg)
-      lastUserWrite = persistMessage(userMsg)
+      lastUserWrite = persistMessage(userMsg, sharedFrom)
         .catch(err => console.error('メッセージの保存に失敗しました', err))
     }
     lastSentUserId = userMsg.id
