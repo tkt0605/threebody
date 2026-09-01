@@ -222,6 +222,11 @@ ${task}。
   答えに実在しない引用は、判定を「指摘あり」にしていても指摘ごと捨てられる。
 - 指摘が思いつかないときに、無理に作らない。その場合は判定に「指摘なし」とだけ書き、
   対象箇所と代替案には「―」を書く。無い指摘をひねり出すほうが、指摘が無いことより有害だ。
+- 答えが既に自分から確認・言及している論点を、指摘として数えない。書く前に、答えの中に
+  同じ懸念への言及や確認質問が無いか探す。既にあるなら、それは指摘ではなく重複だ。
+- 代替案は、対象箇所で指摘した手段をそのまま使い回さない。書く前に、代替案が対象箇所と
+  同じ仕組み（同じ関数・同じキーワード・同じ設定）を使っていないか確かめる。使っていれば、
+  その代替案は指摘を解決していないので書き直すか、指摘そのものを取り下げる。
 
 【出力形式】以下の4行だけを、この見出しのまま書く。前置きも後書きも書かない。
 見出しも本文も、答えと同じ言語で書く。
@@ -329,7 +334,26 @@ function extractField(content: string, label: string): string | null {
   return line.trim().slice(label.length + 1).trim()
 }
 
-// 「判定」と「対象箇所」の2フィールドで見る。
+// 根拠が「対象箇所の言い換え」に留まり、何が崩れる／抜けているかを述べていない指摘が
+// 実データに複数見つかった（scripts/view-shared.mjs の割れた率が高く出た件のサンプル確認、
+// 2026-09-01）。例: 崩れる点の根拠が「〜というメリットが挙げられている」とだけ書かれ、
+// どこがどう崩れるかに触れていない。判定・対象箇所の照合だけでは、この種の
+// 実質からっぽな根拠を弾けない。
+//
+// 厳密な「根拠が実際に欠陥を指しているか」の判定は文字列処理だけでは不可能なので、
+// ここでは構造面の防波堤（極端に短い／プレースホルダーの根拠を弾く）に留める。
+// 中身の具体性そのものは、副体側のプロンプト（buildReviewSystemPrompt）を直す側の課題
+const MIN_RATIONALE_CHARS = 15
+const PLACEHOLDER_RATIONALE_PATTERN = /^[―\-–—]*$/
+
+function isSubstantiveRationale(rationale: string | null): boolean {
+  if (!rationale) return false
+  const normalized = normalizeForQuoteCheck(rationale)
+  if (PLACEHOLDER_RATIONALE_PATTERN.test(normalized)) return false
+  return normalized.length >= MIN_RATIONALE_CHARS
+}
+
+// 「判定」「対象箇所」「根拠」の3フィールドで見る。
 //
 // 判定だけを見ていた旧実装では、モデルが「指摘あり」と書きさえすれば対象箇所が
 // 答えに実在するかは誰も確かめていなかった（docs/ROADMAP.md②の完了判定「副体の指摘が
@@ -347,5 +371,8 @@ export function hasReviewFinding(content: string, answer: string): boolean {
 
   const target = extractField(trimmed, '対象箇所')
   if (!target) return false
-  return hasQuotedSpan(target, answer)
+  if (!hasQuotedSpan(target, answer)) return false
+
+  const rationale = extractField(trimmed, '根拠')
+  return isSubstantiveRationale(rationale)
 }
