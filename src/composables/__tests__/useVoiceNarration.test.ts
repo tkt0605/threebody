@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  useVoiceNarration, fillerPhrase, FILLER_DELAY_MS, SPEECH_BUDGET_CHARS, TRUNCATED_NOTICE,
-} from '../useVoiceNarration'
+import { useVoiceNarration, fillerPhrase, FILLER_DELAY_MS } from '../useVoiceNarration'
 
 // jsdom には SpeechSynthesis が無いので、喋った内容を記録するだけの偽物を差す。
 // speak した時点で即座に鳴り終わったことにして、キューの消化を同期的に追えるようにする
@@ -94,70 +92,31 @@ describe('useVoiceNarration', () => {
     })
   })
 
-  // 長い回答を最後まで音読されるのが、いま一番のストレス。
-  // 読む速度は聞く速度の2〜3倍あるので、聞き手はとっくに画面で読み終えて待たされている
-  describe('読み上げ予算', () => {
-    // 1文が確実に予算を超える長さ。「。」で区切って複数文にする
-    const longSentence = `${'あ'.repeat(SPEECH_BUDGET_CHARS)}。`
-
-    it('短い応答は今までどおり全部読む（雑談の体験を変えない）', () => {
+  // 「要点は声、詳細は画面」は文字数の予算ではなく中身の種類（コード/CLIを落とす）で線を引く。
+  // 地の文である以上、長さでは打ち切らない
+  describe('要点＝地の文の読み上げ', () => {
+    it('長い地の文でも打ち切らずに全部読む', () => {
       const { spoken } = installFakeSpeech()
       const narration = useVoiceNarration()
       narration.begin(1)
 
-      narration.feed('はい。わかりました。')
-      narration.end('はい。わかりました。')
-
-      expect(spoken).toEqual(['はい。', 'わかりました。'])
-    })
-
-    it('予算を超えたら以降の文を読まない', () => {
-      const { spoken } = installFakeSpeech()
-      const narration = useVoiceNarration()
-      narration.begin(1)
-
+      const longSentence = `${'あ'.repeat(200)}。`
       narration.feed(`${longSentence}まだ続きます。`)
 
-      // 予算を跨いだ1文目は最後まで読む（文の途中で黙らない）
-      expect(spoken).toEqual([longSentence])
+      expect(spoken).toEqual([longSentence, 'まだ続きます。'])
     })
 
-    it('打ち切ったら、続きの在り処だけ伝えて終わる', () => {
+    it('コードブロックは読み上げに乗らない（takeCompleteSentences が事前に落とす）', () => {
       const { spoken } = installFakeSpeech()
       const narration = useVoiceNarration()
       narration.begin(1)
 
-      const full = `${longSentence}まだ続きます。最後の断片`
+      const full = 'まず要点です。\n```bash\nnpm run dev\n```\n以上です。'
       narration.feed(full)
       narration.end(full)
 
-      expect(spoken).toEqual([longSentence, TRUNCATED_NOTICE])
-    })
-
-    it('打ち切ったあとに本文が届いても読み上げない', () => {
-      const { spoken } = installFakeSpeech()
-      const narration = useVoiceNarration()
-      narration.begin(1)
-
-      narration.feed(`${longSentence}あ。`)
-      narration.feed(`${longSentence}あ。い。う。`)
-
-      expect(spoken).toEqual([longSentence])
-    })
-
-    // 予算は1回の応答ごとにリセットされる。持ち越すと2ターン目以降が黙る
-    it('次の応答では予算が戻っている', () => {
-      const { spoken } = installFakeSpeech()
-      const narration = useVoiceNarration()
-
-      narration.begin(1)
-      narration.feed(`${longSentence}捨てられます。`)
-      narration.end(`${longSentence}捨てられます。`)
-
-      narration.begin(1)
-      narration.feed('次の応答です。')
-
-      expect(spoken.at(-1)).toBe('次の応答です。')
+      expect(spoken.join('')).not.toContain('npm run dev')
+      expect(spoken).toEqual(['まず要点です。', '以上です。'])
     })
   })
 
