@@ -26,7 +26,7 @@
 // hasReviewFinding）。1体でも true なら、そのターンは主体と副体の見解が割れたとみなす。
 // hasFinding はこの列を足す前に保存された行には無い（undefined＝不明、false＝指摘なし
 // とは区別する。src/types/message.ts の BodyPerspective）。
-//
+//  
 // 【使い方】
 //   node scripts/view-shared.mjs
 // SUPABASE_URL / SUPABASE_SERVICE_KEY は .env から読む（backend/supabaseAdmin.ts と同じ2本）。
