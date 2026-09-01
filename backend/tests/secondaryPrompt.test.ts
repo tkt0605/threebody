@@ -266,7 +266,7 @@ describe('hasReviewFinding', () => {
 
   // 副体は対象箇所を「」で囲んだり、句読点の前後にスペースを入れることがある
   it('空白・引用符の違いは引用照合の邪魔をしない', () => {
-    const content = '判定: 指摘あり\n対象箇所: 「トークンの有効期限は 24時間 とする」\n根拠: …\n代替案: …'
+    const content = '判定: 指摘あり\n対象箇所: 「トークンの有効期限は 24時間 とする」\n根拠: 短すぎて頻繁に再ログインが必要になる\n代替案: …'
     expect(hasReviewFinding(content, answer)).toBe(true)
   })
 
@@ -279,7 +279,27 @@ describe('hasReviewFinding', () => {
   // 説明の地の文を混ぜて書く。対象箇所"全体"が答えの部分文字列であることを要求すると、
   // 判定が「指摘あり」でも一致せず false へ倒れていた（旧実装の穴）
   it('引用に説明の地の文が混ざっていても、答えからの一致区間があれば true', () => {
-    const content = '判定: 指摘あり\n対象箇所: 「トークンの有効期限は24時間とする」のように短い値を決め打ちしている部分\n根拠: …\n代替案: …'
+    const content = '判定: 指摘あり\n対象箇所: 「トークンの有効期限は24時間とする」のように短い値を決め打ちしている部分\n根拠: 短すぎて頻繁に再ログインが必要になる\n代替案: …'
     expect(hasReviewFinding(content, answer)).toBe(true)
+  })
+
+  // 実測（scripts/view-shared.mjs で割れた率を確認した際のサンプル）: 対象箇所は答えに
+  // 実在する引用でも、根拠が「〜というメリットが挙げられている」のような対象箇所の
+  // 言い換えに留まり、何が崩れる／抜けているかに触れていない指摘が複数見つかった。
+  // 厳密な具体性判定は文字列処理だけでは不可能なので、まずは著しく短い／
+  // プレースホルダーの根拠だけを機械的に弾く
+  it('根拠が極端に短い（実質からっぽ）なら、判定・対象箇所が揃っていても false', () => {
+    const content = '判定: 指摘あり\n対象箇所: トークンの有効期限は24時間とする\n根拠: 微妙\n代替案: 7日程度に延ばす'
+    expect(hasReviewFinding(content, answer)).toBe(false)
+  })
+
+  it('根拠がプレースホルダー（―のみ）なら false', () => {
+    const content = '判定: 指摘あり\n対象箇所: トークンの有効期限は24時間とする\n根拠: ―\n代替案: 7日程度に延ばす'
+    expect(hasReviewFinding(content, answer)).toBe(false)
+  })
+
+  it('根拠の行が無ければ false', () => {
+    const content = '判定: 指摘あり\n対象箇所: トークンの有効期限は24時間とする\n代替案: 7日程度に延ばす'
+    expect(hasReviewFinding(content, answer)).toBe(false)
   })
 })
