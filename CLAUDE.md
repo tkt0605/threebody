@@ -74,3 +74,17 @@ ThreeBody — 1〜3個のLLM（「体」）が並列に回答し、主体（一�
 - 命名、エラー処理、SSEイベント名は周辺の既存コードに合わせる。新しいパターンを持ち込むときは `[要判断]`
 - 私の判断が必要な箇所は行頭に `[要判断]`
 - 本ファイルと実装の食い違いは、作業中に読んだ範囲で気づいたときだけ `[要判断]` で報告する。照合のための追加調査はしない
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues（`gh` CLI）。See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+デフォルトの5ラベル (`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`)。See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+`docs/CONTENT.md`（設計判断/用語集/負債棚卸しの3セクション。ROADMAP.mdは廃止・統合済み）。See `docs/agents/domain.md`.
