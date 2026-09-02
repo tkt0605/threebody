@@ -1,5 +1,6 @@
 import { useTTS } from './useTTS'
 import { takeCompleteSentences } from '../lib/splitSentences'
+import type { Language } from './useSettings'
 
 // 音声対話中の「AIが喋る側」をまとめて受け持つ。
 //
@@ -23,17 +24,21 @@ export const FILLER_DELAY_MS = 700
 // 相槌の文言。体の数がそのまま「何人で考えているか」になる。
 // lang（enqueue に渡すのと同じ BCP-47 文字列）で発話の言語も切り替える。
 // 声（u.lang）だけ設定言語に合わせても、文言が日本語固定では聞き手に不自然に聞こえるため
-const FILLER_PEOPLE: Record<'ja' | 'en', { two: string; three: string }> = {
+// Language を再利用しているのは意図的。ここを 'ja' | 'en' のローカル型で
+// 独立させると、useSettings.ts に3言語目が増えても本ファイルはコンパイルが通ってしまい、
+// 更新漏れに気づけない。Record<Language, ...> にしておけば、Language が
+// 増減した瞬間にこの2つの表がコンパイルエラーで追随を要求される
+const FILLER_PEOPLE: Record<Language, { two: string; three: string }> = {
   ja: { two: '二人', three: '三人' },
   en: { two: 'two people', three: 'three people' },
 }
-const FILLER_TEMPLATE: Record<'ja' | 'en', (people: string) => string> = {
+const FILLER_TEMPLATE: Record<Language, (people: string) => string> = {
   ja: people => `${people}で考えています`,
   en: people => `${people} are thinking`,
 }
 
 export function fillerPhrase(bodyCount: number, lang = 'ja-JP'): string {
-  const locale = lang.startsWith('en') ? 'en' : 'ja'
+  const locale: Language = lang.startsWith('en') ? 'en' : 'ja'
   const people = FILLER_PEOPLE[locale][bodyCount >= 3 ? 'three' : 'two']
   return FILLER_TEMPLATE[locale](people)
 }
