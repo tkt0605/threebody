@@ -36,6 +36,11 @@ describe('fillerPhrase', () => {
     expect(fillerPhrase(3)).toBe('三人で考えています')
     expect(fillerPhrase(2)).toBe('二人で考えています')
   })
+
+  it('lang が英語なら文言も英語になる（声だけ変えても不自然なため）', () => {
+    expect(fillerPhrase(3, 'en-US')).toBe('three people are thinking')
+    expect(fillerPhrase(2, 'en-US')).toBe('two people are thinking')
+  })
 })
 
 describe('useVoiceNarration', () => {
@@ -130,6 +135,15 @@ describe('useVoiceNarration', () => {
       expect(spoken).toEqual([])
       vi.advanceTimersByTime(FILLER_DELAY_MS)
       expect(spoken).toEqual(['三人で考えています'])
+    })
+
+    it('begin に渡した lang が相槌の文言にも反映される', () => {
+      const { spoken } = installFakeSpeech()
+      const narration = useVoiceNarration()
+      narration.begin(3, 'en-US')
+
+      vi.advanceTimersByTime(FILLER_DELAY_MS)
+      expect(spoken).toEqual(['three people are thinking'])
     })
 
     it('単体モードでは相槌を入れない（間が空かないため）', () => {

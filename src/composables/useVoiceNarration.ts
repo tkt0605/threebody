@@ -20,10 +20,22 @@ export const FILLER_DELAY_MS = 700
 // コード・CLIコマンドは takeCompleteSentences が文に割る前に落とすため、
 // ここに残る文はもともと地の文（＝要点）だけになる。読み上げに上限は設けない。
 
-// 相槌の文言。体の数がそのまま「何人で考えているか」になる
-export function fillerPhrase(bodyCount: number): string {
-  const people = bodyCount >= 3 ? '三人' : '二人'
-  return `${people}で考えています`
+// 相槌の文言。体の数がそのまま「何人で考えているか」になる。
+// lang（enqueue に渡すのと同じ BCP-47 文字列）で発話の言語も切り替える。
+// 声（u.lang）だけ設定言語に合わせても、文言が日本語固定では聞き手に不自然に聞こえるため
+const FILLER_PEOPLE: Record<'ja' | 'en', { two: string; three: string }> = {
+  ja: { two: '二人', three: '三人' },
+  en: { two: 'two people', three: 'three people' },
+}
+const FILLER_TEMPLATE: Record<'ja' | 'en', (people: string) => string> = {
+  ja: people => `${people}で考えています`,
+  en: people => `${people} are thinking`,
+}
+
+export function fillerPhrase(bodyCount: number, lang = 'ja-JP'): string {
+  const locale = lang.startsWith('en') ? 'en' : 'ja'
+  const people = FILLER_PEOPLE[locale][bodyCount >= 3 ? 'three' : 'two']
+  return FILLER_TEMPLATE[locale](people)
 }
 
 export function useVoiceNarration(onIdle?: () => void) {
@@ -53,7 +65,7 @@ export function useVoiceNarration(onIdle?: () => void) {
     fillerTimer = setTimeout(() => {
       fillerTimer = null
       // 待っている間に本文が始まっていたら、もう相槌は要らない
-      if (active && spokenUpTo === 0) enqueue(fillerPhrase(bodyCount), lang)
+      if (active && spokenUpTo === 0) enqueue(fillerPhrase(bodyCount, lang), lang)
     }, FILLER_DELAY_MS)
   }
 
