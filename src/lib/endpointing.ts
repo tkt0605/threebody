@@ -19,6 +19,11 @@ export const ENDPOINT_DEFAULT_MS    = 1500  // 判断材料なし
 export const ENDPOINT_CONTINUING_MS = 2400  // まだ続きそう
 export const ENDPOINT_FILLER_MS     = 3000  // 考え込んでいる
 
+// 上のENDPOINT_*はすべて「認識結果が音量ベースの沈黙判定で止まった後」の待ち時間。
+// 生活音やスピーカーの回り込みで音量が閾値を割らないと、その沈黙判定自体が
+// 一生発火しないケースがある。これは音量とは独立に、認識結果（interim/final）が
+// 更新されなくなってからの経過時間だけを見る保険で、これを超えたら強制的に切る
+export const STALL_TIMEOUT_MS = 5000
 // 認識済みテキストから、無音がこれだけ続いたら送信してよい、という長さを返す
 export function endpointDelayMs(text: string): number {
   const trimmed = text.trim()

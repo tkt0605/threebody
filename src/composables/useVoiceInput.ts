@@ -1,6 +1,6 @@
 import { ref, onUnmounted } from 'vue'
 import { useSettings, type Language } from './useSettings'
-import { endpointDelayMs } from '../lib/endpointing'
+import { endpointDelayMs, STALL_TIMEOUT_MS } from '../lib/endpointing'
 
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList
@@ -50,12 +50,21 @@ export function useVoiceInput(onFinish: (text: string) => void) {
   let stream:        MediaStream          | null = null
   let raf:           number               | null = null
   let silenceTimer:  ReturnType<typeof setTimeout> | null = null
+  let lastResultAt = 0
   // 発話後どれだけ静かなら自動送信するかは固定値ではなく、
   // 直前に認識できた文字列から都度決める（lib/endpointing.ts）。
   // 言い淀みで切られる／言い切っても待たされる、の両方を減らすため
 
   function drawBars() {
     if (!analyser || !audioCtx) return
+
+    // 生活音などで音量が閾値を割らず、下の沈黙判定が一生発火しないケースの保険。
+    // 音量とは無関係に「新しい認識結果が来ているか」だけを見る
+    if (Date.now() - lastResultAt >= STALL_TIMEOUT_MS) {
+      stop()
+      return
+    }
+
     const data = new Uint8Array(analyser.frequencyBinCount)
     analyser.getByteFrequencyData(data)
 
@@ -139,6 +148,7 @@ export function useVoiceInput(onFinish: (text: string) => void) {
     analyser.minDecibels = -85
     analyser.maxDecibels = -10
     audioCtx.createMediaStreamSource(stream).connect(analyser)
+    lastResultAt = Date.now()
     raf = requestAnimationFrame(drawBars)
 
     recognition = new SRAPI()
@@ -147,6 +157,7 @@ export function useVoiceInput(onFinish: (text: string) => void) {
     recognition.interimResults = true
 
     recognition.onresult = (e) => {
+      lastResultAt = Date.now()
       let interim = ''
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i]
