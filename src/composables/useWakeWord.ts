@@ -100,8 +100,9 @@ export function useWakeWord(onWake: () => void, onBargeIn?: (transcript: string)
         }
         // AIが喋っている間は、ウェイクワードを言い直させない。
         // 人間の会話は割り込みで成立するので、何か話し始めた時点で黙る。
-        // 自分の声を拾って自分で自分を止めないよう、マイク側は
-        // echoCancellation を明示している（useVoiceInput）
+        // 自分の応答音声の回り込みは SpeechRecognition 内部の取得に任せている
+        // （getUserMedia で制約を指定する経路は無くした。useVoiceInput 冒頭の注記）。
+        // 最低文字数（BARGE_IN_MIN_CHARS）がその誤爆を抑える唯一の防御
         if (mode.value === 'barge-in' && transcript.trim().length >= BARGE_IN_MIN_CHARS) {
           stopListening()
           onBargeIn?.(transcript.trim())

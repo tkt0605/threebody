@@ -37,14 +37,24 @@ const LANG_LOCALE: Record<Language, string> = {
 
 const BAR_COUNT = 32
 
-// バーの平均音量が「人が話している」と言える大きさ。沈黙判定（0.06）より上に取る
-const SPEECH_VOL = 0.12
-
-// 声は聞こえているのに認識結果が1文字も返ってこない状態が続いたら、
-// 認識器が音を受け取れていないと見なして開き直すまでの時間。
-// 端末側のイベント（audiostart）は実装差が大きいので、Web Audio 側の
-// 解析結果と認識結果のズレという、ブラウザに依存しない材料で判断する
-const DEAF_TIMEOUT_MS = 2200
+// 録音中にマイクを掴むのは SpeechRecognition だけにする。
+//
+// 以前は音量バーの描画と無音判定のために getUserMedia → AudioContext → AnalyserNode を
+// 併走させていたが、iOS（Safari も Chrome も中身は WebKit）では2系統の音声取得を同時に
+// 持つと認識側が例外も onerror も出さずに沈黙した。PC では再現せず、ウェイクワード待機
+// （SpeechRecognition 単独）は iOS でも動いていたので、原因は「2系統同時」そのもの。
+// 認識器を作り直しても analyser 側がマイクを握ったままなので直らなかった。
+//
+// そのため音量は測らない。バーは「認識結果が届いたか」で動かす演出で、無音判定は
+// 「認識結果が更新されなくなってからの経過時間」だけで行う（音量を見ない）。
+//
+// 結果が届いた瞬間のバーの高さ。実マイク時代の発話中の平均（0.2〜0.4）に合わせる
+const LEVEL_ON_RESULT = 0.35
+// 1フレームごとの減衰。結果が途切れると 0.3 秒ほどで静まる
+const LEVEL_DECAY = 0.9
+// 何も届いていない間の「聴いている」ゆらぎ
+const LEVEL_BREATH_BASE = 0.04
+const LEVEL_BREATH_AMP  = 0.03
 
 export function useVoiceInput(onFinish: (text: string) => void) {
   const { settings } = useSettings()
@@ -55,90 +65,47 @@ export function useVoiceInput(onFinish: (text: string) => void) {
   const errorMsg   = ref<string | null>(null)
 
   let recognition:   SpeechRecognitionAPI | null = null
-  let audioCtx:      AudioContext         | null = null
-  let analyser:      AnalyserNode         | null = null
-  let stream:        MediaStream          | null = null
   let raf:           number               | null = null
-  let silenceTimer:  ReturnType<typeof setTimeout> | null = null
   let restartTimer:  ReturnType<typeof setTimeout> | null = null
   let lastResultAt = 0
-  // 認識器が本当に音を受け取れているかの判定材料（drawBars で使う）
   let gotAnyResult = false
-  let speechSince  = 0
-  let reopened     = false
+  let level = 0
   // 発話後どれだけ静かなら自動送信するかは固定値ではなく、
   // 直前に認識できた文字列から都度決める（lib/endpointing.ts）。
   // 言い淀みで切られる／言い切っても待たされる、の両方を減らすため
 
-  function drawBars() {
-    if (!analyser || !audioCtx) return
+  function tick() {
+    if (!recording.value) return
+    const now = Date.now()
+    const sinceResult = now - lastResultAt
 
-    // 生活音などで音量が閾値を割らず、下の沈黙判定が一生発火しないケースの保険。
-    // 音量とは無関係に「新しい認識結果が来ているか」だけを見る
-    if (Date.now() - lastResultAt >= STALL_TIMEOUT_MS) {
-      // 一度も認識できないまま時間切れになったなら、それは「話さなかった」ではなく
-      // 認識器が音を受け取れていない。黙って畳むと、画面には「聴いてます」が5秒出て
-      // 何事も無かったように消えるだけで、失敗したことすら分からない
-      // !gotAnyResultにすることで、逆数をとっている。今回は、行66からtrue
+    // 認識結果が一定時間まったく来なければ畳む。
+    // 一度も認識できないまま時間切れになったなら、それは「話さなかった」ではなく
+    // 認識器が音を受け取れていない。黙って畳むと、画面には「聴いてます」が5秒出て
+    // 何事も無かったように消えるだけで、失敗したことすら分からない
+    if (sinceResult >= STALL_TIMEOUT_MS) {
       const deaf = !gotAnyResult
       stop()
       if (deaf) errorMsg.value = '音声を認識できませんでした。もう一度お試しください（下の入力欄から文字でも送れます）'
       return
     }
 
-    const data = new Uint8Array(analyser.frequencyBinCount)
-    analyser.getByteFrequencyData(data)
-
-    // 声域 80Hz〜4000Hz の範囲だけを32バーにマッピング
-    const nyquist = audioCtx.sampleRate / 2
-    const minBin = Math.floor(80 / nyquist * analyser.frequencyBinCount)
-    const maxBin = Math.ceil(4000 / nyquist * analyser.frequencyBinCount)
-    const range = maxBin - minBin
-
-    bars.value = Array.from({ length: BAR_COUNT }, (_, i) => {
-      const lo = minBin + Math.floor(i * range / BAR_COUNT)
-      const hi = minBin + Math.floor((i + 1) * range / BAR_COUNT)
-      const count = Math.max(hi - lo, 1)
-      let sum = 0
-      for (let j = lo; j < hi; j++) sum += data[j] ?? 0
-      // 知覚的なカーブ（小さな音量でも視覚的に反応させる）
-      return Math.pow(sum / count / 255, 0.65)
-    })
-
-    // 発話が始まった後、沈黙が続いたら自動送信
-    const hasText = !!(finalText.value || interimText.value)
-    const avgVol  = bars.value.reduce((a, b) => a + b, 0) / BAR_COUNT
-    const silent  = avgVol < 0.06
-
-    // 声は届いているのに認識結果が返ってこないなら、認識器が音を受け取れていない。
-    // 例外も onerror も出ないまま黙る失敗の仕方をするので、こちらから開き直す。
-    // 開き直しは1回だけ。効かなければ下の STALL_TIMEOUT_MS で畳む
-    if (!gotAnyResult && !reopened) {
-      // 声が途切れても測り直さない。文中の息継ぎで毎回リセットされると、
-      // 2.2秒ぶん途切れずに喋り続けたときしか検知できなくなる
-      if (!speechSince && avgVol >= SPEECH_VOL) speechSince = Date.now()
-      if (speechSince && Date.now() - speechSince >= DEAF_TIMEOUT_MS) {
-        reopened = true
-        reopenRecognition()
-      }
+    // 発話が始まった後、認識結果の更新が止まったら自動送信。
+    // 待つ長さは止まった時点の文字列で決まる。結果が止まっている間は文字列も
+    // 変わらないので、毎フレーム評価しても同じ値になる
+    const text = finalText.value + interimText.value
+    if (text && sinceResult >= endpointDelayMs(text)) {
+      stop()
+      return
     }
 
-    if (hasText && silent) {
-      if (!silenceTimer) {
-        // 無音に入った時点の文字列で待ち時間を決める。以降に声が出れば
-        // else 側でタイマーごと捨てられ、次の無音で測り直される
-        const delay = endpointDelayMs(finalText.value + interimText.value)
-        silenceTimer = setTimeout(() => stop(), delay)
-      }
-    } else {
-      if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null }
-    }
+    level *= LEVEL_DECAY
+    const breath = LEVEL_BREATH_BASE + LEVEL_BREATH_AMP * Math.sin(now / 400)
+    bars.value = Array(BAR_COUNT).fill(Math.max(level, breath))
 
-    raf = requestAnimationFrame(drawBars)
+    raf = requestAnimationFrame(tick)
   }
 
-  // 認識器を1つ作って回し始める。開き直し（reopenRecognition）からも呼ぶので、
-  // start() 本体から切り出してある
   function spawnRecognition() {
     const SRAPI = window.SpeechRecognition ?? window.webkitSpeechRecognition
     if (!SRAPI) return
@@ -151,6 +118,7 @@ export function useVoiceInput(onFinish: (text: string) => void) {
     recognition.onresult = (e) => {
       lastResultAt = Date.now()
       gotAnyResult = true
+      level = LEVEL_ON_RESULT
       let interim = ''
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i]
@@ -160,7 +128,14 @@ export function useVoiceInput(onFinish: (text: string) => void) {
       interimText.value = interim
     }
     recognition.onerror = (e) => {
-      if (e.error !== 'aborted') errorMsg.value = '音声認識エラーが発生しました'
+      if (e.error === 'aborted') return
+      // マイク権限は getUserMedia を経由しなくなったので、拒否はここでしか分からない
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        cancel()
+        errorMsg.value = 'マイクへのアクセスが拒否されました'
+        return
+      }
+      errorMsg.value = '音声認識エラーが発生しました'
     }
     // continuous でも端末側の都合で勝手に閉じる（Android は一発話ごとに閉じることがある）。
     // 録音中はそのつど開き直すが、閉じた直後の start() は例外になることがあるので
@@ -190,24 +165,6 @@ export function useVoiceInput(onFinish: (text: string) => void) {
     }
   }
 
-  // 音は届いているのに認識結果が返らないときの立て直し。
-  // 認識器だけを作り直す（マイクのストリームと解析器はそのまま使う）
-  function reopenRecognition() {
-    const dead = recognition
-    recognition = null
-    if (dead) {
-      dead.onend = () => notifyEnd()
-      dead.onresult = null
-      dead.onerror = null
-      dead.abort()
-    }
-    lastResultAt = Date.now()
-    speechSince = 0
-    void waitForRelease().then(() => {
-      if (recording.value && !recognition) spawnRecognition()
-    })
-  }
-
   async function start() {
     errorMsg.value = null
 
@@ -221,8 +178,7 @@ export function useVoiceInput(onFinish: (text: string) => void) {
     }
 
     gotAnyResult = false
-    speechSince  = 0
-    reopened     = false
+    level = 0
 
     // ここで先に recording を立てる。ChatView の syncListening() はこの変更を
     // watch で受けて、ウェイクワード待機中の認識器を止める
@@ -239,61 +195,20 @@ export function useVoiceInput(onFinish: (text: string) => void) {
     // 待っている間にキャンセルされた（cancel / 別経路での stop）
     if (!recording.value) return
 
-    try {
-      // audio: true（既定まかせ）だと、スピーカーから出ている自分の応答音声を
-      // マイクが拾い直してしまう。ブラウザ既定でエコーキャンセルが入る環境も多いが、
-      // 明示しないと保証されない。バージイン（再生中の割り込み）を入れる前提として、
-      // まずここで「自分の声が返ってこない」状態を確定させる。
-      // 値はすべて ideal 扱いのため、対応していない端末でも例外にはならず無視される
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,   // 自分の応答音声の回り込みを消す（バージインの前提）
-          noiseSuppression: true,   // 定常ノイズを抑え、無音判定（SILENCE_MS）の精度を上げる
-          autoGainControl:  true,   // 声の大小による認識ムラを減らす
-        },
-      })
-    } catch {
-      recording.value = false
-      errorMsg.value = 'マイクへのアクセスが拒否されました'
-      return
-    }
-
-    audioCtx = new AudioContext()
-    // モバイルの AudioContext は、ユーザー操作のタスクの中で作らないと suspended で
-    // 生まれる。上の await を挟んだ時点でここは操作のタスクから外れているため、
-    // 明示的に起こさないと解析結果が全バー 0 になり、沈黙判定が即座に成立して
-    // 言い切る前に送信されてしまう（ウェイクワード経由はそもそも操作が無い）
-    if (audioCtx.state === 'suspended') {
-      try { await audioCtx.resume() } catch { /* 起こせなくても STALL 側の保険で畳める */ }
-      // resume を待つ間に降ろされたら、掴んだものを返して何も始めない
-      if (!recording.value) { cleanup(); return }
-    }
-    analyser = audioCtx.createAnalyser()
-    analyser.fftSize = 1024
-    analyser.smoothingTimeConstant = 0.8
-    analyser.minDecibels = -85
-    analyser.maxDecibels = -10
-    audioCtx.createMediaStreamSource(stream).connect(analyser)
     lastResultAt = Date.now()
-    raf = requestAnimationFrame(drawBars)
-
     finalText.value = ''
     interimText.value = ''
     spawnRecognition()
+    raf = requestAnimationFrame(tick)
   }
 
   function cleanup() {
     recording.value = false
     recognition?.abort()
     recognition = null
-    if (silenceTimer !== null) { clearTimeout(silenceTimer); silenceTimer = null }
     if (restartTimer !== null) { clearTimeout(restartTimer); restartTimer = null }
     if (raf !== null) { cancelAnimationFrame(raf); raf = null }
-    stream?.getTracks().forEach(t => t.stop())
-    stream = null
-    audioCtx?.close()
-    audioCtx = null
-    analyser = null
+    level = 0
     bars.value = Array(BAR_COUNT).fill(0)
   }
 
