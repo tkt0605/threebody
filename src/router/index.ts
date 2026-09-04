@@ -33,9 +33,6 @@ const router = createRouter({
     // 使い方（操作方法）の説明。/terms と同様 requiresAuth を付けない。ログイン前（LoginView）
     // からも読めないと「初めての人向け」の役目を果たせない
     { path: '/help',         component: HelpView     },
-    // 旧パス。サイドバー・LoginView は /help に直接張り替え済みだが、外部から張られた
-    // 既存リンクが切れないようにリダイレクトだけ残す
-    { path: '/details',      redirect: '/help'       },
     // 共有された1ターン（ROADMAP ③）。requiresAuth を付けない。
     // 未ログインで開けないと、そもそもこの機能の存在理由（閲覧者にLLMを呼ばせず、
     // 何人見ても無料枠が減らない拡散経路）が無くなる
