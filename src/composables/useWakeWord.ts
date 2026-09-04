@@ -1,7 +1,5 @@
 import { ref, onUnmounted } from 'vue'
 import { notifyStart, notifyEnd, waitForRelease } from '../lib/speechHandoff'
-// 一時的な計測。詳しくは lib/srDebug.ts
-import { attachSrDebug } from '../lib/srDebug'
 
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList
@@ -88,7 +86,6 @@ export function useWakeWord(onWake: () => void, onBargeIn?: (transcript: string)
     if (!SRAPI) return
 
     rec = new SRAPI()
-    attachSrDebug(rec, 'wake')
     rec.lang = 'ja-JP'
     rec.continuous = false
     rec.interimResults = true
