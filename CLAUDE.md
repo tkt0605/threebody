@@ -51,7 +51,7 @@ ThreeBody — 1〜3個のLLM（「体」）が並列に回答し、主体（一�
 - 誰が占有するかは `syncListening()` が決めるが、いつ渡せるかは `lib/speechHandoff.ts` が決める。`SpeechRecognition` は `abort()` しても `onend` が返るまで手放さず、待たずに次を開くと新しい認識器が無言のまま音を拾わない。認識器を作る側は `notifyStart` / `notifyEnd` を必ず通し、開く前に `waitForRelease()` を待つ
 - 録音中にマイクを掴むのは `SpeechRecognition` だけ。音量バーや無音判定のために `getUserMedia` / `AudioContext` を足さない。iOS（Safari も Chrome も WebKit）では2系統の音声取得を同時に持つと認識側が無言になる。バーは認識結果の到着で動かす演出、無音判定は結果が更新されなくなってからの経過時間で行う
 - `TextComposer` は読み上げを起動しない（文字で打った人に音声を返さない）。IME変換中の Enter は送信しない
-- 無音からの自動送信までの待ち時間は固定値ではなく `lib/endpointing.ts` が認識文字列から決める
+- 無音からの自動送信までの待ち時間は固定値ではなく `lib/endpointing.ts` が決める。材料は2つで、認識文字列（言い切ったか / 言い淀んでいるか）と、その端末が結果と結果の間に空ける実測幅。後者は UA で分岐せず `noteResultGap()` が観測して持ち越す（PC Chrome は 0.26 秒、iOS Chrome は発話中でも 1.4 秒空く）
 
 ### 環境変数
 
