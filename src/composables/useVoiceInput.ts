@@ -1,9 +1,9 @@
 import { ref, nextTick, onUnmounted } from 'vue'
 import { useSettings, type Language } from './useSettings'
-import { endpointDelayMs, STALL_TIMEOUT_MS } from '../lib/endpointing'
+import { endpointDelayMs, endpointFloorMs, noteResultGap, observedGapMs, STALL_TIMEOUT_MS } from '../lib/endpointing'
 import { notifyStart, notifyEnd, waitForRelease } from '../lib/speechHandoff'
 // 一時的な計測。エンドポインティングの基準を speechend へ移せるかを実機で見るためだけのもの
-import { attachSrDebug, srReset } from '../lib/srDebug'
+import { attachSrDebug, srMark, srReset } from '../lib/srDebug'
 
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList
@@ -93,10 +93,10 @@ export function useVoiceInput(onFinish: (text: string) => void) {
     }
 
     // 発話が始まった後、認識結果の更新が止まったら自動送信。
-    // 待つ長さは止まった時点の文字列で決まる。結果が止まっている間は文字列も
-    // 変わらないので、毎フレーム評価しても同じ値になる
+    // 待つ長さは止まった時点の文字列と、この端末が結果を空ける実測幅で決まる。
+    // 結果が止まっている間はどちらも変わらないので、毎フレーム評価しても同じ値になる
     const text = finalText.value + interimText.value
-    if (text && sinceResult >= endpointDelayMs(text)) {
+    if (text && sinceResult >= endpointDelayMs(text, observedGapMs())) {
       stop()
       return
     }
@@ -119,6 +119,12 @@ export function useVoiceInput(onFinish: (text: string) => void) {
     recognition.interimResults = true
 
     recognition.onresult = (e) => {
+      // この端末が結果と結果の間にどれだけ空けるかを測る。切らずに済んだ空白だけが
+      // 標本になるので、送信の判断に使う下限はここでしか育たない（lib/endpointing.ts）。
+      // 録音を開始した直後の1件目は「話し始めるまでの間」なので数えない
+      if (gotAnyResult && noteResultGap(Date.now() - lastResultAt)) {
+        srMark('rec ', 'gap', `${observedGapMs()} floor=${Math.round(endpointFloorMs(observedGapMs()))}`)
+      }
       lastResultAt = Date.now()
       gotAnyResult = true
       level = LEVEL_ON_RESULT
