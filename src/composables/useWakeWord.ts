@@ -1,4 +1,5 @@
 import { ref, onUnmounted } from 'vue'
+import { notifyStart, notifyEnd, waitForRelease } from '../lib/speechHandoff'
 
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList
@@ -71,8 +72,16 @@ export function useWakeWord(onWake: () => void, onBargeIn?: (transcript: string)
     if (idleTimer !== null) { clearTimeout(idleTimer); idleTimer = null }
   }
 
+  // 録音が終わった直後にここへ戻ってくる（syncListening → barge-in / wake）。
+  // 録音側の認識器はまだ手放しきっていないことがあり、待たずに開くと
+  // 待機側が音を拾えないまま黙る（lib/speechHandoff.ts）。誰も掴んでいなければ即返る
   function spawn() {
     if (!listening.value) return
+    if (!(window.SpeechRecognition ?? window.webkitSpeechRecognition)) return
+    void waitForRelease().then(() => { if (listening.value) openRecognizer() })
+  }
+
+  function openRecognizer() {
     const SRAPI = window.SpeechRecognition ?? window.webkitSpeechRecognition
     if (!SRAPI) return
 
@@ -111,6 +120,9 @@ export function useWakeWord(onWake: () => void, onBargeIn?: (transcript: string)
     }
 
     rec.onend = () => {
+      // listening を見る前に手放したことを伝える。録音側はこの通知を待って
+      // 認識器を開くので、ここを条件分岐の後ろに置くと待ち続けてしまう
+      notifyEnd()
       if (!listening.value) return
       // 短い間隔での連続リスタートを防ぐため 350ms 待つ
       restartTimer = setTimeout(spawn, 350)
@@ -118,6 +130,7 @@ export function useWakeWord(onWake: () => void, onBargeIn?: (transcript: string)
 
     try {
       rec.start()
+      notifyStart()
     } catch {
       // すでに起動中の場合は無視
     }
