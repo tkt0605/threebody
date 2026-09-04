@@ -1,9 +1,7 @@
 import { ref, nextTick, onUnmounted } from 'vue'
 import { useSettings, type Language } from './useSettings'
-import { endpointDelayMs, endpointFloorMs, noteResultGap, observedGapMs, STALL_TIMEOUT_MS } from '../lib/endpointing'
+import { endpointDelayMs, noteResultGap, observedGapMs, STALL_TIMEOUT_MS } from '../lib/endpointing'
 import { notifyStart, notifyEnd, waitForRelease } from '../lib/speechHandoff'
-// 一時的な計測。エンドポインティングの基準を speechend へ移せるかを実機で見るためだけのもの
-import { attachSrDebug, srMark, srReset } from '../lib/srDebug'
 
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList
@@ -113,7 +111,6 @@ export function useVoiceInput(onFinish: (text: string) => void) {
     if (!SRAPI) return
 
     recognition = new SRAPI()
-    attachSrDebug(recognition, 'rec ')
     recognition.lang = LANG_LOCALE[settings.language] ?? 'ja-JP'
     recognition.continuous = true
     recognition.interimResults = true
@@ -122,9 +119,7 @@ export function useVoiceInput(onFinish: (text: string) => void) {
       // この端末が結果と結果の間にどれだけ空けるかを測る。切らずに済んだ空白だけが
       // 標本になるので、送信の判断に使う下限はここでしか育たない（lib/endpointing.ts）。
       // 録音を開始した直後の1件目は「話し始めるまでの間」なので数えない
-      if (gotAnyResult && noteResultGap(Date.now() - lastResultAt)) {
-        srMark('rec ', 'gap', `${observedGapMs()} floor=${Math.round(endpointFloorMs(observedGapMs()))}`)
-      }
+      if (gotAnyResult) noteResultGap(Date.now() - lastResultAt)
       lastResultAt = Date.now()
       gotAnyResult = true
       level = LEVEL_ON_RESULT
@@ -188,7 +183,6 @@ export function useVoiceInput(onFinish: (text: string) => void) {
 
     gotAnyResult = false
     level = 0
-    srReset()
 
     // ここで先に recording を立てる。ChatView の syncListening() はこの変更を
     // watch で受けて、ウェイクワード待機中の認識器を止める
