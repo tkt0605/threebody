@@ -2,6 +2,8 @@ import { ref, nextTick, onUnmounted } from 'vue'
 import { useSettings, type Language } from './useSettings'
 import { endpointDelayMs, STALL_TIMEOUT_MS } from '../lib/endpointing'
 import { notifyStart, notifyEnd, waitForRelease } from '../lib/speechHandoff'
+// 一時的な計測。エンドポインティングの基準を speechend へ移せるかを実機で見るためだけのもの
+import { attachSrDebug, srReset } from '../lib/srDebug'
 
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList
@@ -111,6 +113,7 @@ export function useVoiceInput(onFinish: (text: string) => void) {
     if (!SRAPI) return
 
     recognition = new SRAPI()
+    attachSrDebug(recognition, 'rec ')
     recognition.lang = LANG_LOCALE[settings.language] ?? 'ja-JP'
     recognition.continuous = true
     recognition.interimResults = true
@@ -179,6 +182,7 @@ export function useVoiceInput(onFinish: (text: string) => void) {
 
     gotAnyResult = false
     level = 0
+    srReset()
 
     // ここで先に recording を立てる。ChatView の syncListening() はこの変更を
     // watch で受けて、ウェイクワード待機中の認識器を止める
