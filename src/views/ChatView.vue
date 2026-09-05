@@ -162,6 +162,14 @@ const generating = computed(() => aiState.value !== 'idle')
 
 const ttsLang = computed(() => settings.language === 'ja' ? 'ja-JP' : 'en-US')
 
+const BRIEF_AFTER_INTERRUPTS = 2
+const BRIEF_SENTENCES = 2
+// 次の送信前の履歴から判定する。割り込まれない応答が加われば通常に戻る。
+const briefNarration = computed(() => {
+  const recent = messages.value.filter(message => message.role === 'assistant').slice(-BRIEF_AFTER_INTERRUPTS)
+  return recent.length === BRIEF_AFTER_INTERRUPTS && recent.every(message => message.signals?.interrupted === true)
+})
+
 // いま何体で考えるか。相槌の文言（「三人で考えています」）と、
 // そもそも相槌を出すか（単体モードなら出さない）の判断に使う。
 // 共有キー経路はユーザーの設定に関係なくバックエンドが必ず三体で走る（routes/chat.ts）
@@ -226,7 +234,8 @@ const { recording, finalText, interimText, bars, errorMsg, start, stop } =
     voiceActive.value = true
     // 送信した瞬間から「AIが喋る側」の担当が始まる。
     // 三体モードは副体の並列ラウンドぶんだけ無音が空くので、ここから相槌を用意する
-    narration.begin(activeBodyCount.value, ttsLang.value)
+    narration.begin(activeBodyCount.value, ttsLang.value,
+      briefNarration.value ? { maxSentences: BRIEF_SENTENCES } : undefined)
     // modalityを明示しないと既定の'text'になり、中断時に「話し直す」ではなく
     // 「編集して送る」が出てしまう（MessageBubbleのisVoiceOrphan判定）
     const sharedFrom = sharedFromToken.value || null
