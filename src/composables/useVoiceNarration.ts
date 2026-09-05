@@ -19,7 +19,8 @@ export const FILLER_DELAY_MS = 700
 
 // 「要点は声、詳細は画面」の線引きは文字数の予算ではなく中身の種類でやる。
 // コード・CLIコマンドは takeCompleteSentences が文に割る前に落とすため、
-// ここに残る文はもともと地の文（＝要点）だけになる。読み上げに上限は設けない。
+// ここに残る文はもともと地の文（＝要点）だけになる。通常は上限を設けない。
+// 割り込みが続いた場合だけ文数を制限する（docs/CONTENT.md ①）。
 
 // 相槌の文言。体の数がそのまま「何人で考えているか」になる。
 // lang（enqueue に渡すのと同じ BCP-47 文字列）で発話の言語も切り替える。
@@ -51,6 +52,8 @@ export function useVoiceNarration(onIdle?: () => void) {
 
   let active = false          // 音声で始まった対話の最中か
   let ended  = false          // 本文がすべて届いたか
+  let maxSentences = Infinity
+  let enqueuedSentences = 0
   let spokenUpTo = 0          // 本文のうち、どこまでを読み上げに回したか
   let fillerTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -59,9 +62,11 @@ export function useVoiceNarration(onIdle?: () => void) {
   }
 
   // 送信した直後に呼ぶ。ここから応答が返るまでが、いま無音になっている区間
-  function begin(bodyCount: number, lang = 'ja-JP'): void {
+  function begin(bodyCount: number, lang = 'ja-JP', opts?: { maxSentences?: number }): void {
     active = true
     ended = false
+    maxSentences = opts?.maxSentences ?? Infinity
+    enqueuedSentences = 0
     spokenUpTo = 0
     clearFiller()
 
@@ -85,7 +90,11 @@ export function useVoiceNarration(onIdle?: () => void) {
     // 本文が始まったら相槌はもう出さない（言いかけの上に被せない）
     clearFiller()
 
-    for (const sentence of sentences) enqueue(sentence, lang)
+    for (const sentence of sentences) {
+      if (enqueuedSentences >= maxSentences) break
+      enqueuedSentences += 1
+      enqueue(sentence, lang)
+    }
     // 文はtrimされるため、読み上げ済みの位置は「消費した長さ」で進める
     spokenUpTo += pending.length - rest.length
   }
@@ -94,12 +103,14 @@ export function useVoiceNarration(onIdle?: () => void) {
   function end(fullText: string, lang = 'ja-JP'): void {
     if (!active) return
     clearFiller()
+    // 最終チャンクが feed に届いていなくても、制限を超えてまとめ読みしない。
+    if (maxSentences !== Infinity) feed(fullText, lang)
     ended = true
 
     const rest = fullText.slice(spokenUpTo)
     spokenUpTo = fullText.length
     // 空でも呼ぶ。何も鳴っていなければ useTTS 側が即座に onIdle を返す
-    enqueue(rest, lang)
+    enqueue(enqueuedSentences < maxSentences ? rest : '', lang)
 
     active = false
   }

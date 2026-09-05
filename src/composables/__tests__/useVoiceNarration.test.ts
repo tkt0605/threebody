@@ -125,6 +125,52 @@ describe('useVoiceNarration', () => {
     })
   })
 
+  describe('割り込み後の文数制限', () => {
+    it('複数チャンクで3文以上届いても冒頭2文だけ読む', () => {
+      const { spoken } = installFakeSpeech()
+      const narration = useVoiceNarration()
+      narration.begin(1, 'ja-JP', { maxSentences: 2 })
+      narration.feed('一文目。')
+      narration.feed('一文目。二文目。三文目。')
+      narration.feed('一文目。二文目。三文目。四文目。')
+      expect(spoken).toEqual(['一文目。', '二文目。'])
+    })
+
+    it('上限後は end でも残りを読まず、終了を通知する', () => {
+      const { spoken } = installFakeSpeech()
+      const onIdle = vi.fn()
+      const narration = useVoiceNarration(onIdle)
+      narration.begin(1, 'ja-JP', { maxSentences: 2 })
+      narration.feed('一文目。二文目。')
+      expect(onIdle).not.toHaveBeenCalled()
+      narration.end('一文目。二文目。三文目。最後の断片')
+      expect(spoken).toEqual(['一文目。', '二文目。'])
+      expect(onIdle).toHaveBeenCalledTimes(1)
+    })
+
+    it('end だけに届いた本文にも上限を適用する', () => {
+      const { spoken } = installFakeSpeech()
+      const narration = useVoiceNarration()
+      narration.begin(1, 'ja-JP', { maxSentences: 2 })
+      narration.end('一文目。二文目。三文目。')
+      expect(spoken).toEqual(['一文目。', '二文目。'])
+    })
+
+    it('上限未満なら最後の断片を読み、次の begin で上限を省略すれば全文を読む', () => {
+      const { spoken } = installFakeSpeech()
+      const narration = useVoiceNarration()
+      narration.begin(1, 'ja-JP', { maxSentences: 2 })
+      narration.feed('一文目。')
+      narration.end('一文目。断片')
+      expect(spoken).toEqual(['一文目。', '断片'])
+      spoken.length = 0
+      narration.begin(1)
+      narration.feed('一文目。二文目。三文目。')
+      narration.end('一文目。二文目。三文目。断片')
+      expect(spoken).toEqual(['一文目。', '二文目。', '三文目。', '断片'])
+    })
+  })
+
   // 三体モードと音声の緊張への対処（方針C：球体＋相槌で埋める）
   describe('相槌', () => {
     it('副体が考えている間に相槌を入れる', () => {

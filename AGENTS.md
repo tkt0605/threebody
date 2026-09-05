@@ -9,6 +9,7 @@ ThreeBodyは、最大3つのLLMからの応答を組み合わせる、Vue 3とTy
 - `src/lib/`、`src/types/`、`src/router/` にはユーティリティ、型定義、ルーティング設定を配置し、`public/` には静的アセットを配置します。
 - `backend/routes/` にはExpressのエンドポイントを配置し、`backend/llm/providers/` にはプロバイダーのストリーミング処理を実装します。`backend/utils/` には純粋なヘルパー関数を配置します。
 - テストは `src/composables/__tests__/` および `backend/tests/` に配置します。
+- 変更した内容とその変更部分を具体的にまとめて、それをどのように実際に手で動かしてテストをすれば良いのかを明記。
 
 ## ビルド、テスト、開発用コマンド
 
