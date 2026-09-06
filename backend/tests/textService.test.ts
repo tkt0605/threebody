@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { searchWeb } from '../tools/webSearch'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import type express from 'express'
 import type OpenAI from 'openai'
 import type { BodyConfig, LevelConfig } from '../llm/types'
@@ -8,6 +9,11 @@ import { streamOllamaNative } from '../llm/providers/ollama'
 // 三体オーケストレーションの分岐だけを検証したいので、実際のLLM呼び出しは差し替える。
 // 全ての体を ollama にすることで、副体（streamSecondaryBody）と主体（streamBodyOAI）の
 // 両方がこの1つのモックを通る
+vi.mock('../tools/webSearch', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../tools/webSearch')>(),
+  searchWeb: vi.fn(),
+}))
+
 vi.mock('../llm/providers/ollama', () => ({ streamOllamaNative: vi.fn() }))
 
 // providers/anthropic.ts はモジュール読み込み時に new Anthropic() を実行するが、
@@ -249,5 +255,111 @@ describe('orchestrateMultiBody', () => {
     // カードの見出しも役ごとに変わる（何を見た指摘なのかが一目で分かる）
     expect(events.filter(e => e.type === 'body_start').map(e => e.name))
       .toEqual(['崩れる点', '抜けている点'])
+  })
+})
+
+describe('副体の検索による確認', () => {
+  const review = '判定: 指摘あり\n対象箇所: 方針としては段階的に進めるのが良いと考えます\n根拠: 資料が不足していて主張を裏付けられない。未確認: 確認する主張\n代替案: 資料を調べる'
+  const verification = '確認: 確認できた\n出典: https://example.com/source'
+
+  beforeEach(() => {
+    vi.mocked(streamOllamaNative).mockReset()
+    vi.stubEnv('SEARCH_API_URL', 'https://search.example/search')
+    vi.stubEnv('SEARCH_API_KEY', 'search-secret-for-test')
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(searchWeb).mockReset().mockResolvedValue([
+      { title: '資料', url: 'https://example.com/source', snippet: '抜粋'.repeat(300) },
+    ])
+  })
+
+  afterEach(() => { vi.unstubAllEnvs() })
+
+  function mockVerification(failure = false, first = review) {
+    vi.mocked(streamOllamaNative).mockImplementation(async (model, msgs, _max, emit) => {
+      if (model === 'primary-model') { emit(long('答え')); return }
+      if (JSON.stringify(msgs).includes('未確認の主張を検索結果と照合')) {
+        emit(verification)
+        if (failure) throw new Error('echo search-secret-for-test')
+      } else emit(first)
+    })
+  }
+
+  async function run(webSearch?: boolean) {
+    const all = bodies().slice(0, 2)
+    const { res, events } = fakeRes()
+    await orchestrateMultiBody(all, all, MESSAGES, CONFIG, 'システム', res,
+      webSearch === undefined ? undefined : { webSearch })
+    return events
+  }
+
+  it('URL未設定なら、有効フラグを渡しても従来とSSE列が一致する', async () => {
+    mockVerification()
+    vi.stubEnv('SEARCH_API_URL', '')
+    const legacy = await run()
+    const enabled = await run(true)
+    expect(enabled).toEqual(legacy)
+    expect(searchWeb).not.toHaveBeenCalled()
+    expect(streamOllamaNative).toHaveBeenCalledTimes(4)
+  })
+
+  it('共有キー用のfalseなら設定があっても検索も追加呼び出しもしない', async () => {
+    mockVerification()
+    const events = await run(false)
+    expect(searchWeb).not.toHaveBeenCalled()
+    expect(streamOllamaNative).toHaveBeenCalledTimes(2)
+    expect(events.some(e => e.type === 'tool_start')).toBe(false)
+  })
+
+  it('根拠に未確認がなければ検索しない', async () => {
+    mockVerification(false, '判定: 指摘なし\n根拠: ―\n代替案: ―')
+    await run(true)
+    expect(searchWeb).not.toHaveBeenCalled()
+    expect(streamOllamaNative).toHaveBeenCalledTimes(2)
+  })
+
+  it('検索1回・同じ副体への追加呼び出し1回で2行を追記する', async () => {
+    mockVerification()
+    const events = await run(true)
+    expect(searchWeb).toHaveBeenCalledExactlyOnceWith('確認する主張')
+    expect(events.filter(e => e.bodyIndex === 1).map(e => e.type)).toEqual([
+      'body_start', 'body_text', 'tool_start', 'body_text', 'tool_done', 'body_done',
+    ])
+    expect(events.filter(e => e.type === 'body_text').map(e => e.content).join('')).toBe(`${review}\n${verification}`)
+    expect(events.at(-1)).toMatchObject({ type: 'body_done', hasFinding: true })
+    const calls = vi.mocked(streamOllamaNative).mock.calls
+    expect(calls).toHaveLength(3)
+    expect(calls[2]![0]).toBe('secondary-a')
+    const sent = JSON.stringify(calls[2]![1])
+    expect(sent).not.toContain('Pinterest')
+    expect(sent).not.toContain('方針としては')
+    expect(sent).toContain('抜粋'.repeat(150))
+    expect(sent).not.toContain('抜粋'.repeat(151))
+  })
+
+  it('検索失敗でも1段目を残し、tool_doneとbody_doneを送る', async () => {
+    mockVerification()
+    vi.mocked(searchWeb).mockRejectedValue(new Error('echo search-secret-for-test'))
+    const events = await run(true)
+    expect(events.filter(e => e.type === 'body_text').map(e => e.content).join('')).toBe(review)
+    expect(events.slice(-2).map(e => e.type)).toEqual(['tool_done', 'body_done'])
+    expect(streamOllamaNative).toHaveBeenCalledTimes(2)
+    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain('search-secret-for-test')
+  })
+
+  it('追加呼び出しが途中で失敗しても、その断片をカードに出さない', async () => {
+    mockVerification(true)
+    const events = await run(true)
+    expect(events.filter(e => e.type === 'body_text').map(e => e.content).join('')).toBe(review)
+    expect(events.slice(-2).map(e => e.type)).toEqual(['tool_done', 'body_done'])
+    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain('search-secret-for-test')
+  })
+
+  it('検索結果0件なら追加呼び出しをせず1段目を残す', async () => {
+    mockVerification()
+    vi.mocked(searchWeb).mockResolvedValue([])
+    const events = await run(true)
+    expect(streamOllamaNative).toHaveBeenCalledTimes(2)
+    expect(events.filter(e => e.type === 'body_text').map(e => e.content).join('')).toBe(review)
+    expect(events.slice(-2).map(e => e.type)).toEqual(['tool_done', 'body_done'])
   })
 })

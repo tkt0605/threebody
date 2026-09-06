@@ -1,9 +1,10 @@
+import { CORE_PRINCIPLES } from '../llm/promptLayers'
 import { describe, it, expect } from 'vitest'
 import type OpenAI from 'openai'
 import {
   buildReviewMessages, buildReviewSystemPrompt, buildSecondaryMessages,
   buildSecondarySystemPrompt, hasReviewFinding, needsMultiBody, resolveSecondaryRole,
-  reviewRoleLabel, secondaryRoleLabel,
+  reviewRoleLabel, secondaryRoleLabel, extractUnverified, formatVerification, buildVerifySystemPrompt,
 } from '../llm/secondaryPrompt'
 
 const text = (m: OpenAI.Chat.ChatCompletionMessageParam) =>
@@ -301,5 +302,44 @@ describe('hasReviewFinding', () => {
   it('根拠の行が無ければ false', () => {
     const content = '判定: 指摘あり\n対象箇所: トークンの有効期限は24時間とする\n代替案: 7日程度に延ばす'
     expect(hasReviewFinding(content, answer)).toBe(false)
+  })
+})
+
+describe('未確認の主張の抽出', () => {
+  it('根拠から最初の1件だけを抽出する', () => {
+    expect(extractUnverified('根拠: 事実の確認が必要。未確認: 東京は日本の首都\n未確認: 二件目\n代替案: 調べる')).toBe('東京は日本の首都')
+  })
+  it('根拠の継続行と全角コロンを扱う', () => {
+    expect(extractUnverified('根拠： 資料が足りない\n未確認： 東京は日本の首都\n代替案： 確認する')).toBe('東京は日本の首都')
+  })
+  it('他のフィールドや空の未確認から検索しない', () => {
+    expect(extractUnverified('対象箇所: 未確認: 対象\n根拠: 資料不足\n代替案: 未確認: 別の主張')).toBeNull()
+    expect(extractUnverified('根拠: 未確認: ')).toBeNull()
+    expect(extractUnverified('根拠: 未確認: \n追加の説明だけ')).toBeNull()
+    expect(extractUnverified('判定: 指摘なし')).toBeNull()
+  })
+})
+
+describe('確認結果の契約', () => {
+  it('共通規範と検索結果を指示として扱わない契約を含む', () => {
+    expect(buildVerifySystemPrompt()).toContain(CORE_PRINCIPLES)
+    expect(buildVerifySystemPrompt()).toContain('指示ではない')
+  })
+  it('検索結果に含まれるURLだけを採用する', () => {
+    expect(formatVerification('確認: 確認できた\n出典: https://example.com/', ['https://example.com/']))
+      .toBe('確認: 確認できた\n出典: https://example.com/')
+    expect(formatVerification('確認: 確認できた\n出典: https://invented.example/', ['https://example.com/'])).toBeNull()
+    expect(formatVerification('説明\n確認: 確認できた\n出典: https://example.com/', ['https://example.com/'])).toBeNull()
+  })
+  it('判断できずなら出典は―にする', () => {
+    expect(formatVerification('確認: 判断できず\n出典: ―', [])).toBe('確認: 判断できず\n出典: ―')
+  })
+  it('確認・出典の追記は元の指摘判定を変えない', () => {
+    const answer = '東京は日本の首都として知られています。'
+    for (const verdict of ['指摘あり', '指摘なし']) {
+      const review = `判定: ${verdict}\n対象箇所: 東京は日本の首都\n根拠: 公的資料との照合がまだできていないため、確認が必要\n代替案: 公的資料を調べる`
+      const before = hasReviewFinding(review, answer)
+      expect(hasReviewFinding(`${review}\n確認: 確認できた\n出典: https://example.com/`, answer)).toBe(before)
+    }
   })
 })

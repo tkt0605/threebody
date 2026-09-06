@@ -4,7 +4,7 @@
 // LLM呼び出し（textService）とプロバイダーは丸ごと差し替える。
 // この層でしか見えないのは、reserve → 応答 → consume / release という
 // リクエスト1本ぶんのライフサイクル全体である。
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import chatRouter from '../routes/chat'
 import { withRouter, parseSSE } from './helpers/testServer'
 import { SHARED_DAILY_LIMIT, reserveSharedAllowance, consumeSharedQuota, releaseGlobalQuota, sharedApiKey } from '../sharedKey'
@@ -182,5 +182,37 @@ describe('POST /api/chat — 予約の解放', () => {
     await post(OWN_KEY)
 
     expect(releaseGlobalQuota).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('POST /api/chat — 検索の許可', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.mocked(resolveUserId).mockResolvedValue('user-1')
+    vi.mocked(sharedApiKey).mockReturnValue('sk-ant-shared-operator-key')
+    vi.mocked(reserveSharedAllowance).mockResolvedValue({ allowed: true, remaining: 2 })
+    vi.stubEnv('SEARCH_API_URL', 'https://search.example/search')
+  })
+  afterEach(() => { vi.unstubAllEnvs() })
+
+  it('共有キー経路では検索を許可しない', async () => {
+    await post(NO_OWN_KEY)
+    expect(vi.mocked(orchestrateMultiBody).mock.calls[0]?.[6]).toEqual({ webSearch: false })
+  })
+  it('自前キー経路では設定済みの場合のみ許可する', async () => {
+    await post(OWN_KEY)
+    expect(vi.mocked(orchestrateMultiBody).mock.calls[0]?.[6]).toEqual({ webSearch: true })
+    vi.mocked(orchestrateMultiBody).mockClear()
+    vi.stubEnv('SEARCH_API_URL', '')
+    await post(OWN_KEY)
+    expect(vi.mocked(orchestrateMultiBody).mock.calls[0]?.[6]).toEqual({ webSearch: false })
+  })
+  it('共有キーOFFのOllama経路でも設定済みなら許可する', async () => {
+    await post({ ...NO_OWN_KEY, useSharedKey: false, bodies: [
+      { provider: 'ollama', apiKey: '', model: 'local' },
+      { provider: 'ollama', apiKey: '', model: 'local', role: 'skeptic' },
+    ] })
+    expect(vi.mocked(orchestrateMultiBody).mock.calls[0]?.[6]).toEqual({ webSearch: true })
   })
 })
