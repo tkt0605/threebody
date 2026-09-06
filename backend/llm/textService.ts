@@ -5,12 +5,13 @@ import type { BodyConfig, LevelConfig } from './types'
 import { resolveBodyModel, toOllamaMessages, toAnthropicMessages, extractTextContent } from './messageHelpers'
 import {
   buildReviewMessages, buildReviewSystemPrompt, hasReviewFinding, needsMultiBody,
-  resolveSecondaryRole, reviewRoleLabel,
+  resolveSecondaryRole, reviewRoleLabel, extractUnverified, buildVerifySystemPrompt, formatVerification,
 } from './secondaryPrompt'
 import { streamOllamaNative } from './providers/ollama'
 import { createOpenAICompatClient, streamOpenAICompat } from './providers/openaiCompat'
 import { streamAnthropic } from './providers/anthropic'
 import { collectSecrets, sanitizeErrorMessage } from '../utils/errorSanitize'
+import { searchEnabled, searchWeb } from '../tools/webSearch'
 
 // 副体（二体・三体）の見解をリアルタイムに可視化するため、非ストリーミングではなく
 // body_text イベントを逐次送出しながら全文を蓄積して返す
@@ -21,13 +22,15 @@ export async function streamSecondaryBody(
   config: LevelConfig,
   systemPrompt: string,
   res: express.Response,
+  onContent?: (text: string) => void,
 ): Promise<string> {
   const model = resolveBodyModel(body)
   let full = ''
 
   const emit = (text: string) => {
     full += text
-    res.write(`data: ${JSON.stringify({ type: 'body_text', bodyIndex, content: text })}\n\n`)
+    if (onContent) onContent(text)
+    else res.write(`data: ${JSON.stringify({ type: 'body_text', bodyIndex, content: text })}\n\n`)
   }
 
   if (body.provider === 'anthropic') {
@@ -140,6 +143,7 @@ export async function orchestrateMultiBody(
   config: LevelConfig,
   systemPrompt: string,
   res: express.Response,
+  hands: { webSearch: boolean } = { webSearch: false },
 ): Promise<void> {
   const [primary, ...secondaries] = available as [BodyConfig, ...BodyConfig[]]
 
@@ -180,6 +184,39 @@ export async function orchestrateMultiBody(
           buildReviewSystemPrompt(role),
           res,
         )
+        const claim = hands.webSearch && searchEnabled() ? extractUnverified(content) : null
+        if (claim) {
+          res.write(`data: ${JSON.stringify({ type: 'tool_start', bodyIndex: bodyIdx, tool: 'web_search', query: claim })}\n\n`)
+          try {
+            const hits = (await searchWeb(claim)).slice(0, 3)
+            if (hits.length > 0) {
+              const verification = await streamSecondaryBody(
+                b,
+                bodyIdx,
+                [{ role: 'user', content: JSON.stringify({
+                  claim,
+                  results: hits.map(hit => ({ ...hit, title: hit.title.slice(0, 300), snippet: hit.snippet.slice(0, 300) })),
+                }) }],
+                { ...config, maxTokens: Math.min(config.secondaryMaxTokens, 512) },
+                buildVerifySystemPrompt(),
+                res,
+                () => {}, // 完成するまでSSEへ出さず、失敗時は1段目の見解だけを残す。
+              )
+              const addition = formatVerification(verification, hits.map(hit => hit.url))
+              if (addition) {
+                content += `\n${addition}`
+                res.write(`data: ${JSON.stringify({ type: 'body_text', bodyIndex: bodyIdx, content: `\n${addition}` })}\n\n`)
+              } else {
+                console.warn(`[検算検索] ${name}: 確認結果の形式または出典が不正なため、追記を見送りました`)
+              }
+            }
+          } catch (err) {
+            const secrets = collectSecrets({ bodies: allBodies, apiKey: process.env.SEARCH_API_KEY })
+            console.error(`[検算検索] ${name}(${b.provider}) の確認に失敗しました:`, sanitizeErrorMessage(err, secrets))
+          } finally {
+            res.write(`data: ${JSON.stringify({ type: 'tool_done', bodyIndex: bodyIdx, tool: 'web_search' })}\n\n`)
+          }
+        }
         return content
       } finally {
         // 成功・失敗のどちらでも必ず送る。送らないとフロントの pendingBodies から

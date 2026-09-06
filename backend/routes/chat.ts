@@ -1,3 +1,4 @@
+import { searchEnabled } from '../tools/webSearch'
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import Anthropic from '@anthropic-ai/sdk'
@@ -120,7 +121,7 @@ router.post('/chat', chatRateLimit, async (req, res) => {
             { provider: 'anthropic', apiKey: key, model: sharedConfig.anthropicModel, role: 'skeptic' },
             { provider: 'anthropic', apiKey: key, model: sharedConfig.anthropicModel, role: 'realist' },
           ]
-          await orchestrateMultiBody(sharedBodies, sharedBodies, oaiMessages, sharedConfig, primaryPrompt, res)
+          await orchestrateMultiBody(sharedBodies, sharedBodies, oaiMessages, sharedConfig, primaryPrompt, res, { webSearch: false })
           completed = true
           res.write('data: [DONE]\n\n')
           return
@@ -165,7 +166,7 @@ router.post('/chat', chatRateLimit, async (req, res) => {
       if (available.length > 1) {
         // 副体（二体・三体）からの見解を並列取得 → 主体が統合、という一連の流れは
         // orchestrateMultiBody に集約（共有キー経路の三体モードとも共有）
-        await orchestrateMultiBody(bodies, available, oaiMessages, config, primaryPrompt, res)
+        await orchestrateMultiBody(bodies, available, oaiMessages, config, primaryPrompt, res, { webSearch: Boolean(searchEnabled()) })
         completed = true
         res.write('data: [DONE]\n\n')
         return

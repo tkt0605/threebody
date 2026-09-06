@@ -9,6 +9,7 @@
 //   npx tsx scripts/preview-review.ts
 //   npx tsx scripts/preview-review.ts gemma4 'WebSocketでチャット、どう設計する？'
 import 'dotenv/config'
+import { searchEnabled } from '../backend/tools/webSearch'
 import type express from 'express'
 import { orchestrateMultiBody } from '../backend/llm/textService'
 import type { BodyConfig, LevelConfig } from '../backend/llm/types'
@@ -48,8 +49,9 @@ const res = {
 } as unknown as express.Response
 
 async function main() {
+  console.log(`Web検索: ${searchEnabled() ? '有効' : '無効（SEARCH_API_URL 未設定）'}`)
   const t0 = Date.now()
-  await orchestrateMultiBody(bodies, bodies, [{ role: 'user', content: QUESTION }], config, PERSONA, res)
+  await orchestrateMultiBody(bodies, bodies, [{ role: 'user', content: QUESTION }], config, PERSONA, res, { webSearch: Boolean(searchEnabled()) })
 
   console.log(`\nSSEの並び: ${order.join(' → ')}`)
   console.log(`所要 ${Math.round((Date.now() - t0) / 1000)}秒  model=${MODEL}\n`)
