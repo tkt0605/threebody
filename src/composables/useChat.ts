@@ -9,6 +9,7 @@ import { useCapabilities } from './useCapabilities'
 import { redactText } from '../lib/redact'
 import { toContentBlocks, type StoredBlockRow } from '../lib/contentBlocks'
 import type { Modality } from '../types/intent'
+import { bindConversationBrief, openConversationBrief, startConversationBrief, forgetConversationBrief, clearConversationBriefs } from './useConversationBrief'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:3000'
 
@@ -79,18 +80,25 @@ export interface Conversation { id: string; title: string | null; createdAt: Dat
 const conversations = ref<Conversation[]>([])
 // 現在チャット画面に表示中の会話
 const currentConversationId = ref<string | null>(null)
+const loadingConversation = ref(false)
 const currentConversation = computed(() =>
   conversations.value.find(c => c.id === currentConversationId.value) ?? null
 )
+// await中に会話やアカウントが変わったら、古い結果で表示を戻さない。
+let conversationRevision = 0
 
 // ログアウト後に別アカウントでログインした場合、前ユーザーの会話/履歴を引き継がないようにする
 watch(useAuth().user, (newUser, oldUser) => {
   if (newUser?.id !== oldUser?.id) {
+    conversationRevision++
+    stopGeneration('switch')
+    clearConversationBriefs()
     currentConversationId.value = null
+    loadingConversation.value = false
     conversations.value = []
     messages.value = []
   }
-})
+}, { flush: 'sync' })
 
 function createId() {
   return crypto.randomUUID()
@@ -188,13 +196,15 @@ async function fetchMessages(conversationId: string): Promise<Message[]> {
 async function loadConversations(): Promise<void> {
   const { user } = useAuth()
   if (!user.value) return
+  const userId = user.value.id
 
   const { data, error } = await supabase
     .from('conversations')
     .select('id, title, created_at, updated_at')
-    .eq('user_id', user.value.id)
+    .eq('user_id', userId)
     .order('updated_at', { ascending: false })
   if (error) { console.error(error); return }
+  if (user.value?.id !== userId) return
 
   conversations.value = (data ?? []).map(row => ({
     id:        row.id as string,
@@ -212,13 +222,21 @@ async function createConversation(sharedFrom: string | null = null): Promise<str
   const { user } = useAuth()
   if (!user.value) throw new Error('ログインしていません')
 
-  await ensureUserProfile(user.value.id)
+  const revision = conversationRevision
+  const userId = user.value.id
+  const checkCurrent = () => {
+    if (revision !== conversationRevision || user.value?.id !== userId) {
+      throw new DOMException('会話が切り替わりました', 'AbortError')
+    }
+  }
+  await ensureUserProfile(userId)
+  checkCurrent()
 
   const now = new Date()
   const { data: created, error } = await supabase
     .from('conversations')
     .insert({
-      user_id: user.value.id,
+      user_id: userId,
       shared_from: sharedFrom,
       created_at: now.toISOString(),
       updated_at: now.toISOString(),
@@ -226,8 +244,10 @@ async function createConversation(sharedFrom: string | null = null): Promise<str
     .select('id')
     .single()
   if (error) throw error
+  checkCurrent()
 
   const id = created.id as string
+  bindConversationBrief(id)
   conversations.value = [{ id, title: null, createdAt: now, updatedAt: now }, ...conversations.value]
   currentConversationId.value = id
   // messages.value はここでは触らない。送信フロー（ensureConversation経由）の途中でここが呼ばれる場合、
@@ -310,25 +330,42 @@ async function switchConversation(id: string): Promise<void> {
   // 切り替え前に止める。止めないと、前の会話のストリームが
   // 新しい会話の画面へ書き込みを続ける
   stopGeneration('switch')
+  const revision = ++conversationRevision
+  openConversationBrief(id)
   currentConversationId.value = id
-  messages.value = await fetchMessages(id)
+  messages.value = []
+  loadingConversation.value = true
+  try {
+    const loaded = await fetchMessages(id)
+    if (revision === conversationRevision) messages.value = loaded
+  } finally {
+    if (revision === conversationRevision) loadingConversation.value = false
+  }
 }
 
 // 画面をまっさらな状態に戻すだけで、conversationsテーブルへの書き込みは行わない。
 // 実際に会話が作られるのは、ここから最初のメッセージが送信されたタイミング（persistMessage経由）
 function startNewConversation(): void {
+  conversationRevision++
   stopGeneration('switch')
+  startConversationBrief()
   currentConversationId.value = null
+  loadingConversation.value = false
   messages.value = []
 }
 
 // 現在の会話が無ければ新規作成し、それを現在の会話にする。
 // sharedFrom は新規作成時にしか使わない（既存の会話が既にあれば無視される）
-async function ensureConversation(userId: string, sharedFrom: string | null = null): Promise<string> {
-  if (currentConversationId.value) return currentConversationId.value
+let pendingConversation: { revision: number; promise: Promise<string> } | null = null
 
-  await ensureUserProfile(userId)
-  return createConversation(sharedFrom)
+async function ensureConversation(sharedFrom: string | null = null): Promise<string> {
+  if (currentConversationId.value) return currentConversationId.value
+  // 最初の質問と速い応答の保存が同時に走っても、会話を二重作成しない。
+  if (pendingConversation?.revision === conversationRevision) return pendingConversation.promise
+  const pending = { revision: conversationRevision, promise: createConversation(sharedFrom) }
+  pendingConversation = pending
+  try { return await pending.promise }
+  finally { if (pendingConversation === pending) pendingConversation = null }
 }
 
 // 会話のタイトルを変更する（空文字なら未設定=nullに戻す）
@@ -343,9 +380,14 @@ async function renameConversation(id: string, title: string): Promise<void> {
 
 // 会話とその中身（messages/content_blocks）をまとめて削除する
 async function deleteConversation(id: string): Promise<void> {
+  forgetConversationBrief(id)
   conversations.value = conversations.value.filter(c => c.id !== id)
   if (currentConversationId.value === id) {
+    conversationRevision++
+    stopGeneration('switch')
+    startConversationBrief()
     currentConversationId.value = null
+    loadingConversation.value = false
     messages.value = []
   }
 
@@ -377,9 +419,9 @@ async function openConversation(id?: string): Promise<string | null> {
   const { user } = useAuth()
   if (!user.value || !id) return null
 
-  await loadConversations()
-
-  if (id !== currentConversationId.value) await switchConversation(id)
+  // 一覧の取得完了を待たず、選択された会話へ切り替える。
+  const switching = id !== currentConversationId.value ? switchConversation(id) : Promise.resolve()
+  await Promise.all([loadConversations(), switching])
   return id
 }
 
@@ -476,6 +518,8 @@ async function updatePersistedMessage(message: Message, prevWrite: Promise<unkno
 async function persistMessage(message: Message, sharedFrom: string | null = null): Promise<void> {
   const { user } = useAuth()
   if (!user.value) return
+  const revision = conversationRevision
+  const userId = user.value.id
 
   // message.blocks は「まだ書き換わっている途中の器」であり、この関数は saveProgress から
   // ストリーミング中にも呼ばれる（＝読むたびに中身が違う）。await を跨いで2回読むと、
@@ -497,7 +541,8 @@ async function persistMessage(message: Message, sharedFrom: string | null = null
   // 中身もシグナルも無いものだけが、記録する価値のない空メッセージ
   if (blockRowsToWrite.length === 0 && !hasSignal(message.signals)) return
 
-  const convId = await ensureConversation(user.value.id, sharedFrom)
+  const convId = await ensureConversation(sharedFrom)
+  if (revision !== conversationRevision || user.value?.id !== userId) return
 
   const { data: inserted, error: msgErr } = await supabase
     .from('messages')
@@ -564,6 +609,8 @@ export function useChat() {
   // sharedFrom: 共有ページ由来の再実行を計測するトークン（ChatViewが?from=から渡す）。
   // 会話が新規作成される最初の一言にだけ意味があり、それ以外では無視される
   async function sendMessage(text: string, modality: Modality='text', sharedFrom: string | null = null) {
+    if (loadingConversation.value) return
+    const revision = conversationRevision
     // 直前が user のまま＝その発言に応答が付いていない（バージインや停止で捨てられた）。
     // このとき次の発話は「新しい問い」ではなく「言い直し」なので、並べずに置き換える。
     // 並べると同じ主旨の断片が2つ残り、履歴としても次のリクエストの文脈としても壊れる。
@@ -659,6 +706,8 @@ export function useChat() {
       const prev = pendingWrite
       pendingWrite = (async () => {
         await prev?.catch(() => undefined)
+        if (revision !== conversationRevision) return
+        if (controller.signal.aborted && controller.abortReason !== 'user') return
         const content = block.content
         // 一文字も届いていないうちは行を作らない（空バブルをDBに残さない）
         if (!content) return
@@ -917,7 +966,7 @@ export function useChat() {
 
   return {
     messages, sendMessage, stopGeneration, cancelGeneration, aiState, pendingBodies, openConversation, deleteOrphanedTurn, editOrphanedTurn,
-    conversations, currentConversationId, currentConversation,
+    conversations, currentConversationId, currentConversation, loadingConversation,
     startNewConversation, deleteConversation, renameConversation,
     loadConversations,
   }

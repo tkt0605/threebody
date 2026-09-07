@@ -11,6 +11,7 @@ import MessageList from '../components/MessageList.vue'
 import TextComposer from '../components/TextComposer.vue'
 import StopButton from '../components/StopButton.vue'
 import ChatLiveRegion from '../components/ChatLiveRegion.vue'
+import ConversationBriefDialog from '../components/ConversationBriefDialog.vue'
 import { useChat } from '../composables/useChat'
 import { useVoiceInput } from '../composables/useVoiceInput'
 import { useWakeWord } from '../composables/useWakeWord'
@@ -22,7 +23,7 @@ import { useSharedTurn } from '../composables/useSharedTurn'
 import { useAuth } from '../composables/useAuth'
 import type { Message } from '../types/message'
 
-const { messages, sendMessage, cancelGeneration, openConversation, startNewConversation, loadConversations, aiState, currentConversationId } = useChat()
+const { messages, sendMessage, cancelGeneration, openConversation, startNewConversation, loadConversations, aiState, currentConversationId, loadingConversation } = useChat()
 const { settings } = useSettings()
 const { sharedKey, ollama, refreshCapabilities } = useCapabilities()
 const { user } = useAuth()
@@ -238,6 +239,7 @@ const { recording, finalText, interimText, bars, errorMsg, start, stop } =
 // canSend が false なら実際には録音せず、ダイアログで「使えない」ことを先に伝える
 // （録音・発話を終えてからエラーで弾かれる体験を避ける）
 function requestStart() {
+  if (loadingConversation.value) return
   if (!canSend.value) { limitDialog.value?.open(); return }
   start()
 }
@@ -270,6 +272,12 @@ function handleTextSend(text: string) {
 function handleEditRequest(text: string) {
   const composer = (messages.value.length === 0 || firstExchangeInFlight.value) ? centralComposer.value : bottomComposer.value
   composer?.setText(text)
+}
+
+function handleBriefRequest(text: string): void {
+  if (generating.value || recording.value || loadingConversation.value) return
+  const composer = (messages.value.length === 0 || firstExchangeInFlight.value) ? centralComposer.value : bottomComposer.value
+  composer?.appendText(text)
 }
 
 // 「アイリス」でウェイク → 録音開始。
@@ -442,6 +450,10 @@ watch(
         <EmptyBrainState :shared-key="sharedKey" @open-settings="appAside?.openSettings()" />
       </div>
 
+      <div v-else-if="loadingConversation" role="status" class="flex-1 flex items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+        会話を読み込み中…
+      </div>
+
       <!-- 設定済み・会話なし（最初の発話が思考中の場合も含む）：中央に大きな球体 -->
       <div v-else-if="messages.length === 0 || firstExchangeInFlight" class="flex-1 flex flex-col items-center justify-center px-6 bg-gray-550">
         <div class="w-56 h-56 sm:w-72 sm:h-72">
@@ -517,6 +529,8 @@ watch(
     </main>
 
     <AppAside ref="appAside" />
+    <!-- bodyノート。体が無い間は入力欄が出ないので、追加ボタンも止める -->
+    <ConversationBriefDialog :busy="generating || recording || loadingConversation || !hasActiveBody" @prepare="handleBriefRequest" />
 
     <VoiceSphereDialog
       ref="voiceDialog"

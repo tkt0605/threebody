@@ -74,8 +74,9 @@ export function buildSystemPrompt(settings: Settings): string {
   // thinkingLevel はプロンプトに何も足さない。文体の指示（旧 LEVEL_STYLE）は
   // VOICE_STYLE の口調と競合していたため廃止し、レベルはモデル階層と maxTokens
   // （backend の LEVEL_CONFIG）だけを決める軸に絞った。
-  // プリセット層も廃止し、coding / creative の固有指示は SettingsDialog の
-  // PRESET_TEMPLATES から【追加指示】へ流し込む形に移してある（層を増やさないため）
+  // プリセット層も廃止した。一時期 SettingsDialog のテンプレートから【追加指示】へ
+  // 流し込む形にしていたが、会話ごとの目的や決定は bodyノート（useConversationBrief）が
+  // 相談文として運ぶようになったため、テンプレート自体も落とした（層は増やさない）
   if (settings.systemPrompt?.trim()) {
     parts.push(`【追加指示】\n${settings.systemPrompt.trim()}`)
   }

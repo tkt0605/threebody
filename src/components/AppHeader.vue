@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useTheme } from '../composables/useTheme'
 import { useChat } from '../composables/useChat'
 import { useAsideDrawer } from '../composables/useAsideDrawer'
+import { openNote } from '../composables/useConversationBrief'
 import ConfirmDialog from './ConfirmDialog.vue'
 defineProps<{ size?: number | string }>()
 const router = useRouter()
@@ -167,8 +168,25 @@ document.addEventListener('click', closeMenu)
       </div>
     </div>
 
+    <!-- bodyノート。本体は ChatView の ConversationBriefDialog。ここは開くだけ -->
     <button
       class="ml-auto w-8 h-8 flex items-center justify-center rounded-lg transition-colors cursor-pointer
+             text-gray-400 hover:text-gray-700 hover:bg-gray-200/60
+             dark:text-white/40 dark:hover:text-white/80 dark:hover:bg-white/8"
+      title="bodyノート"
+      aria-label="bodyノートを開く"
+      @click="openNote"
+    >
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke-linecap="round" stroke-linejoin="round"/>
+        <polyline points="14 2 14 8 20 8" stroke-linecap="round" stroke-linejoin="round"/>
+        <line x1="8" y1="13" x2="16" y2="13" stroke-linecap="round"/>
+        <line x1="8" y1="17" x2="13" y2="17" stroke-linecap="round"/>
+      </svg>
+    </button>
+
+    <button
+      class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors cursor-pointer
              text-gray-400 hover:text-gray-700 hover:bg-gray-200/60
              dark:text-white/40 dark:hover:text-white/80 dark:hover:bg-white/8"
       :title="isDark ? 'ライトモードに切替' : 'ダークモードに切替'"

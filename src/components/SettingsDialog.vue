@@ -41,21 +41,6 @@ const MODEL_PLACEHOLDERS: Record<BodyProvider, string> = {
 
 const BODY_NAMES = ['一体', '二体', '三体'] as const
 
-// 旧プリセット（設定として保存され、プロンプトに1層足していた）の置き換え。
-// 選ぶと追加指示欄に文章が入り、ユーザーがその場で編集できる。設定は増えず、
-// プロンプトの層も増えない（追加指示は元から1層ある）。
-// general は元から中身が無く、chat は BASE_PERSONA の【会話の進め方】と重複するため落とした。
-const PRESET_TEMPLATES: { label: string; text: string }[] = [
-  { label: 'コード', text: 'コードは動作するものを優先。エラーは根本原因から説明する。' },
-  { label: '創作',   text: '創作の相談には積極的にアイデアを広げる。制約より可能性を語る。' },
-]
-
-// 既存の入力を消さないよう、空なら差し込み・そうでなければ改行して追記する
-function applyTemplate(text: string) {
-  const current = draft.systemPrompt.trim()
-  draft.systemPrompt = current ? `${current}\n${text}` : text
-}
-
 const LANGUAGES: { value: Language; label: string }[] = [
   { value: 'ja', label: '日本語' },
   { value: 'en', label: 'English' },
@@ -228,22 +213,10 @@ defineExpose({ open })
               </button>
             </div>
           </div>
-          <!-- 追加指示（旧プリセットはここへ流し込むテンプレートになった） -->
+          <!-- 追加指示。会話ごとの目的や決定はここではなく bodyノート（ConversationBriefDialog）が持つ。
+               旧プリセット（コード / 創作）をここへ流し込むテンプレートは、ノートと役割が重なるため廃止 -->
           <div class="space-y-2">
-            <div class="flex items-baseline justify-between">
-              <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">追加指示</label>
-              <div class="flex gap-1.5">
-                <button
-                  v-for="tpl in PRESET_TEMPLATES"
-                  :key="tpl.label"
-                  class="px-2.5 py-1 rounded-lg text-xs transition-all cursor-pointer border"
-                  :style="inactiveBtnStyle"
-                  @click="applyTemplate(tpl.text)"
-                >
-                  + {{ tpl.label }}
-                </button>
-              </div>
-            </div>
+            <label class="text-xs font-medium uppercase tracking-widest text-gray-500 dark:text-white/50">追加指示</label>
             <textarea
               v-model="draft.systemPrompt"
               rows="4"

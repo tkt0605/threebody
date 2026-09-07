@@ -8,6 +8,7 @@ import ConfirmDialog from './ConfirmDialog.vue'
 import { useAuth } from '../composables/useAuth'
 import { useChat } from '../composables/useChat'
 import { useAsideDrawer } from '../composables/useAsideDrawer'
+import { openNote } from '../composables/useConversationBrief'
 defineProps<{ size?: number | string }>()
 const router = useRouter()
 const route  = useRoute()
@@ -41,6 +42,12 @@ async function handleLogout() {
 function openSettings() {
   settingsDialog.value?.open()
   closeAside()
+}
+
+// bodyノート本体は ChatView 側（ConversationBriefDialog）。ここは開くだけ
+function handleOpenNote() {
+  closeAside()
+  openNote()
 }
 
 function selectConversation(id: string) {
@@ -239,6 +246,20 @@ defineExpose({ openSettings })
           <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
         設定
+      </button>
+      <button
+        class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-colors cursor-pointer
+               text-gray-600 hover:text-gray-900 hover:bg-gray-200/70
+               dark:text-white/55 dark:hover:text-white/90 dark:hover:bg-white/6"
+        @click="handleOpenNote"
+      >
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke-linecap="round" stroke-linejoin="round"/>
+          <polyline points="14 2 14 8 20 8" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="8" y1="13" x2="16" y2="13" stroke-linecap="round"/>
+          <line x1="8" y1="17" x2="13" y2="17" stroke-linecap="round"/>
+        </svg>
+        bodyノート
       </button>
       <router-link
         to="/help"

@@ -98,7 +98,12 @@ function setText(value: string): void {
   area.value?.focus()
 }
 
-defineExpose({ setText })
+function appendText(value: string): void {
+  if (props.disabled || props.readonly || !value.trim()) return
+  setText(text.value.trim() ? `${text.value}\n\n${value}` : value)
+}
+
+defineExpose({ setText, appendText })
 </script>
 
 <template>
