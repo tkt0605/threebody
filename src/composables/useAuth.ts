@@ -1,8 +1,7 @@
 import { ref, computed } from 'vue'
 import type { User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
-
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:3000'
+import { API_BASE } from '../lib/apiBase'
 
 // Module-level singleton — shared across all components
 const user        = ref<User | null>(null)

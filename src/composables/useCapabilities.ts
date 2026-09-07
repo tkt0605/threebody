@@ -1,7 +1,6 @@
 import { ref } from 'vue'
 import { supabase } from '../lib/supabase'
-
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:3000'
+import { API_BASE } from '../lib/apiBase'
 
 // limit_reached = このユーザーが今日使い切った / global_limit_reached = 運営の全体枠が
 // 今日尽きた（＝このユーザーは1回も使っていない可能性がある）。案内すべき次の行動が

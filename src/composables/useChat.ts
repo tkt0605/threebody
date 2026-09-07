@@ -10,8 +10,7 @@ import { redactText } from '../lib/redact'
 import { toContentBlocks, type StoredBlockRow } from '../lib/contentBlocks'
 import type { Modality } from '../types/intent'
 import { bindConversationBrief, openConversationBrief, startConversationBrief, forgetConversationBrief, clearConversationBriefs } from './useConversationBrief'
-
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:3000'
+import { API_BASE } from '../lib/apiBase'
 
 // 現在アプリが保持している秘匿値。BodyConfig.apiKey は復号済みの平文なのでここで集める
 function currentSecrets(): string[]{
@@ -965,9 +964,22 @@ export function useChat() {
   }
 
   return {
-    messages, sendMessage, stopGeneration, cancelGeneration, aiState, pendingBodies, openConversation, deleteOrphanedTurn, editOrphanedTurn,
-    conversations, currentConversationId, currentConversation, loadingConversation,
-    startNewConversation, deleteConversation, renameConversation,
+    messages,
+    aiState,
+    pendingBodies,
+    conversations,
+    currentConversationId,
+    currentConversation,
+    loadingConversation,
+    sendMessage,
+    stopGeneration,
+    cancelGeneration,
+    openConversation,
+    deleteOrphanedTurn,
+    editOrphanedTurn,
+    startNewConversation,
+    deleteConversation,
+    renameConversation,
     loadConversations,
   }
 }
