@@ -12,7 +12,7 @@ router.get('/health', (_req, res) => {
     config: {
       sharedKey:      sharedApiKey() !== null,
       anthropicModel: Boolean(process.env.ANTHROPIC_MODEL_FAST),
-      supabase:       Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY),
+      supabase:       Boolean(process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY),
     },
   })
 })

@@ -84,7 +84,7 @@ SSE イベント順（三体モード）: `answer_start` → `text`… → `answ
 
 ### 環境変数
 
-- `.env` にフロント（`VITE_`）とバック両方が同居する。`VITE_ORIGIN_BASE_URL` は接頭辞に反してバックエンドが CORS origin として読む（未設定だと全オリジン許可に落ちる）
+- `.env` にフロント（`VITE_`）とバック両方が同居する。`VITE_ORIGIN_BASE_URL` は接頭辞に反してバックエンドが CORS origin として読み、未設定または空なら安全のため起動を拒否する
 - `OLLAMA_ENABLED` は未設定時 true。本番（Render）では false を明示する
 - モデル変更は `*_MODEL_FAST` / `_BALANCED` / `_POWERFUL` の書き換えだけで完結させる。`modelConfig.ts` は非null断言で読むので、使うプロバイダーぶんは必ず埋める
 - `render.yaml` はまだ Blueprint 未接続。ビルド / 起動コマンドを変えたらダッシュボード側も確認する

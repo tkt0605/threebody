@@ -32,7 +32,8 @@ services:
 
     envVars:
       # ── ダッシュボードで設定する（値はここに書かない）──────────────────────
-      - key: SUPABASE_URL
+      # フロントと同じ Supabase URL。ローカル .env でもこの名前に統一する
+      - key: VITE_SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_KEY
         sync: false

@@ -18,14 +18,16 @@ let cached: SupabaseClient | null | undefined
 export function getSupabaseAdmin(): SupabaseClient | null {
   if (cached !== undefined) return cached
 
-  const url        = process.env.SUPABASE_URL
+  // URL はフロントと同じ公開エンドポイントを使う。VITE_ 接頭辞付きの1本に
+  // 揃えることで、同じ値を .env に二重管理しない。
+  const url        = process.env.VITE_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_KEY
 
   // 環境変数が無い環境（Supabaseを設定していないローカル等）では null を返す。
   // ここで throw するとサーバーが起動しなくなり、共有キーと無関係な
   // 従来のBYOKユーザーまで巻き添えで止まる
   if (!url || !serviceKey) {
-    console.warn('[supabaseAdmin] SUPABASE_URL / SUPABASE_SERVICE_KEY が未設定のため共有キー機能は無効です')
+    console.warn('[supabaseAdmin] VITE_SUPABASE_URL / SUPABASE_SERVICE_KEY が未設定のため共有キー機能は無効です')
     cached = null
     return cached
   }

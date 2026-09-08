@@ -29,18 +29,18 @@
 //  
 // 【使い方】
 //   node scripts/view-shared.mjs
-// SUPABASE_URL / SUPABASE_SERVICE_KEY は .env から読む（backend/supabaseAdmin.ts と同じ2本）。
+// VITE_SUPABASE_URL / SUPABASE_SERVICE_KEY は .env から読む（backend/supabaseAdmin.ts と同じ2本）。
 
 import dotenv from 'dotenv'
 import { createClient } from '@supabase/supabase-js'
 
 dotenv.config({ path: new URL('../.env', import.meta.url).pathname })
 
-const URL_BASE     = process.env.SUPABASE_URL
+const URL_BASE     = process.env.VITE_SUPABASE_URL
 const SERVICE_KEY  = process.env.SUPABASE_SERVICE_KEY
 
 if (!URL_BASE || !SERVICE_KEY) {
-  console.error('SUPABASE_URL / SUPABASE_SERVICE_KEY が .env にありません（backend/supabaseAdmin.ts と同じ変数）。')
+  console.error('VITE_SUPABASE_URL / SUPABASE_SERVICE_KEY が .env にありません（backend/supabaseAdmin.ts と同じ変数）。')
   process.exit(1)
 }
 

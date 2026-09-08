@@ -244,7 +244,7 @@ Application-centric → Intent-centric。意図の処理を**単一の知性で�
 | `feedback` の受け側 | Supabase ダッシュボードを見る運用で塞ぐ。コードは書かない |
 | `EmptyBrainState` が `not_permitted` にも「APIキーを入れてね」と出す | 停止した相手向けなので緊急性が低い |
 
-**留意点** — `index.ts:14` の `cors({ origin: process.env.VITE_ORIGIN_BASE_URL })` は環境変数が未設定だと全オリジン許可へフォールバックする。`/api/chat` が認証必須のため実害は限定的。
+**留意点** — バックエンドは `VITE_ORIGIN_BASE_URL` を CORS の許可オリジンとして読む。未設定または空の場合は、全オリジン許可へフォールバックせず起動を拒否する。
 
 ---
 

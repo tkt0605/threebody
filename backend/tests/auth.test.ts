@@ -28,10 +28,10 @@ describe('extractBearerToken', () => {
 })
 
 describe('resolveUserId', () => {
-  const saved = { url: process.env.SUPABASE_URL, key: process.env.SUPABASE_SERVICE_KEY }
+  const saved = { url: process.env.VITE_SUPABASE_URL, key: process.env.SUPABASE_SERVICE_KEY }
 
   afterEach(() => {
-    for (const [name, value] of [['SUPABASE_URL', saved.url], ['SUPABASE_SERVICE_KEY', saved.key]] as const) {
+    for (const [name, value] of [['VITE_SUPABASE_URL', saved.url], ['SUPABASE_SERVICE_KEY', saved.key]] as const) {
       if (value === undefined) delete process.env[name]
       else process.env[name] = value
     }

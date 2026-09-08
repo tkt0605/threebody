@@ -8,15 +8,15 @@ async function freshImport() {
 }
 
 describe('getSupabaseAdmin', () => {
-  const saved = { url: process.env.SUPABASE_URL, key: process.env.SUPABASE_SERVICE_KEY }
+  const saved = { url: process.env.VITE_SUPABASE_URL, key: process.env.SUPABASE_SERVICE_KEY }
 
   beforeEach(() => {
-    process.env.SUPABASE_URL         = 'https://example.supabase.co'
+    process.env.VITE_SUPABASE_URL    = 'https://example.supabase.co'
     process.env.SUPABASE_SERVICE_KEY = 'service-key-for-test'
   })
 
   afterEach(() => {
-    for (const [name, value] of [['SUPABASE_URL', saved.url], ['SUPABASE_SERVICE_KEY', saved.key]] as const) {
+    for (const [name, value] of [['VITE_SUPABASE_URL', saved.url], ['SUPABASE_SERVICE_KEY', saved.key]] as const) {
       if (value === undefined) delete process.env[name]
       else process.env[name] = value
     }
@@ -44,7 +44,7 @@ describe('getSupabaseAdmin', () => {
   })
 
   it('null もキャッシュし、警告を繰り返さない', async () => {
-    delete process.env.SUPABASE_URL
+    delete process.env.VITE_SUPABASE_URL
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     const getSupabaseAdmin = await freshImport()
