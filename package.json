@@ -12,7 +12,8 @@
     "typecheck": "vue-tsc --noEmit",
     "typecheck:backend": "tsc --noEmit -p backend/tsconfig.json",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "verify:supabase-rotation": "node scripts/verify-retired-supabase-keys.mjs"
   },
   "overrides": {
     "node-fetch": "^2.7.0"
