@@ -377,9 +377,13 @@ create policy shared_messages_insert_own on public.shared_messages for insert
     )
   );
 
--- 取り消し（revoked_at を立てる）に必要
+-- 取り消し（revoked_at を立てる）に必要。
+-- using を省略すると更新対象の行が全件見えてしまい、with check は更新後の行しか
+-- 見ないため、他人の行を掴んで user_id を自分に書き換える更新が通る（共有の乗っ取り）。
+-- update ポリシーは using（どの行を更新できるか）と with check（更新後どうあるべきか）を
+-- 必ず対で書く
 create policy shared_messages_update_own on public.shared_messages for update
-  to authenticated with check (auth.uid() = user_id);
+  to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 create policy shared_messages_delete_own on public.shared_messages for delete
   to authenticated using (auth.uid() = user_id);
