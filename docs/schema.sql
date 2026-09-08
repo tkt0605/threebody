@@ -22,8 +22,8 @@
 -- ############################################################################
 -- 1. テーブル
 --
--- フロントは anon key + ユーザーのJWTで直接テーブルを叩き（src/lib/supabase.ts）、
--- バックエンドの service_role は RLS を完全にバイパスする（backend/supabaseAdmin.ts）。
+-- フロントは publishable key + ユーザーのJWTで直接テーブルを叩き（src/lib/supabase.ts）、
+-- バックエンドの secret key は service_role として RLS を完全にバイパスする（backend/supabaseAdmin.ts）。
 -- ＝ 以下のポリシーが縛るのは「フロントからの直接アクセス」だけ。
 --
 -- ポリシー名と条件は本番の pg_policies に合わせてある（2026-08-19 突き合わせ）。
@@ -329,7 +329,7 @@ create policy content_blocks_select_shared on public.content_blocks for select
 --   2. 取り消せる。revoked_at を立てれば全ポリシーが同時に閉じる
 --   3. 会話は私物という既定を崩さない。既定は非公開で、行がある1件だけが公開になる
 --
--- 【閲覧のコスト】anon key でフロントから直接読む。閲覧者はLLMを呼ばず、
+-- 【閲覧のコスト】publishable key でフロントから直接読む。閲覧者はLLMを呼ばず、
 -- 自前サーバーも通らない。何人見ても無料枠が1回も減らないことが③の存在理由
 -- （ROADMAP 2章「律速は資金」を迂回する唯一の経路）。
 --
@@ -556,7 +556,7 @@ grant execute on function public.release_global_quota(date) to service_role;
 --        messages / content_blocks に *_select_shared（to anon, authenticated）を1本ずつ、
 --        revoke select (user_id) on shared_messages / (signals) on messages from anon。
 --        これが RLS を anon へ開ける最初の変更なので、適用後に必ず確認すること:
---        共有していない message_id を anon key で直接 select して0件になること
+--        共有していない message_id を publishable key で直接 select して0件になること
 --        （scripts/verify-share-rls.mjs が両方向を確かめる）
 --
 -- 【確認クエリ】SQL Editor のタブは使い捨てにし、これらだけ手元に残しておけばよい。

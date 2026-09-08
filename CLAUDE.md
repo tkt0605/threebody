@@ -30,7 +30,7 @@ SSE イベント順（三体モード）: `answer_start` → `text`… → `answ
 
 ### 共有（`/s/:token`）
 
-`useSharedTurn.ts` が `shared_messages` に行を作り、閲覧側はバックエンドを通さず anon key で Supabase を直接読む（何人見ても無料枠が減らない、がこの機能の存在理由）。RLS の正本は `docs/schema.sql`。実プロジェクトに対する検証は `scripts/verify-share-rls.mjs`。
+`useSharedTurn.ts` が `shared_messages` に行を作り、閲覧側はバックエンドを通さず publishable key で Supabase を直接読む（何人見ても無料枠が減らない、がこの機能の存在理由）。RLS の正本は `docs/schema.sql`。実プロジェクトに対する検証は `scripts/verify-share-rls.mjs`。
 
 ## 前提（コードを読んでも分からない決定事項）
 
@@ -94,7 +94,8 @@ SSE イベント順（三体モード）: `answer_start` → `text`… → `answ
 - `THREEBODY_TOKEN=<Supabaseアクセストークン> node scripts/regress.mjs` — プロンプト回帰ハーネス。同じ問いを複数回投げて主体の本文だけを判定する（既定は Ollama 3体）
 - `npx tsx scripts/preview-review.ts [model] ['問い']` — 認証もフロントも通さず `orchestrateMultiBody` を1往復動かし、検算の中身を読む
 - `npx tsx scripts/experiment-synthesis.ts` — 統合方式との対照実験
-- `node scripts/verify-share-rls.mjs` / `node scripts/view-shared.mjs` — 共有の RLS 検証 / 共有・検算の集計（service key）
+- `node scripts/verify-share-rls.mjs` / `node scripts/view-shared.mjs` — 共有の RLS 検証 / 共有・検算の集計（secret key）
+- `npm run verify:supabase-rotation` — 無効化した旧 anon / service_role key が両方 401 になることを確認
 
 ## ドキュメント
 
