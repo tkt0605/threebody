@@ -39,7 +39,7 @@ export async function resolveUserId(header: string | undefined): Promise<string 
   if (!admin) return null
 
   try {
-    // service key のクライアントに引数としてトークンを渡す形。
+    // secret key の管理クライアントに引数としてトークンを渡す形。
     // これはトークン単体の検証で、クライアントの認証状態は変化しない
     const { data, error } = await admin.auth.getUser(token)
     if (error || !data.user) return null

@@ -35,7 +35,7 @@ services:
       # フロントと同じ Supabase URL。ローカル .env でもこの名前に統一する
       - key: VITE_SUPABASE_URL
         sync: false
-      - key: SUPABASE_SERVICE_KEY
+      - key: SUPABASE_SECRET_KEY
         sync: false
       - key: SHARED_ANTHROPIC_API_KEY
         sync: false

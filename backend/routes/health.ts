@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { sharedApiKey } from '../sharedKey'
+import { hasSupabaseAdminConfig } from '../supabaseAdmin'
 
 const router = Router()
 
@@ -12,7 +13,7 @@ router.get('/health', (_req, res) => {
     config: {
       sharedKey:      sharedApiKey() !== null,
       anthropicModel: Boolean(process.env.ANTHROPIC_MODEL_FAST),
-      supabase:       Boolean(process.env.VITE_SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY),
+      supabase:       hasSupabaseAdminConfig(),
     },
   })
 })

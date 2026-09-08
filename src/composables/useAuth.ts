@@ -35,8 +35,8 @@ export function useAuth() {
     console.log('Logged out')
   }
 
-  // 退会。アカウント本体（auth.users）は anon key では消せないため、
-  // service_role を持つバックエンドに委ねる（backend/routes/account.ts）。
+  // 退会。アカウント本体（auth.users）は publishable key では消せないため、
+  // secret key で service_role として動くバックエンドに委ねる（backend/routes/account.ts）。
   // 会話単位の削除（useChat.deleteConversation）と違い、こちらはRLSの外側の操作になる
   async function deleteAccount(): Promise<void> {
     const { data: { session } } = await supabase.auth.getSession()

@@ -18,7 +18,7 @@ export default defineConfig({
         // 誤って叩くことがない）の両方を満たす。テストはSupabaseへの通信をすべてモックする前提。
         env: {
             VITE_SUPABASE_URL: "http://localhost:54321",
-            VITE_SUPABASE_ANON_KEY: "test-anon-key",
+            VITE_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_test",
         },
     }
 })

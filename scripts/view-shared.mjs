@@ -7,11 +7,11 @@
 // hasFinding × 検算対象ターン数。集計元のテーブルは別だが、穴の形が同じなので
 // 同じタイミングで着手する。
 //
-// 【なぜ anon key ではなく service key か】
+// 【なぜ publishable key ではなく secret key か】
 // 集計はユーザーをまたぐ全件が対象。conversations / content_blocks の RLS は
-// auth.uid() = user_id（または conversations 経由）でしか通さないため、anon key + 1人分の
+// auth.uid() = user_id（または conversations 経由）でしか通さないため、publishable key + 1人分の
 // トークンでは自分のぶんしか見えない。verify-share-rls.mjs とは逆に、ここでは
-// backend/supabaseAdmin.ts と同じ service key（RLSを完全にバイパスする）を使う。
+// backend/supabaseAdmin.ts と同じ secret key（service_role として RLS を完全にバイパス）を使う。
 //
 // 【① 共有からの再実行率】
 // conversations.shared_from は「会話作成時に一度だけ書く shared_messages.token の写し」
@@ -29,22 +29,22 @@
 //  
 // 【使い方】
 //   node scripts/view-shared.mjs
-// VITE_SUPABASE_URL / SUPABASE_SERVICE_KEY は .env から読む（backend/supabaseAdmin.ts と同じ2本）。
+// VITE_SUPABASE_URL / SUPABASE_SECRET_KEY は .env から読む（backend/supabaseAdmin.ts と同じ2本）。
 
 import dotenv from 'dotenv'
 import { createClient } from '@supabase/supabase-js'
 
 dotenv.config({ path: new URL('../.env', import.meta.url).pathname })
 
-const URL_BASE     = process.env.VITE_SUPABASE_URL
-const SERVICE_KEY  = process.env.SUPABASE_SERVICE_KEY
+const URL_BASE  = process.env.VITE_SUPABASE_URL
+const SECRET_KEY = process.env.SUPABASE_SECRET_KEY
 
-if (!URL_BASE || !SERVICE_KEY) {
-  console.error('VITE_SUPABASE_URL / SUPABASE_SERVICE_KEY が .env にありません（backend/supabaseAdmin.ts と同じ変数）。')
+if (!URL_BASE || !SECRET_KEY) {
+  console.error('VITE_SUPABASE_URL / SUPABASE_SECRET_KEY が .env にありません（backend/supabaseAdmin.ts と同じ変数）。')
   process.exit(1)
 }
 
-const supabase = createClient(URL_BASE, SERVICE_KEY)
+const supabase = createClient(URL_BASE, SECRET_KEY)
 
 // PostgREST は1回のGETにつき既定1000件までしか返さない。件数が伸びても取りこぼさない
 // よう、range で総なめする（この規模の集計スクリプトを毎回書き直したくないため）。

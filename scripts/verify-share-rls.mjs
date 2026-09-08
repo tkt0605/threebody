@@ -18,7 +18,7 @@
 //   THREEBODY_TOKEN=<Supabaseのアクセストークン> node scripts/verify-share-rls.mjs
 //
 // トークンはブラウザの devtools から取る（localStorage の sb-*-auth-token の
-// access_token）。VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY は .env から読む。
+// access_token）。VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY は .env から読む。
 //
 // 【後片付け】検証で作った共有は最後に必ず取り消す（revoked_at を立てる）。
 // 途中で落ちた場合は、その回で作った token が標準出力に出ているので手で消すこと。
@@ -28,11 +28,11 @@ import dotenv from 'dotenv'
 dotenv.config({ path: new URL('../.env', import.meta.url).pathname })
 
 const URL_BASE = process.env.VITE_SUPABASE_URL
-const ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY
-const TOKEN    = process.env.THREEBODY_TOKEN
+const PUBLISHABLE_KEY = process.env.VITE_SUPABASE_PUBLISHABLE_KEY
+const TOKEN           = process.env.THREEBODY_TOKEN
 
-if (!URL_BASE || !ANON_KEY) {
-  console.error('VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY が .env にありません。')
+if (!URL_BASE || !PUBLISHABLE_KEY) {
+  console.error('VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY が .env にありません。')
   process.exit(1)
 }
 if (!TOKEN) {
@@ -42,11 +42,12 @@ if (!TOKEN) {
 
 // as は「誰として叩くか」。anon = 未ログインの閲覧者、owner = 自分
 async function rest(as, path, init = {}) {
+  const authorization = as === 'owner' ? { Authorization: `Bearer ${TOKEN}` } : {}
   const res = await fetch(`${URL_BASE}/rest/v1/${path}`, {
     ...init,
     headers: {
-      apikey:        ANON_KEY,
-      Authorization: `Bearer ${as === 'owner' ? TOKEN : ANON_KEY}`,
+      apikey: PUBLISHABLE_KEY,
+      ...authorization,
       'Content-Type': 'application/json',
       ...(init.headers ?? {}),
     },

@@ -8,7 +8,7 @@ import { toContentBlocks } from '../lib/contentBlocks'
 //
 // 【この機能の存在理由】閲覧側はLLMを呼ばない。何人見ても無料枠が1回も減らないため、
 // 拡散とコストを切り離せる唯一の経路になる（ROADMAP 2章「律速は資金」）。
-// だから閲覧は自前サーバーを通さず、anon key で Supabase を直接読む。
+// だから閲覧は自前サーバーを通さず、publishable key で Supabase を直接読む。
 //
 // 【公開の単位】主体の答え（message_id）と、その問い（question_message_id）。
 // 検算カードは答えの content_blocks に 'perspective' として入っているので、

@@ -6,8 +6,8 @@ import { getSupabaseAdmin } from '../supabaseAdmin'
 
 // 退会（アカウントと全データの削除）。
 //
-// 【なぜバックエンドに置くか】auth.users の行はフロントの anon key では消せない。
-// service_role でしか消せないため、削除の入口はここにしか作れない。
+// 【なぜバックエンドに置くか】auth.users の行はフロントの publishable key では消せない。
+// secret key で service_role として動く管理クライアントにしか消せないため、削除の入口はここにしか作れない。
 // 会話単位の削除（useChat.deleteConversation）がフロント完結なのは、そちらが
 // RLS の範囲内で完結する操作だからで、退会は範囲が違う。
 //
@@ -82,7 +82,7 @@ router.delete('/account', deleteRateLimit, async (req, res) => {
 
   const admin = getSupabaseAdmin()
   if (!admin) {
-    // 環境変数が無い＝service_roleが使えない。ここで500を返すと「一時的な不具合」に
+    // 環境変数が無い＝secret key が使えない。ここで500を返すと「一時的な不具合」に
     // 見えるが、実際は設定の不備で何度やっても成功しない
     res.status(503).json({ error: 'アカウント削除は現在利用できません' })
     return
