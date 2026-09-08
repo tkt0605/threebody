@@ -335,6 +335,46 @@ Claude Codeで追加されたダイアログ、ファイル読み込み、新規
 
 ---
 
+## 7. 環境変数の配置
+
+ローカルでは `.env`、Viteの本番ビルドでは `.env.production`、本番バックエンドではRenderの環境変数を使う。`VITE_` 接頭辞の変数はブラウザへ露出し得るため、秘密値を入れない。表中の「任意」は未設定時のフォールバック、または該当機能を使わない構成があることを表す。
+
+RenderとVercelは別系統で、互いの変数は届かない
+
+VITE_ORIGIN_BASE_URL と VITE_SUPABASE_URL は接頭辞だけでは読む側を判断できない。
+- VITE_ORIGIN_BASE_URL : 値はフロントのオリジンだが、CORS許可元としてRender上のバックエンドだけが読む
+- VITE_SUPABASE_URL : Vercel上のフロントとRender上のバックエンドの両方が読むため、両方へ同じ値を設定した。
+
+Vercelの環境変数の詳細ページから、各環境変数のSecret値は後から読み戻せない。
+
+**Vercel Previewは使用しない。動作確認はローカル環境とProduction環境で行う。**
+
+| 変数名 | ローカル `.env` | Render | Vercel | 読む側 | 備考 |
+| --- | --- | --- | --- | --- | --- |
+| `VITE_API_BASE_URL` | `http://localhost:3000` | — | 必須: Render APIのURL | Vite、`src/lib/apiBase.ts` | フロントからバックエンドへ接続するURL。未設定時はlocalhostへフォールバックする |
+| `VITE_ORIGIN_BASE_URL` | `http://localhost:5174` | 必須: Vercelのオリジン | — | `backend/index.ts` | CORS許可元。未設定・空文字ではバックエンドの起動を拒否する。変数名に反してバックエンド専用 |
+| `VITE_SUPABASE_URL` | 必須 | 必須 | 必須 | `src/lib/supabase.ts`、`backend/supabaseAdmin.ts`、検証スクリプト | フロントとバックエンドで同じSupabase URLを共用する。秘密値ではない |
+| `VITE_SUPABASE_ANON_KEY` | 必須 | — | 必須 | `src/lib/supabase.ts`、`scripts/verify-share-rls.mjs` | ブラウザ公開前提。権限制御はRLSで行う |
+| `SUPABASE_SERVICE_KEY` | 共有キー機能の検証時に必須 | 必須 | — | `backend/supabaseAdmin.ts`、`scripts/view-shared.mjs` | RLSを迂回する秘密値。Vercelや`VITE_`変数へ置かない |
+| `SHARED_ANTHROPIC_API_KEY` | 共有枠を使う場合に必須 | 共有枠を使う場合に必須 | — | `backend/sharedKey.ts`、`backend/utils/errorSanitize.ts` | 運営負担のAnthropicキー。未設定なら共有キー機能を無効化する |
+| `ANTHROPIC_MODEL_FAST` | Anthropic利用時に必須 | 設定済み | — | `backend/llm/modelConfig.ts`、`backend/routes/health.ts` | 高速レベルのモデル名。秘密値ではない |
+| `ANTHROPIC_MODEL_BALANCED` | Anthropic利用時に必須 | 設定済み | — | `backend/llm/modelConfig.ts` | 標準レベルのモデル名。秘密値ではない |
+| `ANTHROPIC_MODEL_POWERFUL` | Anthropic利用時に必須 | 設定済み | — | `backend/llm/modelConfig.ts` | 高性能レベルのモデル名。秘密値ではない |
+| `OPENAI_MODEL_FAST` | OpenAI利用時に必須 | OpenAI利用時に要設定 | — | `backend/llm/modelConfig.ts` | 現在の`render.yaml`には未記載 |
+| `OPENAI_MODEL_BALANCED` | OpenAI利用時に必須 | OpenAI利用時に要設定 | — | `backend/llm/modelConfig.ts` | 現在の`render.yaml`には未記載 |
+| `OPENAI_MODEL_POWERFUL` | OpenAI利用時に必須 | OpenAI利用時に要設定 | — | `backend/llm/modelConfig.ts` | 現在の`render.yaml`には未記載 |
+| `DEEPSEEK_MODEL_FAST` | DeepSeek利用時に必須 | DeepSeek利用時に要設定 | — | `backend/llm/modelConfig.ts` | 現在の`render.yaml`には未記載 |
+| `DEEPSEEK_MODEL_POWERFUL` | DeepSeek利用時に必須 | DeepSeek利用時に要設定 | — | `backend/llm/modelConfig.ts` | balancedはなく、fast / powerfulの2段階。現在の`render.yaml`には未記載 |
+| `OLLAMA_ENABLED` | 明示推奨 | 必須: `false` | — | `backend/llm/providers/ollama.ts`、capabilities経路 | 未設定時は`true`。RenderからローカルOllamaへ到達できないため本番は無効化する |
+| `OLLAMA_BASE_URL` | 任意: 既定は`http://localhost:11434` | — | — | `backend/llm/providers/ollama.ts`、検証スクリプト | Ollamaを有効にする環境だけで使う |
+| `OLLAMA_MODEL_DEFAULT` | Ollama利用時に必須 | — | — | `backend/llm/modelConfig.ts`、検証スクリプト | キー・個別設定なしで使う既定モデル。事前にpullが必要 |
+| `OLLAMA_NUM_PARALLEL` | アプリの`.env`では無効 | — | — | Ollamaプロセス | ThreeBodyのコードは読まない。Ollamaを起動するプロセスの環境変数として渡す |
+| `OLLAMA_FLASH_ATTENTION` | アプリの`.env`では無効 | — | — | Ollamaプロセス | ThreeBodyのコードは読まない。Ollamaを起動するプロセスの環境変数として渡す |
+| `PORT` | 任意: 既定は`3000` | Renderが自動設定 | — | `backend/index.ts` | Renderでは固定値を設定しない |
+| `DEBUG_SYNTHESIS` | 任意 | 原則設定しない | — | `backend/llm/textService.ts` | 値が`full`のときだけ統合入力を出力する。常時有効化しない |
+
+---
+
 # 用語集
 
 このプロジェクト固有の用語のみ記す。一般的なプログラミング概念は含めない。用語は確定した時点で随時追記する（現時点では以下の中核語のみ）。
