@@ -15,12 +15,12 @@ dotenv.config({ path: new URL('../.env', import.meta.url).pathname })
 
 const url = process.env.VITE_SUPABASE_URL
 const retiredKeys = [
-  ['旧 anon key', process.env.RETIRED_SUPABASE_ANON_KEY],
-  ['旧 service_role key', process.env.RETIRED_SUPABASE_SERVICE_ROLE_KEY],
+  ['旧 anon key', process.env.VITE_SUPABASE_ANON_KEY],
+  ['旧 service_role key', process.env.VITE_SUPABASE_SERVICE_ROLE_KEY],
 ]
 
 if (!url || retiredKeys.some(([, key]) => !key)) {
-  console.error('VITE_SUPABASE_URL / RETIRED_SUPABASE_ANON_KEY / RETIRED_SUPABASE_SERVICE_ROLE_KEY が .env に必要です。')
+  console.error('VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY / VITE_SUPABASE_SERVICE_ROLE_KEY が .env に必要です。')
   process.exit(1)
 }
 
