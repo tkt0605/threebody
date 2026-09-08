@@ -18,3 +18,6 @@ threebody_demo.gif
 .claude/feature/
 .agents/
 .vercel
+
+# vercel link が .env* を追記しても .env.example を巻き込まないよう、末尾で打ち消す
+!.env.example
