@@ -5,8 +5,8 @@ import type { PerspectiveBlock, TextBlock } from '../../types/message'
 // 共有していないメッセージへ、公開側のコードから到達できないこと。
 //
 // RLS そのものは Postgres の中にあるのでここでは動かない。代わりに、
-//   1. クライアント側 — URLの文字列が messages の絞り込みに渡る経路が1つも無いこと
-//   2. サーバー側 — 台帳（shared_messages）に生きた行が無いメッセージは見えないこと
+//   1. クライアント側 — 公開スナップショット以外のテーブルを読まないこと
+//   2. サーバー側 — published_turns の取り消し済み行は見えないこと
 // の2つを、下の偽 supabase が RLS と同じ条件を再現して確かめる。
 // 本物のポリシーの検証は scripts/verify-share-rls.mjs（実プロジェクトへ接続する）。
 
@@ -14,23 +14,13 @@ type Row = Record<string, unknown>
 
 const db = {
   shared_messages: [] as Row[],
+  published_turns: [] as Row[],
   messages:        [] as Row[],
   content_blocks:  [] as Row[],
 }
 
-// messages に対して実際に発行された絞り込み。URLの文字列がそのまま渡っていないことを見る
-const messageFilters: Row[] = []
-// PostgREST の埋め込み取得へ戻さず、列権限を絞れる2クエリになっていることを見る
+// 匿名閲覧が公開スナップショット1回だけに閉じていることを見る
 const selects: { table: string; columns: string }[] = []
-
-// 生きている共有から辿れる message_id（＝ anon に見える行）。
-// docs/schema.sql の messages_select_shared / content_blocks_select_shared と同じ条件
-function visibleMessageIds(): string[] {
-  return db.shared_messages
-    .filter(r => r.revoked_at == null)
-    .flatMap(r => [r.message_id as string, r.question_message_id as string | null])
-    .filter((id): id is string => id != null)
-}
 
 function builder(table: string) {
   const filters: Row = {}
@@ -49,17 +39,9 @@ function builder(table: string) {
       hit.forEach(r => Object.assign(r, payload))
       return hit
     }
-    // select。anon から見える範囲まで絞ってから、クエリの条件を当てる
+    // select。published_turns のRLSと同じく、取り消し済みの公開行は見せない
     let source = db[table as keyof typeof db]
-    if (table === 'messages') {
-      messageFilters.push({ ...filters })
-      const visible = visibleMessageIds()
-      source = source.filter(r => visible.includes(r.id as string))
-    }
-    if (table === 'content_blocks') {
-      const visible = visibleMessageIds()
-      source = source.filter(r => visible.includes(r.message_id as string))
-    }
+    if (table === 'published_turns') source = source.filter(r => r.revoked_at == null)
     return source.filter(r =>
       Object.entries(filters).every(([key, want]) =>
         key.endsWith('__in')
@@ -129,12 +111,21 @@ function seed() {
   db.shared_messages = [
     { token: 'live-token', message_id: 'a-1', question_message_id: 'q-1', user_id: 'user-1', created_at: '2026-08-21T00:00:00Z', revoked_at: null },
   ]
+  db.published_turns = [
+    {
+      token: 'live-token',
+      question: '共有したターンの問い',
+      answer: '答えの本文',
+      content_blocks: ANSWER_BLOCKS,
+      created_at: '2026-08-21T00:00:00Z',
+      revoked_at: null,
+    },
+  ]
 }
 
 describe('useSharedTurn', () => {
   beforeEach(() => {
     seed()
-    messageFilters.length = 0
     selects.length = 0
     useSharedTurn().liveTokens.value = {}
     vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -157,32 +148,38 @@ describe('useSharedTurn', () => {
     expect(await useSharedTurn().fetchByToken('a-2')).toBeNull()
     expect(await useSharedTurn().fetchByToken('q-2')).toBeNull()
 
-    // 台帳に無いトークンで止まるので、messages へは1度も問い合わせない
-    expect(messageFilters).toHaveLength(0)
+    expect(selects).toHaveLength(2)
+    expect(selects.every(query => query.table === 'published_turns')).toBe(true)
   })
 
-  it('取り消した共有は読めなくなる', async () => {
-    await useSharedTurn().share('a-1', 'q-1')  // 既存のトークンを拾う
-    expect(await useSharedTurn().revoke('a-1')).toBe(true)
-
+  it('取り消し済みの公開スナップショットは読めない', async () => {
+    db.published_turns[0]!.revoked_at = '2026-09-09T00:00:00Z'
     expect(await useSharedTurn().fetchByToken('live-token')).toBeNull()
-    // 行は消さずに revoked_at を立てる（共有していた事実を残す）
+  })
+
+  it('公開を取り消しても管理台帳の行は削除しない', async () => {
+    await useSharedTurn().share('a-1', 'q-1')
+
+    expect(await useSharedTurn().revoke('a-1')).toBe(true)
     expect(db.shared_messages).toHaveLength(1)
     expect(db.shared_messages[0]!.revoked_at).not.toBeNull()
   })
 
-  it('messages を引くのは、台帳から得たIDだけ', async () => {
+  it('公開スナップショットの表示列だけを1回で読む', async () => {
     await useSharedTurn().fetchByToken('live-token')
 
-    expect(messageFilters).toEqual([{ id__in: ['a-1', 'q-1'] }])
+    expect(selects).toEqual([{
+      table: 'published_turns',
+      columns: 'token, question, answer, content_blocks, created_at',
+    }])
   })
 
-  it('messages と content_blocks を埋め込まずに分けて読む', async () => {
-    await useSharedTurn().fetchByToken('live-token')
+  it('古い共有に検算行が無くても、answerから本文を復元する', async () => {
+    db.published_turns[0]!.content_blocks = []
 
-    expect(selects).toContainEqual({ table: 'messages', columns: 'id, role, content' })
-    expect(selects).toContainEqual({ table: 'content_blocks', columns: 'type, payload, sort_order' })
-    expect(selects.some(query => query.table === 'messages' && query.columns.includes('content_blocks'))).toBe(false)
+    const turn = await useSharedTurn().fetchByToken('live-token')
+
+    expect(turn?.blocks).toEqual([{ type: 'text', content: '答えの本文' }])
   })
 
   it('公開すると台帳に1行増え、問いのIDも一緒に記録する', async () => {

@@ -410,7 +410,6 @@ grant select (token, message_id, question_message_id, created_at, revoked_at)
 --
 -- content_blocks は [{ type, payload, sort_order }, ...] の配列。
 -- 作成直後は移行途中のデータを公開しないため、RLS を有効にして全権限を閉じる。
--- anon の select policy と権限は、バックフィルと読み取り経路の切替後に追加する。
 -- ----------------------------------------------------------------------------
 create table public.published_turns (
   token           uuid primary key,
@@ -472,6 +471,15 @@ on conflict (token) do update set
   content_blocks = excluded.content_blocks,
   created_at     = excluded.created_at,
   revoked_at     = excluded.revoked_at;
+
+-- 匿名共有ページと、ログイン中に共有URLを開いた閲覧者の読み取り。
+-- RLS は生きているスナップショットだけを通し、列権限は表示に必要な5列だけを戻す。
+-- revoked_at はポリシー内部では参照できるが、閲覧者へ返す必要はない。
+create policy published_turns_select_public on public.published_turns for select
+  to anon, authenticated using (revoked_at is null);
+
+grant select (token, question, answer, content_blocks, created_at)
+  on public.published_turns to anon, authenticated;
 
 -- ----------------------------------------------------------------------------
 -- feedback — エラー報告（src/composables/useFeedback.ts）

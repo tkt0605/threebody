@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import type { ContentBlock } from '../types/message'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
-import { toContentBlocks } from '../lib/contentBlocks'
+import { toContentBlocks, type StoredBlockRow } from '../lib/contentBlocks'
 
 // 1ターンの公開（ROADMAP ③）。
 //
@@ -14,9 +14,8 @@ import { toContentBlocks } from '../lib/contentBlocks'
 // 検算カードは答えの content_blocks に 'perspective' として入っているので、
 // 追加で送るものは無い。
 //
-// 【既定は非公開】会話はユーザーの私物で、shared_messages に生きた行がある
-// 1メッセージだけが公開される。取り消し（revoked_at）は台帳側の1列で閉じ、
-// messages と content_blocks の anon ポリシーが同時に効かなくなる（docs/schema.sql）
+// 【既定は非公開】会話はユーザーの私物。匿名閲覧者は、公開してよい内容だけを複製した
+// published_turns の生きた1行だけを読む。所有者や元メッセージの内部IDは公開経路に出さない。
 
 // 共有ページが表示するものすべて。所有者は含めない（誰が共有したかは公開しない）
 export type SharedTurn = {
@@ -147,52 +146,31 @@ export function useSharedTurn() {
 
   // 未ログインで開かれる読み取り経路。ここだけは認証を前提にしない。
   //
-  // 台帳を先に引き、そこで得た message_id でしか messages を読まない。
-  // URLから受け取った文字列がそのまま messages の絞り込みに渡ることは無い
-  // （＝共有していないメッセージのIDを直接叩いても、この関数からは到達できない）。
-  // 二重の防御で、RLS 側も shared_messages に生きた行が無い限り0件を返す
+  // 公開スナップショットだけを1回読む。shared_messages / messages / content_blocks は
+  // 匿名経路から触らないため、所有者ID・元メッセージID・操作記録へ到達できない。
+  // 取り消し済みの行は published_turns_select_public が0件にする。
   async function fetchByToken(token: string): Promise<SharedTurn | null> {
-    const { data: ledger, error: ledgerError } = await supabase
-      .from('shared_messages')
-      .select('token, message_id, question_message_id, created_at')
+    const { data: snapshot, error } = await supabase
+      .from('published_turns')
+      .select('token, question, answer, content_blocks, created_at')
       .eq('token', token)
-      .is('revoked_at', null)
       .maybeSingle()
-    if (ledgerError) { console.error('共有の取得に失敗しました', ledgerError); return null }
-    if (!ledger) return null
+    if (error) { console.error('共有の取得に失敗しました', error); return null }
+    if (!snapshot) return null
 
-    const answerId   = ledger.message_id as string
-    const questionId = (ledger.question_message_id as string | null) ?? null
-
-    const { data: rows, error: rowsError } = await supabase
-      .from('messages')
-      .select('id, role, content')
-      .in('id', questionId ? [answerId, questionId] : [answerId])
-    if (rowsError) { console.error('共有の取得に失敗しました', rowsError); return null }
-
-    const answer = (rows ?? []).find(r => r.id === answerId)
-    // 台帳はあるのに本文が読めないのは、答えが消された（会話ごと削除）状態。
-    // 取り消しと同じ扱いにして、共有ページは「見つからない」を出す
-    if (!answer) return null
-
-    // PostgREST の埋め込み取得は親テーブルの table-level SELECT を要求する。
-    // messages.signals を anon から隠したまま本文と検算を読むため、別クエリに分ける
-    const { data: blockRows, error: blocksError } = await supabase
-      .from('content_blocks')
-      .select('type, payload, sort_order')
-      .eq('message_id', answerId)
-      .order('sort_order')
-    if (blocksError) { console.error('共有の取得に失敗しました', blocksError); return null }
-
-    const question = questionId
-      ? ((rows ?? []).find(r => r.id === questionId)?.content as string | undefined) ?? null
-      : null
+    const blocks = toContentBlocks(
+      (snapshot.content_blocks as StoredBlockRow[] | null) ?? []
+    )
+    // content_blocks 導入前の共有にも本文を表示する。通常は text 行があるため追加しない。
+    if (!blocks.some(block => block.type === 'text')) {
+      blocks.unshift({ type: 'text', content: snapshot.answer as string })
+    }
 
     return {
-      token:    ledger.token as string,
-      question,
-      blocks:   toContentBlocks(blockRows ?? []),
-      sharedAt: new Date(ledger.created_at as string),
+      token:    snapshot.token as string,
+      question: (snapshot.question as string | null) ?? null,
+      blocks,
+      sharedAt: new Date(snapshot.created_at as string),
     }
   }
 

@@ -164,6 +164,8 @@ Application-centric → Intent-centric。意図の処理を**単一の知性で�
 
 **公開スナップショットへの移行（2026-09-09）**: `shared_messages` は削除せず、`token / message_id / question_message_id / user_id / revoked_at` を持つ非公開の管理台帳へ役割を限定する。匿名閲覧は、新設する `published_turns` の `token / question / answer / content_blocks / created_at / revoked_at` だけを読む。公開テーブルには内部IDを置かず、`shared_messages` との外部キーも作らない。共有時点の表示内容を複製する代わりに、非公開テーブルの権限を匿名経路へ波及させないことを優先する。既存共有は取り消し済みを含めて同じtokenでバックフィルし、`revoked_at`も引き継ぐため、既存URLの維持と取り消したURLの非復活を両立する。
 
+匿名共有ページの読み取りは `published_turns` の1クエリだけで完結させる。RLSは `revoked_at is null` の行だけを通し、`anon` と `authenticated` には表示用の `token / question / answer / content_blocks / created_at` だけを許可する。ログイン状態によってSupabaseのロールが変わっても同じ共有URLを閲覧でき、`revoked_at` 自体や非公開台帳・正本テーブルは閲覧結果へ含めない。
+
 **完了判定**: 共有URLが未ログインで開き、そこ経由の新規登録が1件。
 
 > **決定（2026-08-21）— 共有の形。**
