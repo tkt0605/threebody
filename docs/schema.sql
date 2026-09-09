@@ -481,6 +481,85 @@ create policy published_turns_select_public on public.published_turns for select
 grant select (token, question, answer, content_blocks, created_at)
   on public.published_turns to anon, authenticated;
 
+-- 管理台帳への書き込みと公開スナップショットを同一トランザクションで同期する。
+-- フロントから2テーブルを順番に書くと、通信断などで片方だけ成功しうるため、
+-- published_turns へ直接の書き込み権限は渡さずDBトリガーに閉じ込める。
+create or replace function public.sync_published_turn()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  -- 会話削除・退会などのCASCADEでも、公開スナップショットを残したままにしない。
+  if tg_op = 'DELETE' then
+    update public.published_turns
+    set revoked_at = coalesce(revoked_at, now())
+    where token = old.token;
+    return old;
+  end if;
+
+  -- 一度取り消したURLは復活させない。再共有では新しいtokenを発行する。
+  if tg_op = 'UPDATE' and old.revoked_at is not null and new.revoked_at is null then
+    raise exception 'revoked share cannot be reactivated';
+  end if;
+
+  insert into public.published_turns (
+    token,
+    question,
+    answer,
+    content_blocks,
+    created_at,
+    revoked_at
+  )
+  select
+    new.token,
+    q.content,
+    a.content,
+    coalesce((
+      select jsonb_agg(
+        jsonb_build_object(
+          'type', cb.type,
+          'payload', cb.payload,
+          'sort_order', cb.sort_order
+        )
+        order by cb.sort_order
+      )
+      from public.content_blocks cb
+      where cb.message_id = new.message_id
+    ), '[]'::jsonb),
+    new.created_at,
+    new.revoked_at
+  from public.messages a
+  left join public.messages q on q.id = new.question_message_id
+  where a.id = new.message_id
+  on conflict (token) do update set
+    question       = excluded.question,
+    answer         = excluded.answer,
+    content_blocks = excluded.content_blocks,
+    created_at     = excluded.created_at,
+    revoked_at     = excluded.revoked_at;
+
+  if not found then
+    raise exception 'shared message source was not found';
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function public.sync_published_turn() from public;
+
+create trigger shared_messages_sync_published_turn
+after insert or update of revoked_at or delete on public.shared_messages
+for each row execute function public.sync_published_turn();
+
+-- 更新ポリシーは行の所有者しか通さないが、テーブル単位UPDATEのままではmessage_id等も
+-- 書き換えられる。公開スナップショットを作るトリガーへ不正な参照元を渡さないため、
+-- クライアントが更新できる列を取り消し時に必要な revoked_at だけへ限定する。
+revoke update on public.shared_messages from authenticated;
+grant update (revoked_at) on public.shared_messages to authenticated;
+
 -- ----------------------------------------------------------------------------
 -- feedback — エラー報告（src/composables/useFeedback.ts）
 --

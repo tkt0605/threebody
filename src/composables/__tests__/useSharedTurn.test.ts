@@ -29,14 +29,32 @@ function builder(table: string) {
 
   function rows(): Row[] {
     if (mode === 'insert') {
-      const inserted = { token: 'token-new', revoked_at: null, ...payload }
+      const inserted: Row = { token: 'token-new', revoked_at: null, ...payload }
       db.shared_messages.push(inserted)
+      // docs/schema.sql の shared_messages_sync_published_turn と同じ契約。
+      // 実DBでは台帳INSERTと同一トランザクションで公開スナップショットを作る。
+      const answer = db.messages.find(r => r.id === inserted.message_id)
+      const question = db.messages.find(r => r.id === inserted.question_message_id)
+      db.published_turns.push({
+        token: inserted.token,
+        question: question?.content ?? null,
+        answer: answer?.content,
+        content_blocks: db.content_blocks
+          .filter(r => r.message_id === inserted.message_id)
+          .map(({ type, payload: blockPayload, sort_order }) => ({ type, payload: blockPayload, sort_order })),
+        created_at: '2026-09-09T00:00:00Z',
+        revoked_at: null,
+      })
       return [inserted]
     }
 
     if (mode === 'update') {
       const hit = db.shared_messages.filter(r => r.token === filters.token)
       hit.forEach(r => Object.assign(r, payload))
+      hit.forEach(r => {
+        const snapshot = db.published_turns.find(p => p.token === r.token)
+        if (snapshot) snapshot.revoked_at = r.revoked_at
+      })
       return hit
     }
     // select。published_turns のRLSと同じく、取り消し済みの公開行は見せない
@@ -157,12 +175,14 @@ describe('useSharedTurn', () => {
     expect(await useSharedTurn().fetchByToken('live-token')).toBeNull()
   })
 
-  it('公開を取り消しても管理台帳の行は削除しない', async () => {
+  it('公開を取り消すと台帳を残したままスナップショットも閉じる', async () => {
     await useSharedTurn().share('a-1', 'q-1')
 
     expect(await useSharedTurn().revoke('a-1')).toBe(true)
     expect(db.shared_messages).toHaveLength(1)
     expect(db.shared_messages[0]!.revoked_at).not.toBeNull()
+    expect(db.published_turns[0]!.revoked_at).toBe(db.shared_messages[0]!.revoked_at)
+    expect(await useSharedTurn().fetchByToken('live-token')).toBeNull()
   })
 
   it('公開スナップショットの表示列だけを1回で読む', async () => {
@@ -184,12 +204,35 @@ describe('useSharedTurn', () => {
 
   it('公開すると台帳に1行増え、問いのIDも一緒に記録する', async () => {
     db.shared_messages = []
+    db.published_turns = []
+    db.messages.push(
+      { id: 'q-9', role: 'user', content: '新しい問い' },
+      { id: 'a-9', role: 'assistant', content: '新しい答え' },
+    )
     const token = await useSharedTurn().share('a-9', 'q-9')
 
     expect(token).toBe('token-new')
     expect(db.shared_messages[0]).toMatchObject({
       message_id: 'a-9', question_message_id: 'q-9', user_id: 'user-1',
     })
+  })
+
+  it('新しい公開は同じトークンで公開スナップショットにも同期される', async () => {
+    db.shared_messages = []
+    db.published_turns = []
+    db.messages.push(
+      { id: 'q-9', role: 'user', content: '新しい問い' },
+      { id: 'a-9', role: 'assistant', content: '新しい答え' },
+    )
+
+    const token = await useSharedTurn().share('a-9', 'q-9')
+
+    expect(db.published_turns).toEqual([expect.objectContaining({
+      token,
+      question: '新しい問い',
+      answer: '新しい答え',
+      revoked_at: null,
+    })])
   })
 
   // 手元の liveTokens が空でも（別タブ・別端末で共有済み）、URLは1つのまま

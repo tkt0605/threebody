@@ -166,6 +166,8 @@ Application-centric → Intent-centric。意図の処理を**単一の知性で�
 
 匿名共有ページの読み取りは `published_turns` の1クエリだけで完結させる。RLSは `revoked_at is null` の行だけを通し、`anon` と `authenticated` には表示用の `token / question / answer / content_blocks / created_at` だけを許可する。ログイン状態によってSupabaseのロールが変わっても同じ共有URLを閲覧でき、`revoked_at` 自体や非公開台帳・正本テーブルは閲覧結果へ含めない。
 
+新規公開と取り消しは、`shared_messages` に対するDBトリガーで `published_turns` へ同期する。フロントから2テーブルを順番に更新する方式は片方だけ成功する余地があるため採らない。INSERT時には問い・主体の答え・検算カードをスナップショット化し、`revoked_at` のUPDATE時には同じtokenを閉じる。会話削除・退会による台帳行のDELETEでも公開側を取り消す。公開済みURLを再有効化する更新は禁止し、再共有は従来どおり新しいtokenを発行する。
+
 **完了判定**: 共有URLが未ログインで開き、そこ経由の新規登録が1件。
 
 > **決定（2026-08-21）— 共有の形。**
