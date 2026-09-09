@@ -433,6 +433,46 @@ alter table public.published_turns enable row level security;
 -- 移行途中は service_role 以外から触れない。公開権限は後続手順で明示的に開ける
 revoke all on public.published_turns from anon, authenticated;
 
+-- 既存の共有を公開スナップショットへ移す。
+-- token と revoked_at を引き継ぐので、生きているURLは変わらず、取り消したURLも復活しない。
+-- content_blocks は主体の答えに属する表示用ブロックだけを順序付きで固める。
+-- on conflict は SQL Editor で再実行しても重複せず、途中失敗からやり直せるために置く。
+insert into public.published_turns (
+  token,
+  question,
+  answer,
+  content_blocks,
+  created_at,
+  revoked_at
+)
+select
+  s.token,
+  q.content,
+  a.content,
+  coalesce((
+    select jsonb_agg(
+      jsonb_build_object(
+        'type', cb.type,
+        'payload', cb.payload,
+        'sort_order', cb.sort_order
+      )
+      order by cb.sort_order
+    )
+    from public.content_blocks cb
+    where cb.message_id = s.message_id
+  ), '[]'::jsonb),
+  s.created_at,
+  s.revoked_at
+from public.shared_messages s
+join public.messages a on a.id = s.message_id
+left join public.messages q on q.id = s.question_message_id
+on conflict (token) do update set
+  question       = excluded.question,
+  answer         = excluded.answer,
+  content_blocks = excluded.content_blocks,
+  created_at     = excluded.created_at,
+  revoked_at     = excluded.revoked_at;
+
 -- ----------------------------------------------------------------------------
 -- feedback — エラー報告（src/composables/useFeedback.ts）
 --
