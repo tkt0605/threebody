@@ -13,7 +13,8 @@
     "typecheck:backend": "tsc --noEmit -p backend/tsconfig.json",
     "lint": "eslint .",
     "test": "vitest run",
-    "verify:supabase-rotation": "node scripts/verify-retired-supabase-keys.mjs"
+    "verify:supabase-rotation": "node scripts/verify-retired-supabase-keys.mjs",
+    "verify:anon-columns": "node scripts/verify-anon-column-grants.mjs"
   },
   "overrides": {
     "node-fetch": "^2.7.0"

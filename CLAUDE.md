@@ -96,6 +96,7 @@ SSE イベント順（三体モード）: `answer_start` → `text`… → `answ
 - `npx tsx scripts/experiment-synthesis.ts` — 統合方式との対照実験
 - `node scripts/verify-share-rls.mjs` / `node scripts/view-shared.mjs` — 共有の RLS 検証 / 共有・検算の集計（secret key）
 - `npm run verify:supabase-rotation` — 無効化した旧 anon / service_role key が両方 401 になることを確認
+- `npm run verify:anon-columns` — publishable key で `shared_messages.user_id` / `messages.signals` が両方 4xx になることを確認
 
 ## ドキュメント
 
