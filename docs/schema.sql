@@ -398,6 +398,42 @@ grant select (token, message_id, question_message_id, created_at, revoked_at)
   on public.shared_messages to anon;
 
 -- ----------------------------------------------------------------------------
+-- published_turns — 匿名公開専用のスナップショット
+--
+-- shared_messages は所有者・元メッセージ・取り消しを管理する非公開台帳として残し、
+-- 匿名閲覧者にはこのテーブルだけを公開する。公開してよい内容だけを物理的に分けることで、
+-- messages / content_blocks の権限や内部IDを匿名経路へ持ち込まない。
+--
+-- token は shared_messages.token と同じ値を使うが、外部キーにはしない。
+-- 公開テーブルから非公開台帳へのリレーションを PostgREST に認識させると、親テーブルの
+-- 権限が匿名取得へ波及するため。両テーブルの同期は後続手順の書き込み処理で保証する。
+--
+-- content_blocks は [{ type, payload, sort_order }, ...] の配列。
+-- 作成直後は移行途中のデータを公開しないため、RLS を有効にして全権限を閉じる。
+-- anon の select policy と権限は、バックフィルと読み取り経路の切替後に追加する。
+-- ----------------------------------------------------------------------------
+create table public.published_turns (
+  token           uuid primary key,
+  question        text,
+  answer          text not null,
+  content_blocks  jsonb not null default '[]'::jsonb
+    check (jsonb_typeof(content_blocks) = 'array'),
+  created_at      timestamptz not null default now(),
+  revoked_at      timestamptz
+);
+
+comment on table public.published_turns is
+  '匿名公開専用の共有スナップショット。所有者ID・元メッセージID・操作記録は持たない。';
+
+create index published_turns_active_created_at_idx
+  on public.published_turns (created_at desc) where revoked_at is null;
+
+alter table public.published_turns enable row level security;
+
+-- 移行途中は service_role 以外から触れない。公開権限は後続手順で明示的に開ける
+revoke all on public.published_turns from anon, authenticated;
+
+-- ----------------------------------------------------------------------------
 -- feedback — エラー報告（src/composables/useFeedback.ts）
 --
 -- 書き込み専用で、閲覧・集計手段はアプリ側に未実装（運営が Supabase 側で直接見る）。

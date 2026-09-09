@@ -162,6 +162,8 @@ Application-centric → Intent-centric。意図の処理を**単一の知性で�
 
 **匿名閲覧の列境界（2026-09-09）**: 行ポリシーが正しくても、列の `SELECT` 権限は独立した防御である。共有閲覧に必要なのは、台帳の `token, message_id, question_message_id, created_at` と、メッセージの `id, role, content`、検算の `content_blocks(type, payload, sort_order)` だけ。Supabase内部の主体を示す `shared_messages.user_id` と、「途中で止めた・言い直した」という操作記録の `messages.signals` は共有する見解の中身ではないため、anon から除外する。テーブル単位の `SELECT` は全列を許可するので、権限をいったん取り消して必要列だけを再付与する。PostgRESTの埋め込み取得は親テーブルのテーブル単位SELECTを要求するため、閲覧側も `messages` と `content_blocks` を別々に取得する。将来プロフィールを作る場合は、内部UUIDを流用せず表示名を持つ列を別途設計する。
 
+**公開スナップショットへの移行（2026-09-09）**: `shared_messages` は削除せず、`token / message_id / question_message_id / user_id / revoked_at` を持つ非公開の管理台帳へ役割を限定する。匿名閲覧は、新設する `published_turns` の `token / question / answer / content_blocks / created_at / revoked_at` だけを読む。公開テーブルには内部IDを置かず、`shared_messages` との外部キーも作らない。共有時点の表示内容を複製する代わりに、非公開テーブルの権限を匿名経路へ波及させないことを優先する。
+
 **完了判定**: 共有URLが未ログインで開き、そこ経由の新規登録が1件。
 
 > **決定（2026-08-21）— 共有の形。**
