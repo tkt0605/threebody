@@ -168,6 +168,8 @@ Application-centric → Intent-centric。意図の処理を**単一の知性で�
 
 新規公開と取り消しは、`shared_messages` に対するDBトリガーで `published_turns` へ同期する。フロントから2テーブルを順番に更新する方式は片方だけ成功する余地があるため採らない。INSERT時には問い・主体の答え・検算カードをスナップショット化し、`revoked_at` のUPDATE時には同じtokenを閉じる。会話削除・退会による台帳行のDELETEでも公開側を取り消す。公開済みURLを再有効化する更新は禁止し、再共有は従来どおり新しいtokenを発行する。
 
+本番で新規共有・匿名閲覧・取り消しを確認した後、旧匿名経路だった `shared_messages / messages / content_blocks` のSELECT権限をanonから取り消す。移行直後はロールバック余地を残すため旧RLSポリシーを削除せず、権限が無いので実効しない状態にする。公開ページのanonアクセスは `published_turns` だけに残す。
+
 **完了判定**: 共有URLが未ログインで開き、そこ経由の新規登録が1件。
 
 > **決定（2026-08-21）— 共有の形。**

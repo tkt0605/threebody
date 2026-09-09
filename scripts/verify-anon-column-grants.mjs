@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// anon に見せない列が、本番DBでも拒否されることを実プロジェクトで確認する。
-// 行ポリシーが正しくても、列の SELECT 権限は独立して検証する必要がある。
+// 匿名共有の読み取り境界が、本番DBでも published_turns だけに閉じていることを確認する。
+// 行ポリシーが残っていても、SELECT 権限を失った旧テーブルはPostgRESTが4xxで拒否する。
 //
 // 200 + [] を「読めないから安全」と読んではいけない。
-// 列が revoke されていれば PostgREST は 4xx を返す。200 は列が見えていることを意味する。
+// 閉じる対象の200は、たまたま行が0件なだけで列を読む権限自体は残っていることを意味する。
 
 import dotenv from 'dotenv'
 
@@ -12,8 +12,10 @@ dotenv.config({ path: new URL('../.env', import.meta.url).pathname })
 const url = process.env.VITE_SUPABASE_URL
 const publishableKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY
 const checks = [
-  ['shared_messages.user_id', 'shared_messages?select=user_id&limit=1'],
-  ['messages.signals', 'messages?select=signals&limit=1'],
+  ['旧経路 shared_messages', 'shared_messages?select=token&limit=1', 'closed'],
+  ['旧経路 messages', 'messages?select=id&limit=1', 'closed'],
+  ['旧経路 content_blocks', 'content_blocks?select=id&limit=1', 'closed'],
+  ['公開経路 published_turns', 'published_turns?select=token,question,answer,content_blocks,created_at&limit=1', 'open'],
 ]
 
 if (!url || !publishableKey) {
@@ -22,12 +24,12 @@ if (!url || !publishableKey) {
 }
 
 let failed = false
-for (const [name, path] of checks) {
+for (const [name, path, expected] of checks) {
   try {
     const response = await fetch(`${url}/rest/v1/${path}`, {
       headers: { apikey: publishableKey },
     })
-    const ok = response.status >= 400
+    const ok = expected === 'closed' ? response.status >= 400 : response.status === 200
     console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}  — status=${response.status}`)
     failed ||= !ok
   } catch (error) {

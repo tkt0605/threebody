@@ -230,11 +230,11 @@ create policy messages_select_shared on public.messages for select
       and (s.message_id = messages.id or s.question_message_id = messages.id)
   ));
 
--- signals は「停止した・言い直した」というユーザーの操作の記録で、共有の対象ではない。
--- テーブル単位の select があると列単位の revoke より優先されるため、いったん取り消し、
--- 共有閲覧に必要な列だけを anon へ戻す
+-- 匿名共有は published_turns へ移したため、正本をanonから直接読む旧経路は閉じる。
+-- テーブル権限と、移行前に付与した列権限は別管理なので両方を明示的に取り消す。
 revoke select on public.messages from anon;
-grant select (id, role, content) on public.messages to anon;
+revoke select (id, conversation_id, role, content, signals, modality, "timestamp")
+  on public.messages from anon;
 
 -- ----------------------------------------------------------------------------
 -- content_blocks — 本文の正本。所有者判定は message → conversation 経由
@@ -317,6 +317,12 @@ create policy content_blocks_select_shared on public.content_blocks for select
       and (s.message_id = content_blocks.message_id or s.question_message_id = content_blocks.message_id)
   ));
 
+-- 匿名共有の読み取り先は published_turns。旧ポリシーは段階移行中のロールバック用に
+-- 手順9まで残すが、anonのSELECT権限を外してここでは実効しない状態にする。
+revoke select on public.content_blocks from anon;
+revoke select (id, message_id, type, payload, sort_order)
+  on public.content_blocks from anon;
+
 -- ----------------------------------------------------------------------------
 -- shared_messages — 公開したターンの台帳（ROADMAP ③ 見解の共有）
 --
@@ -390,12 +396,11 @@ create policy shared_messages_update_own on public.shared_messages for update
 create policy shared_messages_delete_own on public.shared_messages for delete
   to authenticated using (auth.uid() = user_id);
 
--- 誰が共有したかは公開しない（ROADMAP ③「ユーザープロフィールは作らない」）。
--- テーブル単位の select があると列単位の revoke より優先されるため、いったん取り消し、
--- 共有閲覧と revoked_at の絞り込みに必要な列だけを anon へ戻す
+-- 管理台帳は所有者とDBトリガーだけが使う。匿名共有は published_turns へ移したため、
+-- テーブル権限と移行前の列権限をどちらも取り消す。
 revoke select on public.shared_messages from anon;
-grant select (token, message_id, question_message_id, created_at, revoked_at)
-  on public.shared_messages to anon;
+revoke select (token, message_id, question_message_id, user_id, created_at, revoked_at)
+  on public.shared_messages from anon;
 
 -- ----------------------------------------------------------------------------
 -- published_turns — 匿名公開専用のスナップショット
