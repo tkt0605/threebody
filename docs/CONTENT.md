@@ -160,7 +160,7 @@ Application-centric → Intent-centric。意図の処理を**単一の知性で�
 
 **やらないこと**: コメント・いいね・一覧ページ・OGP自動生成・ユーザープロフィール。
 
-**匿名閲覧の列境界（2026-09-09）**: 行ポリシーが正しくても、列の `SELECT` 権限は独立した防御である。共有閲覧に必要なのは、台帳の `token, message_id, question_message_id, created_at` と、メッセージの `id, role, content, content_blocks(type, payload, sort_order)` だけ。Supabase内部の主体を示す `shared_messages.user_id` と、「途中で止めた・言い直した」という操作記録の `messages.signals` は共有する見解の中身ではないため、anon から revoke する。将来プロフィールを作る場合は、内部UUIDを流用せず表示名を持つ列を別途設計する。
+**匿名閲覧の列境界（2026-09-09）**: 行ポリシーが正しくても、列の `SELECT` 権限は独立した防御である。共有閲覧に必要なのは、台帳の `token, message_id, question_message_id, created_at` と、メッセージの `id, role, content`、検算の `content_blocks(type, payload, sort_order)` だけ。Supabase内部の主体を示す `shared_messages.user_id` と、「途中で止めた・言い直した」という操作記録の `messages.signals` は共有する見解の中身ではないため、anon から除外する。テーブル単位の `SELECT` は全列を許可するので、権限をいったん取り消して必要列だけを再付与する。PostgRESTの埋め込み取得は親テーブルのテーブル単位SELECTを要求するため、閲覧側も `messages` と `content_blocks` を別々に取得する。将来プロフィールを作る場合は、内部UUIDを流用せず表示名を持つ列を別途設計する。
 
 **完了判定**: 共有URLが未ログインで開き、そこ経由の新規登録が1件。
 

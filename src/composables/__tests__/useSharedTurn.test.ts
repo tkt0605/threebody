@@ -15,10 +15,13 @@ type Row = Record<string, unknown>
 const db = {
   shared_messages: [] as Row[],
   messages:        [] as Row[],
+  content_blocks:  [] as Row[],
 }
 
 // messages に対して実際に発行された絞り込み。URLの文字列がそのまま渡っていないことを見る
 const messageFilters: Row[] = []
+// PostgREST の埋め込み取得へ戻さず、列権限を絞れる2クエリになっていることを見る
+const selects: { table: string; columns: string }[] = []
 
 // 生きている共有から辿れる message_id（＝ anon に見える行）。
 // docs/schema.sql の messages_select_shared / content_blocks_select_shared と同じ条件
@@ -53,6 +56,10 @@ function builder(table: string) {
       const visible = visibleMessageIds()
       source = source.filter(r => visible.includes(r.id as string))
     }
+    if (table === 'content_blocks') {
+      const visible = visibleMessageIds()
+      source = source.filter(r => visible.includes(r.message_id as string))
+    }
     return source.filter(r =>
       Object.entries(filters).every(([key, want]) =>
         key.endsWith('__in')
@@ -74,12 +81,13 @@ function builder(table: string) {
     : { data: rows(), error: null }
 
   const api = {
-    select: () => api,
+    select: (columns = '*') => { selects.push({ table, columns }); return api },
     insert: (row: Row) => { mode = 'insert'; payload = row; return api },
     update: (row: Row) => { mode = 'update'; payload = row; return api },
     eq: (col: string, val: unknown) => { filters[col] = val; return api },
     is: (col: string, val: unknown) => { filters[col] = val; return api },
     in: (col: string, vals: unknown[]) => { filters[`${col}__in`] = vals; return api },
+    order: () => api,
     single: () => { const r = result(); return Promise.resolve({ ...r, data: r.data?.[0] ?? null }) },
     maybeSingle: () => { const r = result(); return Promise.resolve({ ...r, data: r.data?.[0] ?? null }) },
     then: (resolve: (v: unknown) => unknown) => Promise.resolve(result()).then(resolve),
@@ -108,11 +116,16 @@ const ANSWER_BLOCKS = [
 
 function seed() {
   db.messages = [
-    { id: 'q-1', role: 'user',      content: '共有したターンの問い', content_blocks: [] },
-    { id: 'a-1', role: 'assistant', content: '答えの本文',           content_blocks: ANSWER_BLOCKS },
-    { id: 'q-2', role: 'user',      content: '共有していないターンの問い', content_blocks: [] },
-    { id: 'a-2', role: 'assistant', content: '共有していない答え',   content_blocks: [] },
+    { id: 'q-1', role: 'user',      content: '共有したターンの問い' },
+    { id: 'a-1', role: 'assistant', content: '答えの本文' },
+    { id: 'q-2', role: 'user',      content: '共有していないターンの問い' },
+    { id: 'a-2', role: 'assistant', content: '共有していない答え' },
   ]
+  db.content_blocks = ANSWER_BLOCKS.map((block, index) => ({
+    id: `b-${index}`,
+    message_id: 'a-1',
+    ...block,
+  }))
   db.shared_messages = [
     { token: 'live-token', message_id: 'a-1', question_message_id: 'q-1', user_id: 'user-1', created_at: '2026-08-21T00:00:00Z', revoked_at: null },
   ]
@@ -122,6 +135,7 @@ describe('useSharedTurn', () => {
   beforeEach(() => {
     seed()
     messageFilters.length = 0
+    selects.length = 0
     useSharedTurn().liveTokens.value = {}
     vi.spyOn(console, 'error').mockImplementation(() => {})
   })
@@ -161,6 +175,14 @@ describe('useSharedTurn', () => {
     await useSharedTurn().fetchByToken('live-token')
 
     expect(messageFilters).toEqual([{ id__in: ['a-1', 'q-1'] }])
+  })
+
+  it('messages と content_blocks を埋め込まずに分けて読む', async () => {
+    await useSharedTurn().fetchByToken('live-token')
+
+    expect(selects).toContainEqual({ table: 'messages', columns: 'id, role, content' })
+    expect(selects).toContainEqual({ table: 'content_blocks', columns: 'type, payload, sort_order' })
+    expect(selects.some(query => query.table === 'messages' && query.columns.includes('content_blocks'))).toBe(false)
   })
 
   it('公開すると台帳に1行増え、問いのIDも一緒に記録する', async () => {

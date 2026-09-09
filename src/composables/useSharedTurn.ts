@@ -166,7 +166,7 @@ export function useSharedTurn() {
 
     const { data: rows, error: rowsError } = await supabase
       .from('messages')
-      .select('id, role, content, content_blocks(type, payload, sort_order)')
+      .select('id, role, content')
       .in('id', questionId ? [answerId, questionId] : [answerId])
     if (rowsError) { console.error('共有の取得に失敗しました', rowsError); return null }
 
@@ -175,6 +175,15 @@ export function useSharedTurn() {
     // 取り消しと同じ扱いにして、共有ページは「見つからない」を出す
     if (!answer) return null
 
+    // PostgREST の埋め込み取得は親テーブルの table-level SELECT を要求する。
+    // messages.signals を anon から隠したまま本文と検算を読むため、別クエリに分ける
+    const { data: blockRows, error: blocksError } = await supabase
+      .from('content_blocks')
+      .select('type, payload, sort_order')
+      .eq('message_id', answerId)
+      .order('sort_order')
+    if (blocksError) { console.error('共有の取得に失敗しました', blocksError); return null }
+
     const question = questionId
       ? ((rows ?? []).find(r => r.id === questionId)?.content as string | undefined) ?? null
       : null
@@ -182,7 +191,7 @@ export function useSharedTurn() {
     return {
       token:    ledger.token as string,
       question,
-      blocks:   toContentBlocks(answer.content_blocks),
+      blocks:   toContentBlocks(blockRows ?? []),
       sharedAt: new Date(ledger.created_at as string),
     }
   }

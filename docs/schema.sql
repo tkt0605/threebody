@@ -231,8 +231,10 @@ create policy messages_select_shared on public.messages for select
   ));
 
 -- signals は「停止した・言い直した」というユーザーの操作の記録で、共有の対象ではない。
--- 行ポリシーとは独立した列単位の防御として、閲覧者からは読めなくする
-revoke select (signals) on public.messages from anon;
+-- テーブル単位の select があると列単位の revoke より優先されるため、いったん取り消し、
+-- 共有閲覧に必要な列だけを anon へ戻す
+revoke select on public.messages from anon;
+grant select (id, role, content) on public.messages to anon;
 
 -- ----------------------------------------------------------------------------
 -- content_blocks — 本文の正本。所有者判定は message → conversation 経由
@@ -389,8 +391,11 @@ create policy shared_messages_delete_own on public.shared_messages for delete
   to authenticated using (auth.uid() = user_id);
 
 -- 誰が共有したかは公開しない（ROADMAP ③「ユーザープロフィールは作らない」）。
--- 行ポリシーとは独立した列単位の防御で、user_id は閲覧者から読めなくする
-revoke select (user_id) on public.shared_messages from anon;
+-- テーブル単位の select があると列単位の revoke より優先されるため、いったん取り消し、
+-- 共有閲覧と revoked_at の絞り込みに必要な列だけを anon へ戻す
+revoke select on public.shared_messages from anon;
+grant select (token, message_id, question_message_id, created_at, revoked_at)
+  on public.shared_messages to anon;
 
 -- ----------------------------------------------------------------------------
 -- feedback — エラー報告（src/composables/useFeedback.ts）
