@@ -217,19 +217,6 @@ create policy messages_delete_own on public.messages for delete
     where c.id = messages.conversation_id and c.user_id = auth.uid()
   ));
 
--- 共有されたターンだけを、未ログインの閲覧者へ開ける（ROADMAP ③）。
--- 起点は shared_messages で、そこに生きている行が無いメッセージは anon から見えない。
--- ＝ 共有していないメッセージのIDを直接叩いても0件になる。
--- 対象に authenticated も含めるのは、ログイン済みの人が「他人の」共有URLを開くため
--- （messages_select_own は自分の会話しか通さない）
-create policy messages_select_shared on public.messages for select
-  to anon, authenticated
-  using (exists (
-    select 1 from public.shared_messages s
-    where s.revoked_at is null
-      and (s.message_id = messages.id or s.question_message_id = messages.id)
-  ));
-
 -- 匿名共有は published_turns へ移したため、正本をanonから直接読む旧経路は閉じる。
 -- テーブル権限と、移行前に付与した列権限は別管理なので両方を明示的に取り消す。
 revoke select on public.messages from anon;
@@ -307,18 +294,7 @@ create policy content_blocks_delete_own on public.content_blocks for delete
     where m.id = content_blocks.message_id and c.user_id = auth.uid()
   ));
 
--- 共有されたターンの本文と検算カード。条件は messages_select_shared と同型で、
--- 起点も同じ shared_messages（＝取り消せば両方が同時に閉じる）
-create policy content_blocks_select_shared on public.content_blocks for select
-  to anon, authenticated
-  using (exists (
-    select 1 from public.shared_messages s
-    where s.revoked_at is null
-      and (s.message_id = content_blocks.message_id or s.question_message_id = content_blocks.message_id)
-  ));
-
--- 匿名共有の読み取り先は published_turns。旧ポリシーは段階移行中のロールバック用に
--- 手順9まで残すが、anonのSELECT権限を外してここでは実効しない状態にする。
+-- 匿名共有の読み取り先は published_turns。正本には所有者用ポリシーだけを置く。
 revoke select on public.content_blocks from anon;
 revoke select (id, message_id, type, payload, sort_order)
   on public.content_blocks from anon;
@@ -363,11 +339,6 @@ create unique index shared_messages_live_message_idx
 create index shared_messages_user_id_idx on public.shared_messages (user_id);
 
 alter table public.shared_messages enable row level security;
-
--- 未ログインの閲覧者。token を知っている行だけが実際に取れる（絞り込みは
--- クエリ側の .eq('token', …)）。ポリシー自体は「生きている共有かどうか」しか見ない
-create policy shared_messages_select_public on public.shared_messages for select
-  to anon, authenticated using (revoked_at is null);
 
 -- 取り消した自分の共有も、所有者は見える（共有中かどうかの表示に使う）
 create policy shared_messages_select_own on public.shared_messages for select

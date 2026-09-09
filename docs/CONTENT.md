@@ -170,6 +170,8 @@ Application-centric → Intent-centric。意図の処理を**単一の知性で�
 
 本番で新規共有・匿名閲覧・取り消しを確認した後、旧匿名経路だった `shared_messages / messages / content_blocks` のSELECT権限をanonから取り消す。移行直後はロールバック余地を残すため旧RLSポリシーを削除せず、権限が無いので実効しない状態にする。公開ページのanonアクセスは `published_turns` だけに残す。
 
+旧経路を閉じた状態で `shared_messages / messages / content_blocks` がanonへ401、`published_turns` が200になることを本番で確認した後、旧共有ポリシー `shared_messages_select_public / messages_select_shared / content_blocks_select_shared` も削除する。以後、正本と管理台帳に残るのはauthenticatedの所有者用ポリシーだけになる。
+
 **完了判定**: 共有URLが未ログインで開き、そこ経由の新規登録が1件。
 
 > **決定（2026-08-21）— 共有の形。**
