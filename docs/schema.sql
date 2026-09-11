@@ -700,8 +700,9 @@ grant execute on function public.release_global_quota(date) to service_role;
 --        messages / content_blocks に *_select_shared（to anon, authenticated）を1本ずつ、
 --        revoke select (user_id) on shared_messages / (signals) on messages from anon。
 --        これが RLS を anon へ開ける最初の変更なので、適用後に必ず確認すること:
---        共有していない message_id を publishable key で直接 select して0件になること
---        （scripts/verify-share-rls.mjs が両方向を確かめる）
+--        共有していない message_id を publishable key で直接 select して0件になること。
+--        この旧経路は2026-09-09に published_turns 方式へ移行済み。現在の
+--        scripts/verify-share-rls.mjs は公開スナップショットの作成・閲覧・取消を確かめる
 --
 -- 【確認クエリ】SQL Editor のタブは使い捨てにし、これらだけ手元に残しておけばよい。
 --   select can_use_shared_key, count(*) from public.user_setting group by 1;
