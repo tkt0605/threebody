@@ -14,7 +14,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "verify:supabase-rotation": "node scripts/verify-retired-supabase-keys.mjs",
-    "verify:anon-columns": "node scripts/verify-anon-column-grants.mjs"
+    "verify:anon-columns": "node scripts/verify-anon-column-grants.mjs",
+    "verify:share": "node scripts/verify-share-rls.mjs"
   },
   "overrides": {
     "node-fetch": "^2.7.0"

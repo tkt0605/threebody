@@ -1,33 +1,31 @@
 #!/usr/bin/env node
-// 共有のRLSを、実プロジェクトに対して確かめる。
+// 共有のRLSとDBトリガーを、実プロジェクトに対して確かめる。
 //
-// 【なぜ要るか】
-// 共有（ROADMAP ③）は、このアプリで初めて RLS を anon へ開ける変更になる。
-// ポリシーが1本でも広すぎると、共有していない会話が匿名で読めてしまう。
-// これは vitest では捕まえられない — Postgres の中で起きることだからで、
-// src/composables/__tests__/useSharedTurn.test.ts が見ているのはクライアント側の経路と、
-// 偽supabaseで再現したポリシーの条件だけ。本物のポリシーはここで見る。
+// 【境界】
+// authenticated の所有者は shared_messages に管理行を作り、DBトリガーが公開してよい
+// 内容だけを published_turns へ複製する。anon は published_turns だけを読む。
+// shared_messages / messages / content_blocks は、共有中かどうかに関係なくanonへ開けない。
 //
-// 【何を確かめるか】両方向を見る。片方だけでは意味が無い
-//   1. 共有したターンは anon で読める（開きすぎと閉じすぎを取り違えない）
-//   2. 共有していないメッセージのIDを直接叩くと0件（完了判定そのもの）
-//   3. 取り消した共有は読めない
-//   4. 誰が共有したか（user_id）は anon から読めない
+// 【何を確かめるか】
+//   1. 旧3テーブルはanonから拒否される
+//   2. 管理行を作ると、同じtoken・内容の公開スナップショットをanonで読める
+//   3. 公開テーブルにも内部ID・所有者・操作記録・revoked_atを公開しない
+//   4. 管理行を取り消すと、DBトリガー経由で公開スナップショットも読めなくなる
 //
-// 【使い方】読み書きの両方を使うので、自分のアカウントのトークンが要る
-//   THREEBODY_TOKEN=<Supabaseのアクセストークン> node scripts/verify-share-rls.mjs
+// 【使い方】読み書きの両方を使うので、自分のアカウントのアクセストークンが要る。
+// アクセストークンは約1時間で失効するため.envへ保存せず、実行時だけ環境変数へ渡す。
+//   read -s "THREEBODY_TOKEN?Supabase access token: "; export THREEBODY_TOKEN; echo
+//   node scripts/verify-share-rls.mjs; unset THREEBODY_TOKEN
 //
-// トークンはブラウザの devtools から取る（localStorage の sb-*-auth-token の
-// access_token）。VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY は .env から読む。
-//
-// 【後片付け】検証で作った共有は最後に必ず取り消す（revoked_at を立てる）。
-// 途中で落ちた場合は、その回で作った token が標準出力に出ているので手で消すこと。
+// VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY は.envから読む。
+// 検証で作った管理行は削除せず、finallyで必ず取り消す。
 
+import { randomUUID } from 'node:crypto'
 import dotenv from 'dotenv'
 
 dotenv.config({ path: new URL('../.env', import.meta.url).pathname })
 
-const URL_BASE = process.env.VITE_SUPABASE_URL
+const URL_BASE        = process.env.VITE_SUPABASE_URL
 const PUBLISHABLE_KEY = process.env.VITE_SUPABASE_PUBLISHABLE_KEY
 const TOKEN           = process.env.THREEBODY_TOKEN
 
@@ -40,10 +38,30 @@ if (!TOKEN) {
   process.exit(1)
 }
 
-// as は「誰として叩くか」。anon = 未ログインの閲覧者、owner = 自分
+function tokenClaims(token) {
+  try {
+    return JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString())
+  } catch {
+    return null
+  }
+}
+
+// publishable keyをユーザーのトークンと取り違えると、owner側までanonで走り、
+// RLSの200 + []を検証成功と誤認する。リクエスト前に主体と有効期限を固定する。
+const claims = tokenClaims(TOKEN)
+if (claims?.role !== 'authenticated' || typeof claims.sub !== 'string') {
+  console.error(`THREEBODY_TOKEN がユーザーのアクセストークンではありません（role=${claims?.role ?? 'unknown'}）。`)
+  process.exit(1)
+}
+if (typeof claims.exp === 'number' && claims.exp <= Math.floor(Date.now() / 1000)) {
+  console.error('THREEBODY_TOKEN の有効期限が切れています。ブラウザから新しいaccess_tokenを取得してください。')
+  process.exit(1)
+}
+
+// as は「誰として叩くか」。anon = 未ログインの閲覧者、owner = 自分。
 async function rest(as, path, init = {}) {
   const authorization = as === 'owner' ? { Authorization: `Bearer ${TOKEN}` } : {}
-  const res = await fetch(`${URL_BASE}/rest/v1/${path}`, {
+  const response = await fetch(`${URL_BASE}/rest/v1/${path}`, {
     ...init,
     headers: {
       apikey: PUBLISHABLE_KEY,
@@ -52,41 +70,93 @@ async function rest(as, path, init = {}) {
       ...(init.headers ?? {}),
     },
   })
-  const text = await res.text()
-  return { status: res.status, body: text ? JSON.parse(text) : null }
+  const text = await response.text()
+  let body = null
+  if (text) {
+    try { body = JSON.parse(text) } catch { body = text }
+  }
+  return { status: response.status, body }
+}
+
+function rowsOf(response) {
+  return Array.isArray(response.body) ? response.body : []
+}
+
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical)
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)])
+    )
+  }
+  return value
 }
 
 const results = []
-const check = (name, ok, note = '') => {
+function check(name, ok, note = '') {
   results.push({ name, ok, note })
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${note ? `  — ${note}` : ''}`)
 }
 
-// 検証に使うターンを1つ選ぶ。自分の一番新しい assistant メッセージと、その直前の問い
-const recent = await rest('owner', 'messages?select=id,role,conversation_id,timestamp&order=timestamp.desc&limit=20')
-if (recent.status !== 200 || !Array.isArray(recent.body) || recent.body.length === 0) {
-  console.error('自分のメッセージを取得できませんでした。トークンが古い可能性があります。', recent)
+// 旧経路は行が0件だから安全なのではなく、権限そのものが無い4xxを合格とする。
+for (const [name, path] of [
+  ['旧経路 shared_messages はanonから読めない', 'shared_messages?select=token&limit=1'],
+  ['旧経路 messages はanonから読めない', 'messages?select=id&limit=1'],
+  ['旧経路 content_blocks はanonから読めない', 'content_blocks?select=id&limit=1'],
+]) {
+  const response = await rest('anon', path)
+  check(name, response.status >= 400, `status=${response.status}`)
+}
+
+// 生きている共有が無い直近の主体回答を使う。同じターンにURLを2つ作らず、既存共有も
+// 取り消さないため、候補が無ければ先に新しい会話を1往復してもらう。
+const [recent, activeShares] = await Promise.all([
+  rest('owner', 'messages?select=id,content,conversation_id,timestamp&role=eq.assistant&order=timestamp.desc&limit=50'),
+  rest('owner', 'shared_messages?select=message_id&revoked_at=is.null'),
+])
+if (recent.status !== 200 || activeShares.status !== 200) {
+  console.error('検証対象を取得できませんでした。トークンまたは所有者用RLSを確認してください。', {
+    messages: recent.status,
+    sharedMessages: activeShares.status,
+  })
   process.exit(1)
 }
-const answer   = recent.body.find(m => m.role === 'assistant')
-const question = recent.body.find(m => m.role === 'user' && m.conversation_id === answer?.conversation_id)
+
+const activeMessageIds = new Set(rowsOf(activeShares).map(row => row.message_id))
+const answer = rowsOf(recent).find(row => !activeMessageIds.has(row.id))
 if (!answer) {
-  console.error('assistant のメッセージが1件も見つかりません。先に会話を1つ作ってください。')
+  console.error('未共有の主体回答が見つかりません。新しい会話を1往復してから再実行してください。')
   process.exit(1)
 }
 
-// 共有する前に、まず「読めないこと」を確かめる。ここが通らないなら、
-// 以降の PASS は「共有したから読める」ではなく「元から全部読めている」を意味する
-const beforeShare = await rest('anon', `messages?select=id&id=eq.${answer.id}`)
-check('共有前は anon から読めない', Array.isArray(beforeShare.body) && beforeShare.body.length === 0,
-  `status=${beforeShare.status} rows=${beforeShare.body?.length}`)
-
-const me = await rest('owner', 'user_setting?select=id&limit=1')
-const userId = me.body?.[0]?.id
-if (!userId) {
-  console.error('user_setting の自分の行が取れませんでした。', me)
+const questionResponse = await rest(
+  'owner',
+  `messages?select=id,content&conversation_id=eq.${answer.conversation_id}&role=eq.user&timestamp=lt.${encodeURIComponent(answer.timestamp)}&order=timestamp.desc&limit=1`
+)
+if (questionResponse.status !== 200) {
+  console.error('主体回答に対応する問いを取得できませんでした。', { status: questionResponse.status })
   process.exit(1)
 }
+const question = rowsOf(questionResponse)[0] ?? null
+
+const [me, blockResponse] = await Promise.all([
+  rest('owner', 'user_setting?select=id&limit=1'),
+  rest('owner', `content_blocks?select=type,payload,sort_order&message_id=eq.${answer.id}&order=sort_order.asc`),
+])
+const userId = rowsOf(me)[0]?.id
+if (!userId || blockResponse.status !== 200) {
+  console.error('所有者または検算データを取得できませんでした。', {
+    userSetting: me.status,
+    contentBlocks: blockResponse.status,
+  })
+  process.exit(1)
+}
+
+const missingToken = randomUUID()
+const beforeShare = await rest('anon', `published_turns?select=token&token=eq.${missingToken}`)
+check('存在しないtokenでは公開スナップショットを読めない',
+  beforeShare.status === 200 && rowsOf(beforeShare).length === 0,
+  `status=${beforeShare.status} rows=${rowsOf(beforeShare).length}`)
 
 const created = await rest('owner', 'shared_messages', {
   method: 'POST',
@@ -97,53 +167,58 @@ const created = await rest('owner', 'shared_messages', {
     user_id:             userId,
   }),
 })
-const token = created.body?.[0]?.token
+const token = rowsOf(created)[0]?.token
 if (!token) {
-  console.error('共有を作れませんでした（本番未適用の可能性）。', created)
+  console.error('共有を作れませんでした。同期トリガーと所有者用RLSを確認してください。', {
+    status: created.status,
+    body: created.body,
+  })
   process.exit(1)
 }
-console.log(`\n検証用の共有: token=${token}\n`)
+console.log('\n検証用の共有を作成しました。\n')
 
+let revoked = false
 try {
-  const ledger = await rest('anon', `shared_messages?select=token,message_id,question_message_id&token=eq.${token}`)
-  check('共有した行は anon から token で引ける', ledger.body?.length === 1, `status=${ledger.status}`)
+  const published = await rest(
+    'anon',
+    `published_turns?select=token,question,answer,content_blocks,created_at&token=eq.${token}`
+  )
+  const snapshot = rowsOf(published)[0]
+  check('管理行と同じtokenの公開スナップショットをanonで読める',
+    published.status === 200 && rowsOf(published).length === 1,
+    `status=${published.status} rows=${rowsOf(published).length}`)
+  check('問いと主体の答えが公開スナップショットへ一致する',
+    snapshot?.question === (question?.content ?? null) && snapshot?.answer === answer.content)
+  check('検算カードが公開スナップショットへ一致する',
+    JSON.stringify(canonical(snapshot?.content_blocks ?? []))
+      === JSON.stringify(canonical(rowsOf(blockResponse))))
 
-  const shared = await rest('anon', `messages?select=id,content,content_blocks(type,payload,sort_order)&id=eq.${answer.id}`)
-  check('共有した答えは anon から読める', shared.body?.length === 1, `status=${shared.status}`)
-  check('検算カード（content_blocks）も anon から読める',
-    Array.isArray(shared.body?.[0]?.content_blocks) && shared.body[0].content_blocks.length > 0)
+  // revoked_atはRLSの判定には使うが表示列ではない。内部ID等は列自体を持たない。
+  const hidden = await rest('anon', `published_turns?select=revoked_at&token=eq.${token}`)
+  check('公開スナップショットの取消状態はanonから読めない', hidden.status >= 400,
+    `status=${hidden.status}`)
 
-  // 完了判定。共有していないメッセージのIDを直接叩いても読めない
-  const others = recent.body.filter(m => m.id !== answer.id && m.id !== question?.id).map(m => m.id)
-  if (others.length > 0) {
-    const leaked = await rest('anon', `messages?select=id&id=in.(${others.join(',')})`)
-    check('共有していないメッセージのIDを直接叩いても読めない', leaked.body?.length === 0,
-      `試したID ${others.length}件 / 読めた ${leaked.body?.length}件`)
-
-    const leakedBlocks = await rest('anon', `content_blocks?select=id&message_id=in.(${others.join(',')})`)
-    check('共有していないメッセージの content_blocks も読めない', leakedBlocks.body?.length === 0,
-      `読めた ${leakedBlocks.body?.length}件`)
-  }
-
-  const conversations = await rest('anon', 'conversations?select=id&limit=1')
-  check('会話一覧は anon から読めない', conversations.body?.length === 0 || conversations.status >= 400,
-    `status=${conversations.status}`)
-
-  // 誰が共有したかは公開しない（列単位の revoke）
-  const owner = await rest('anon', `shared_messages?select=user_id&token=eq.${token}`)
-  check('共有者（user_id）は anon から読めない', owner.status >= 400 || owner.body?.[0]?.user_id === undefined,
-    `status=${owner.status}`)
-} finally {
-  await rest('owner', `shared_messages?token=eq.${token}`, {
+  const revokeResponse = await rest('owner', `shared_messages?token=eq.${token}`, {
     method: 'PATCH',
-    body:   JSON.stringify({ revoked_at: new Date().toISOString() }),
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify({ revoked_at: new Date().toISOString() }),
   })
+  revoked = revokeResponse.status === 200 && rowsOf(revokeResponse).length === 1
+  check('所有者が管理台帳から共有を取り消せる', revoked, `status=${revokeResponse.status}`)
+} finally {
+  if (!revoked) {
+    await rest('owner', `shared_messages?token=eq.${token}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ revoked_at: new Date().toISOString() }),
+    })
+  }
 }
 
-// 取り消した後は閉じている
-const afterRevoke = await rest('anon', `messages?select=id&id=eq.${answer.id}`)
-check('取り消すと anon から読めなくなる', afterRevoke.body?.length === 0, `rows=${afterRevoke.body?.length}`)
+const afterRevoke = await rest('anon', `published_turns?select=token&token=eq.${token}`)
+check('取り消すと公開スナップショットをanonから読めなくなる',
+  afterRevoke.status === 200 && rowsOf(afterRevoke).length === 0,
+  `status=${afterRevoke.status} rows=${rowsOf(afterRevoke).length}`)
 
-const failed = results.filter(r => !r.ok)
+const failed = results.filter(result => !result.ok)
 console.log(`\n${results.length - failed.length}/${results.length} PASS`)
 process.exit(failed.length === 0 ? 0 : 1)
